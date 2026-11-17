@@ -489,12 +489,34 @@ run as the kubeconfig's identity, not as a service account in the site.
   `docker login` where the registry needs one): the run reads it from the
   local image store and does not pull it.
 
-Without `--image` the image is built from your checkout, tagged
-`nvke-validate:<git describe>`, so its checks are the checkout's. Hold a site
-to the checks its controller shipped with by passing `--image` built from
-that release tag, as [building the image yourself](#building-the-image-yourself)
-describes. An image from a tag whose README does not document
-[validation profiles](#validation-profile) or `NVKE_SITE_SCOPE` ignores them.
+#### The image
+
+Without `--image`, each run builds the image from your checkout for your
+machine's architecture, tagged `nvke-validate:<git describe>`, so its checks
+are the checkout's. Hold a site to the checks its controller shipped with by
+passing `--image` built from that release tag, as
+[building the image yourself](#building-the-image-yourself) describes. No
+published image exists yet. An image from a tag whose README does not
+document [validation profiles](#validation-profile) or `NVKE_SITE_SCOPE`
+ignores them.
+
+An `--image` must be this Dockerfile's image, or one
+[extended from it](#extending-the-image) that keeps its `ENV` switches and
+`ENTRYPOINT`. The run relies on them:
+
+- It mounts the kubeconfig at `/kube/config`, the profile at
+  `/profile.yaml` and the run's `artifacts/` at `/artifacts`.
+- It adds only `-ginkgo.label-filter` (and `-ginkgo.dry-run`), so the report
+  paths must come from the image's `ENTRYPOINT`. The summary reads
+  `/artifacts/junit-test-report.xml`.
+- It relies on the image's `NVKE_SITE_VALIDATE=true` and
+  `NVKE_E2E_REQUIRE_EXPECTED_VERSION=true`; without the second, a run with no
+  expected version would skip the version check, which reads as a pass.
+
+An image without these still runs, but reports nothing or checks less. The
+container runs as your own user and group, not the image's `65532`, so it can
+write `artifacts/` on your disk. It runs on the image's platform, so an
+`amd64`-only image on an Apple Silicon Mac runs emulated, and much slower.
 
 #### A site kept by `qualify local`
 
@@ -548,7 +570,7 @@ on Linux.
 | `--full` | Also run the `creates` checks: 26–31, and 37 on a tenant. | |
 | `--only <expr>` | A Ginkgo label expression the run is narrowed to, such as `readiness`. | |
 | `--dry-run` | List what would run, and run nothing. | |
-| `--image` | Run this image instead of building one. | See above. |
+| `--image` | Run this image instead of building one. | See [the image](#the-image). |
 | `--out` | Where the run's files go. | Default: `validate-<time>` under `--run-dir`, else `nvke/validate/<site>-<time>` under your user cache directory (`~/Library/Caches` on macOS, `~/.cache` on Linux). |
 
 Any `NVKE_*` or `NKE_E2E_*` variable in your environment reaches the image
@@ -569,9 +591,17 @@ read-only run, that includes creating and deleting the DNS probe pod in the
 probe namespace. From a workstation that namespace is `default` unless
 `NVKE_SITE_PROBE_NAMESPACE` names another. Where the controller
 authenticates its API, the identity also needs `create` on
-`serviceaccounts/token` for the `NKE_E2E_TOKEN_*` service account. An admin
-kubeconfig has all of this. Check 24 tests the runner's own identity only in
-a pod, so an admin identity does not fail it from a workstation.
+`serviceaccounts/token` for the `NKE_E2E_TOKEN_*` service account.
+
+That identity is what keeps the run from changing the site. The label
+filter is not a guard, as the Dockerfile notes. In a pod, the narrow service
+account of [running the image](#running-the-image) is. From a workstation,
+it is your kubeconfig's identity. An admin identity works, but then the
+filter `qualify validate` sets is all that holds the run to the specs it
+selects. `--only` narrows that filter and cannot widen it. On a shared site,
+use an identity bound to `deploy/validate-site.yaml`'s ClusterRole and Roles
+rather than an admin one. Check 24 tests the runner's own identity only in a
+pod, so an admin identity does not fail it from a workstation.
 
 The only credential the run writes is the kubeconfig it hands the
 container, kept in the run directory with mode `0600` and deleted when the
