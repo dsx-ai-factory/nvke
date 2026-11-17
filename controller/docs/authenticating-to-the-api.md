@@ -230,7 +230,9 @@ kubectl -n nvke-controller logs deploy/nvke-controller | grep '"logger":"auth"'
  "error":"not_admitted: subject \"system:serviceaccount:nke-outsiders:nke-outsider\" from issuer \"local-kubernetes\" matches no admission rule"}
 ```
 
-A successful request logs nothing, so don't read silence as failure.
+Authentication logs nothing for a successful request, so don't read silence as failure.
+Each `POST`, `PUT`, `PATCH` and `DELETE` also produces an `Audit` event naming the caller;
+see [See who changed a resource](../../docs/operate/api-authentication.md#see-who-changed-a-resource).
 
 ### Reading your own token
 

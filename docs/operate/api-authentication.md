@@ -272,6 +272,28 @@ The deploy path's own values turn authentication off. Every time you run the ins
 
 3. Call the API with a token from a user who is not in `<ADMITTED_GROUP>`. The response is `403` with the message `Not admitted: the authenticated identity matches no admission rule.`
 
+## See who changed a resource
+
+NVKE logs one `Audit` event at Info level for each `POST`, `PUT`, `PATCH` and `DELETE` to the API, in every mode.
+
+```bash
+kubectl -n nvke-controller logs deploy/nvke-controller | grep '"event":"api.audit"'
+```
+
+| Field | Value |
+|---|---|
+| `method`, `path` | The request method and path. |
+| `status` | The response status. |
+| `operation` | The API operation, such as `deleteCluster`. Absent when NVKE refused the request before it reached an operation, for example with `401` or a validation `400`. |
+| `issuer` | The `name` of the issuer that signed the caller's token. |
+| `subject` | The token's `sub`, cut to 128 bytes. |
+| `groups` | The token's `groups` claim: at most 32 groups, each cut to 128 bytes. Absent unless the claim is a list of strings. |
+| `groups_truncated` | `true` when NVKE dropped or cut a group. |
+| `admitted` | `true` when an admission rule matched the caller, `false` when none did. |
+| `reason` | Why NVKE refused the request, when it did. |
+
+A cut value ends in `... (truncated from <N> bytes)`. The caller fields are absent when no token verified, or when authentication is off. A caller with `admitted: false` was refused with `403` in enforcing mode, and was served in permissive mode. The event never contains the token.
+
 ## Next steps
 
 - [Create a workload cluster](../workload-clusters/create.md).

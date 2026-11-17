@@ -367,6 +367,58 @@ func TestMiddlewarePermissive(t *testing.T) {
 	}
 }
 
+// The observer hears about every verified caller, admitted or not, in both
+// modes, and about no one whose token did not verify. An unadmitted caller it
+// hears about still never reaches the request context.
+func TestMiddlewareObserver(t *testing.T) {
+	t.Parallel()
+
+	type observed struct {
+		subject  string
+		admitted bool
+	}
+	tests := []struct {
+		name  string
+		mode  auth.Mode
+		token func(*testing.T, fixture) string
+		want  []observed
+	}{
+		{"enforcing admitted", auth.ModeEnforcing, admittedToken, []observed{{admittedSubject, true}}},
+		{"enforcing unadmitted", auth.ModeEnforcing, unadmittedToken, []observed{{"system:serviceaccount:nke-outsiders:outsider", false}}},
+		{"enforcing forged", auth.ModeEnforcing, forgedToken, nil},
+		{"enforcing no token", auth.ModeEnforcing, nil, nil},
+		{"permissive admitted", auth.ModePermissive, admittedToken, []observed{{admittedSubject, true}}},
+		{"permissive unadmitted", auth.ModePermissive, unadmittedToken, []observed{{"system:serviceaccount:nke-outsiders:outsider", false}}},
+		{"permissive forged", auth.ModePermissive, forgedToken, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			f := newFixture(t)
+			next := &spyHandler{}
+			authn, err := auth.NewAuthenticator(f.verifier, tt.mode, slog.New(slog.DiscardHandler), nil)
+			require.NoError(t, err)
+
+			var got []observed
+			handler := authn.WithObserver(func(_ *http.Request, p *auth.Principal, admitted bool) {
+				got = append(got, observed{p.Subject, admitted})
+			}).Wrap(next)
+
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, probePath, http.NoBody)
+			if tt.token != nil {
+				req.Header.Set("Authorization", "Bearer "+tt.token(t, f))
+			}
+			handler.ServeHTTP(httptest.NewRecorder(), req)
+
+			assert.Equal(t, tt.want, got)
+			if saw := next.saw(); saw.called && len(tt.want) == 1 && !tt.want[0].admitted {
+				assert.False(t, saw.hadPrincipal, "an unadmitted caller is never put on the request context")
+			}
+		})
+	}
+}
+
 // Prometheus keeps one series per label combination forever, so a caller-supplied
 // issuer label would let anyone reaching the API mint series at will.
 func TestMiddlewareIssuerLabelIsNotCallerSupplied(t *testing.T) {
