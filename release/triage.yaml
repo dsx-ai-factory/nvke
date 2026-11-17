@@ -1,0 +1,148 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What a failed qualification job means, and what may be done about it.
+# `triage classify` reads a job's log and the name of its failed step, tries
+# these rules in order, and the first match wins: a specific rule goes before a
+# general one. `triage validate` checks this file.
+#
+#   name    identifies the rule in a report; unique.
+#   class   the failure it names. Rules that mean the same thing share one.
+#   step    optional regular expression for the failed step's name.
+#   match   regular expression for the evidence: the runner's error lines, the
+#           first Ginkgo failure, and the output just before the first error.
+#           It never sees the workflow's own shell source.
+#   action  what may be done about it automatically:
+#             none               leave it to a person
+#             rerun-failed       re-run the failed jobs of the run, once
+#             rerun-image-build  re-run the OS image build's failed jobs first
+#             wait-then-rerun    wait before the single re-run
+#   note    what it means and what to do, for a person.
+#
+# An action is a recommendation. A rule that names rerun-failed says a re-run
+# has fixed this failure before; it does not say why it failed. Add one only
+# with a failure seen at least three times and a re-run that fixed it.
+
+rules:
+  - name: os-image-not-published
+    class: os-image-not-published
+    step: Check every artifact
+    match: 'os-image/releases/\S+ exists: HTTP 403'
+    action: rerun-image-build
+    note: >-
+      The OS image for this tag is not published. Open the OS Image Artifact
+      run for the tag. If its build failed, read why (an unreachable Ubuntu
+      archive is transient), re-run its failed jobs, confirm every publish job
+      passes, then re-run the qualification. On a dispatch, the version has no
+      images: use a published one.
+
+  - name: registry-image-not-published
+    class: registry-image-not-published
+    step: Check every artifact
+    match: 'is not published: the registry has no'
+    action: none
+    note: >-
+      A controller or CLI image for this tag is not on the registry. Check the
+      image workflows for the tag.
+
+  - name: resolved-inputs-row-missing
+    class: resolved-inputs-row-missing
+    step: Record the resolved inputs
+    match: 'the resolved-inputs table does not cover'
+    action: none
+    note: >-
+      A workflow input has no row in the resolved-inputs table, which fails
+      every stream. Add the row and its IN_ environment variable in a pull
+      request. The check reads the whole workflow, so a tag push fails too.
+
+  - name: plan-dependency-constraint
+    class: plan-dependency-constraint
+    step: ^Plan$
+    match: 'resolving \S+ for \S+: .*(does not match the constraint|serves no version|does not serve)'
+    action: none
+    note: >-
+      A pinned dependency version is not served for every suite and
+      architecture. Fix the pin or publish the version.
+
+  - name: teleport-identity-missing
+    class: teleport-identity-missing
+    match: 'tbot wrote no identity'
+    action: none
+    note: >-
+      The Teleport bot wrote no identity, so the run cannot reach the jump host.
+      A trust problem, not an expired credential. Read tbot.log.
+
+  - name: site-inputs-stale
+    class: site-inputs-stale
+    match: 'validated at attempt \d+, not this attempt|Artifact not found for name: qualify-site-inputs'
+    action: none
+    note: >-
+      The site-inputs artifact is missing or from another attempt. Re-run the
+      validate job, not only the failed streams.
+
+  - name: forge-no-usable-allocation
+    class: forge-capacity
+    match: 'forge has no usable allocation for this run'
+    action: wait-then-rerun
+    note: >-
+      Forge has no unused machine of the type this run needs. This is capacity:
+      the suite refused before taking one. Wait, then re-run once. Check the
+      site for leaked or terminating instances.
+
+  - name: forge-allocation-forbidden
+    class: forge-access
+    match: 'reading allocation stats .*403 Forbidden'
+    action: none
+    note: >-
+      The Forge key cannot read allocation stats for this instance type. Fix
+      the key's permissions.
+
+  - name: tenant-control-plane-never-joined
+    class: tenant-control-plane-join
+    match: 'has not progressed for \S+ of its \S+: provisioning still reports "Waiting for a control plane node to be ready to join"'
+    action: rerun-failed
+    note: >-
+      Forge allocated the machine and the control plane never joined. Cause
+      unknown; every recorded case passed on a plain re-run. Do not file it as
+      capacity. Collect tenant-diagnostics.json.
+
+  - name: jump-host-unreachable
+    class: forge-node-unreachable
+    match: 'not reachable through .* after \S+'
+    action: rerun-failed
+    note: >-
+      A node Forge reported Ready never answered over the jump host (ssh
+      handshake EOF, a relogin refused in a non-interactive session, or a
+      deadline). Re-run once; if it repeats, collect tbot.log and the console.
+
+  - name: node-readiness-timeout
+    class: tenant-node-not-ready
+    match: '(?s)node_readiness_test\.go.*Timed out after'
+    action: rerun-failed
+    note: >-
+      A tenant node never became Ready within its budget. Re-run once and
+      collect tenant-diagnostics.json.
+
+  - name: site-cloud-init-failed
+    class: site-cloud-init
+    match: 'cloud-init on \S+ failed, and node preflight would reject it'
+    action: none
+    note: >-
+      A runcmd failed on the site node. Read the cloud-init log in the failure
+      bundle.
+
+  - name: cert-manager-deadline
+    class: site-cert-manager
+    match: 'Waiting for cert-manager to be available\.\.\.(\s|\\n)+Error:'
+    action: none
+    note: >-
+      cert-manager did not become available during clusterctl init. Read the
+      failure bundle.
+
+  - name: environment-declaration-incomplete
+    class: environment-config
+    match: 'no jump host for site|no declared site offers|is not provision, bootstrap or full'
+    action: none
+    note: >-
+      The environment or site declaration is incomplete. This fails in under a
+      second at suite setup. Fix the declaration.

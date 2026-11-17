@@ -94,6 +94,19 @@ notifications:
     message_template: |
       Stream *{{.Event.stream}}* failed at stage `{{.Event.stage}}` · <{{.Context.run_url}}|Run #{{.Context.run_number}}>
 
+  # What the triage rules (release/triage.yaml) make of a failed job. It follows
+  # the failure message in the same thread, from a separate workflow, so the run
+  # it is about is passed in and the link is to that run and not to the triage.
+  # A diagnosis, not an alert: it does not mention anyone, because the failure
+  # message already did.
+  - name: triage-finding
+    title: "🔎 Triage: {{.Event.class}}"
+    severity: warning
+    message_template: |
+      *{{.Event.stream}}* failed at `{{.Event.step}}` (attempt {{.Event.attempt}}) · suggested action: *{{.Event.action}}*
+      {{.Event.note}}
+      Matched: `{{.Event.evidence}}` · <{{.Event.run_url}}|the failed run>
+
   # The outcome, one notification each, so the colour says which it was. The
   # severity of a notification is fixed, so a single one would show a failure in
   # the same blue as a pass.
@@ -134,6 +147,8 @@ subscriptions:
         notification: stream-started
       - name: "qualification:stream-passed"
         notification: stream-passed
+      - name: "qualification:triage"
+        notification: triage-finding
       - name: "qualification:passed"
         notification: qualification-passed
       - name: "qualification:stopped"
