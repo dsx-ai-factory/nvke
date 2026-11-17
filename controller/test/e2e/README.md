@@ -577,7 +577,7 @@ container can read your kubeconfig and write `artifacts/`:
 mkdir -p artifacts
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$PWD/artifacts:/artifacts" -v "$HOME/.kube/config:/kube/config:ro" \
-  -e KUBECONFIG=/kube/config -e NVKE_CONTROLLER_EXPECTED_VERSION=v0.3.0 \
+  -e KUBECONFIG=/kube/config -e NVKE_CONTROLLER_EXPECTED_VERSION=v0.23.1 \
   -e NVKE_SITE_KUBERNETES_VERSION=v1.34.2 nvke-validate:local
 ```
 
@@ -594,8 +594,8 @@ Build from the release tag of the controller the site runs, the same version
 the site pins: `v<version>`, or `controller/v<version>` for a controller
 released before one `vX.Y.Z` tag released every component. Never build from
 `main`: its suite tests the next controller, not the one installed. The
-Dockerfile first shipped in `controller/v0.3.0`; earlier tags have no image to
-build.
+Dockerfile first shipped in `v0.23.0`, and in `controller/v0.3.0` the same
+day; earlier tags have no image to build.
 
 `validate-image-oci` and `validate-image-push` build for two platforms and
 write an OCI archive or push, which Docker's default `docker` builder driver
@@ -608,14 +608,14 @@ docker buildx create --name nvke --driver docker-container --bootstrap --use
 ```
 
 ```bash
-git clone --branch controller/v0.3.0 --depth 1 https://github.com/dsx-ai-factory/nvke.git nvke-v0.3.0
-cd nvke-v0.3.0
-make -C controller/test/e2e validate-image-oci VALIDATE_VERSION=v0.3.0
+git clone --branch v0.23.1 --depth 1 https://github.com/dsx-ai-factory/nvke.git nvke-v0.23.1
+cd nvke-v0.23.1
+make -C controller/test/e2e validate-image-oci VALIDATE_VERSION=v0.23.1
 cat controller/test/e2e/bin/validate-image-digest.txt
 ```
 
-`validate-image-push VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.3.0`
-pushes it to the site's own registry instead, as `<repository>:v0.3.0`.
+`validate-image-push VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.23.1`
+pushes it to the site's own registry instead, as `<repository>:v0.23.1`.
 `<repository>` is the whole repository path, such as
 `registry.example.com/nvke-validate`. Either target derives the rest from the
 checkout.
@@ -631,10 +631,10 @@ a token with read access as the `GIT_AUTH_TOKEN` secret; otherwise drop the
 docker buildx build -f controller/test/e2e/Dockerfile \
   --platform linux/amd64,linux/arm64 --provenance=false --sbom=false \
   --build-arg SOURCE_DATE_EPOCH=<commit time> \
-  --build-arg VALIDATE_VERSION=v0.3.0 --build-arg VALIDATE_REVISION=<commit> \
+  --build-arg VALIDATE_VERSION=v0.23.1 --build-arg VALIDATE_REVISION=<commit> \
   --secret id=GIT_AUTH_TOKEN,env=GIT_AUTH_TOKEN \
-  --output type=image,name=<repository>:v0.3.0,push=true,oci-mediatypes=true,rewrite-timestamp=true \
-  'https://github.com/dsx-ai-factory/nvke.git#controller/v0.3.0'
+  --output type=image,name=<repository>:v0.23.1,push=true,oci-mediatypes=true,rewrite-timestamp=true \
+  'https://github.com/dsx-ai-factory/nvke.git#v0.23.1'
 ```
 
 Arguments that change where things come from, not what, keep the digest:
@@ -650,14 +650,14 @@ Any other change, such as the platforms or attestations added with
 ### Keeping a site's image current
 
 A site needs one image per controller version it runs, not the newest one.
-Build each controller release tag, `controller/vX.Y.Z` or
-`controller/vX.Y.Z-rc.N`, when it appears, and push it to the site's registry
-under that version:
+Build each release tag, `vX.Y.Z` or `vX.Y.Z-rc.N`, when it appears, and push
+it to the site's registry under that version. The nightly `vX.Y.Z-beta.N` tags
+are not releases:
 
 ```bash
-git ls-remote --tags --refs https://github.com/dsx-ai-factory/nvke.git 'controller/v*'
-ver=v0.3.0   # a tag the site's registry does not have yet
-git clone --branch "controller/${ver}" --depth 1 https://github.com/dsx-ai-factory/nvke.git "nvke-${ver}"
+git ls-remote --tags --refs https://github.com/dsx-ai-factory/nvke.git 'v*' | grep -v -- '-beta\.'
+ver=v0.23.1   # a tag the site's registry does not have yet
+git clone --branch "${ver}" --depth 1 https://github.com/dsx-ai-factory/nvke.git "nvke-${ver}"
 make -C "nvke-${ver}/controller/test/e2e" validate-image-push VALIDATE_VERSION="${ver}" \
   VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS="${ver}"
 ```
@@ -680,18 +680,26 @@ changed.
 
 [`deploy/validate-site.yaml`](deploy/validate-site.yaml) runs the site checks
 as a Job in an `nvke-validate` namespace, with the RBAC above, and keeps the
-results on a claim.
+results on a claim. To run the image from a workstation instead, see
+[from a workstation](#from-a-workstation).
 
-Early release tags, `controller/v0.3.0` among them, have no
-`controller/test/e2e/deploy/`. Where the site's tag has it, use the manifests
-from the checkout the image was built from; otherwise take them from `main`,
-keeping the image built from the release tag. Run these from the
-directory that holds the checkout, with the kube context pointing at the
-site:
+The Job runs every `site-validate` check, the `creates` ones included. For a
+run that creates nothing, give its container
+`args: ["-ginkgo.label-filter=site-validate && !creates"]`; the `ENTRYPOINT`
+keeps its report paths ahead of them. On a site other teams share, set
+`NVKE_SITE_SCOPE` as [a shared site](#a-shared-site) describes. An image built
+from a tag whose README does not document `NVKE_SITE_SCOPE` or
+[validation profiles](#validation-profile) ignores them.
+
+Release tags up to `v0.23.1` have no `controller/test/e2e/deploy/`. Where the
+site's tag has it, use the manifests from the checkout the image was built
+from; otherwise take them from `main`, keeping the image built from the
+release tag. Run these from the directory that holds the checkout, with the
+kube context pointing at the site:
 
 ```bash
-ver=v0.3.0                                  # the site's controller version
-image=<repository>:${ver}                   # pushed from controller/${ver} above
+ver=v0.23.1                                 # the site's controller version
+image=<repository>:${ver}                   # pushed from ${ver} above
 git clone --depth 1 https://github.com/dsx-ai-factory/nvke.git nvke-main   # only for a tag without deploy/
 deploy=nvke-main/controller/test/e2e/deploy   # or nvke-${ver}/controller/test/e2e/deploy
 k8s=<version>                               # the Kubernetes version the site is meant to run
@@ -810,7 +818,7 @@ the release tag rather than editing this Dockerfile, so the suite stays the one
 that shipped:
 
 ```dockerfile
-FROM <repository>:v0.3.0
+FROM <repository>:v0.23.1
 USER 0
 RUN apk add --no-cache curl
 USER 65532:65532
