@@ -107,7 +107,7 @@ Add a label to a pull request from a branch of this repository:
 | `qualify-e2e` | the scope in `QUALIFY_E2E_SCOPE`, or `golden-path` when that is unset |
 | `qualify-e2e-l40s` | the `l40s` scope |
 | `qualify-e2e-dsx` | the `dsx` scope |
-| `qualify-e2e-dsx-gb300` | the `dsx-gb300` scope, at stage `full` |
+| `qualify-e2e-dsx-gb300` | the `dsx-gb300` scope, at stage `full` by default |
 | `qualify-e2e-dry-run` | a dry run |
 
 A pull request has no dispatch inputs, so a labelled run takes them from the
