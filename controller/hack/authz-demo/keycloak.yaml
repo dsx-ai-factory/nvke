@@ -1,0 +1,104 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Keycloak for the authorization demo (README.md). Demo only: the admin
+# password, user passwords and client secret are committed on purpose.
+#
+# The Tiltfile creates what this mounts, from hack/authz-demo/gen.sh output:
+#   Secret keycloak-tls        tls.crt, tls.key: the serving certificate
+#   Secret keycloak-realm-key  NVKE_DEMO_REALM_KEY, NVKE_DEMO_REALM_CERT
+#   ConfigMap keycloak-realm   realm-nvke.json
+#
+# The realm is imported at every start, and nothing is persisted, so a restart
+# returns Keycloak to the realm file. The realm's signing key comes from the
+# Secret, so it survives a restart too.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: nvke-authz-demo
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: keycloak
+  namespace: nvke-authz-demo
+spec:
+  selector:
+    app: keycloak
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak
+  namespace: nvke-authz-demo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: keycloak
+  template:
+    metadata:
+      labels:
+        app: keycloak
+    spec:
+      containers:
+        - name: keycloak
+          image: quay.io/keycloak/keycloak:26.8.2
+          args: ["start-dev", "--import-realm"]
+          env:
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
+              value: admin
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
+              value: admin
+            # Every token's iss is this URL, whichever address the request
+            # used, so a token fetched through a port-forward still names the
+            # issuer the controller trusts.
+            - name: KC_HOSTNAME
+              value: https://keycloak.nvke-authz-demo.svc
+            - name: KC_HTTP_ENABLED
+              value: "false"
+            - name: KC_HTTPS_PORT
+              value: "8443"
+            - name: KC_HTTPS_CERTIFICATE_FILE
+              value: /etc/keycloak/tls/tls.crt
+            - name: KC_HTTPS_CERTIFICATE_KEY_FILE
+              value: /etc/keycloak/tls/tls.key
+          envFrom:
+            - secretRef:
+                name: keycloak-realm-key
+          ports:
+            - name: https
+              containerPort: 8443
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              port: https
+              path: /realms/nvke/protocol/openid-connect/certs
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: tls
+              mountPath: /etc/keycloak/tls
+              readOnly: true
+            - name: realm
+              mountPath: /opt/keycloak/data/import
+              readOnly: true
+      volumes:
+        - name: tls
+          secret:
+            secretName: keycloak-tls
+        - name: realm
+          configMap:
+            name: keycloak-realm

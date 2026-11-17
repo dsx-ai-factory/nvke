@@ -1,0 +1,152 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Teleport for the authorization demo (README.md): one process running the
+# auth service, the proxy and the app service. The app nvke fronts the NVKE
+# controller API and passes the caller's Teleport JWT as the bearer token.
+#
+# The image is a local AGPL source build, loaded into kind (README.md). It has
+# no web UI, so callers present an app certificate from tctl auth sign.
+#
+# The Tiltfile creates what this mounts, from hack/authz-demo/gen.sh output and
+# teleport-resources.yaml:
+#   Secret teleport-tls           tls.crt (leaf then CA), tls.key, ca.crt
+#   ConfigMap teleport-resources  resources.yaml: the roles and users
+#
+# Nothing is persisted, so a restart loses the users, roles and signing keys;
+# demo.sh --setup creates the users and roles again.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: teleport-config
+  namespace: nvke-authz-demo
+data:
+  teleport.yaml: |
+    version: v3
+    teleport:
+      nodename: teleport
+      data_dir: /var/lib/teleport
+      log:
+        output: stderr
+        severity: INFO
+    auth_service:
+      enabled: true
+      cluster_name: teleport.nvke-demo.local
+      listen_addr: 0.0.0.0:3025
+      proxy_listener_mode: multiplex
+      proxy_protocol: off
+      authentication:
+        type: local
+        # ES256 app JWTs.
+        signature_algorithm_suite: balanced-v1
+    proxy_service:
+      enabled: true
+      web_listen_addr: 0.0.0.0:3080
+      # The controller fetches the JWKS by the Service name. Teleport serves
+      # only hosts listed here, and treats any other host as an app.
+      public_addr:
+        - teleport.nvke-demo.local:3080
+        - teleport.nvke-authz-demo.svc:3080
+      https_keypairs:
+        - key_file: /etc/teleport/tls/tls.key
+          cert_file: /etc/teleport/tls/tls.crt
+    ssh_service:
+      enabled: false
+    app_service:
+      enabled: true
+      apps:
+        - name: nvke
+          # A token's aud is exactly this string, so the controller's teleport
+          # issuer lists it as its audience (gen.sh).
+          uri: http://nvke-controller.nvke-controller.svc.cluster.local:8080
+          public_addr: nvke.teleport.nvke-demo.local
+          labels:
+            app: nvke
+          rewrite:
+            headers:
+              - "Authorization: Bearer {{internal.jwt}}"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: teleport
+  namespace: nvke-authz-demo
+spec:
+  selector:
+    app: teleport
+  ports:
+    - name: https
+      port: 3080
+      targetPort: https
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: teleport
+  namespace: nvke-authz-demo
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: teleport
+  template:
+    metadata:
+      labels:
+        app: teleport
+    spec:
+      # The app service registers by dialing the proxy's public_addr, which is
+      # this pod.
+      hostAliases:
+        - ip: 127.0.0.1
+          hostnames: [teleport.nvke-demo.local]
+      containers:
+        - name: teleport
+          image: nvke-demo/teleport:18.11.1-agpl
+          imagePullPolicy: Never
+          args: ["start", "-c", "/etc/teleport/config/teleport.yaml"]
+          env:
+            # The proxy refuses to start on a certificate chain it can't verify.
+            - name: SSL_CERT_FILE
+              value: /etc/teleport/tls/ca.crt
+          ports:
+            - name: https
+              containerPort: 3080
+          readinessProbe:
+            httpGet:
+              scheme: HTTPS
+              port: https
+              path: /.well-known/jwks.json
+            periodSeconds: 5
+            failureThreshold: 60
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+          volumeMounts:
+            - name: config
+              mountPath: /etc/teleport/config
+              readOnly: true
+            - name: tls
+              mountPath: /etc/teleport/tls
+              readOnly: true
+            - name: resources
+              mountPath: /etc/teleport/resources
+              readOnly: true
+            - name: data
+              mountPath: /var/lib/teleport
+      volumes:
+        - name: config
+          configMap:
+            name: teleport-config
+        - name: tls
+          secret:
+            secretName: teleport-tls
+        - name: resources
+          configMap:
+            name: teleport-resources
+        - name: data
+          emptyDir: {}

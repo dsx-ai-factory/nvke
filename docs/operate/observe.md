@@ -119,6 +119,7 @@ The series that answer the most common questions:
 | `nvke_controller_node_provisioning_giveups_total` | `cluster_name`, `node_pool_name` | Worker nodes that NVKE deleted because provisioning took longer than its timeout. |
 | `nvke_controller_node_teardown_duration_seconds`, `nvke_controller_node_teardown_total` | `tenant_cluster`, `node_type`, `result` | Node deletion time and outcomes. |
 | `nvke_auth_requests_total`, `nvke_auth_enabled` | `outcome`, `reason`, `issuer`; `mode` | API authentication decisions and the active mode. See [Secure the NVKE API](api-authentication.md). |
+| `nvke_authz_decisions_total`, `nvke_authz_enabled`, `nvke_authz_bundle_reload_failures_total` | `outcome`, `action`; `mode`; none | API authorization decisions, the active mode, and failed bundle reloads. See [Authorize API callers by role](api-authorization.md#metrics). |
 
 `node_type` is `cp` for control-plane nodes and `worker` for workers. The `tenant_cluster` label holds the workload cluster's name.
 
