@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/pkg/resolve"
 )
 
 // fake is a resolver that answers from a function and remembers what it was
@@ -555,4 +555,43 @@ func cmpOr(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// A subject kept apart from the tree being qualified is read from the file the
+// planner is given, so nothing has to sit where SubjectPath looks.
+func TestPlanReadsTheSubjectFromSubjectFile(t *testing.T) {
+	p := newPlanner(t, testSubject, newResolvers())
+	if err := os.Remove(SubjectPath(p.Root, SubjectNVKE)); err != nil {
+		t.Fatal(err)
+	}
+	p.SubjectFile = filepath.Join(t.TempDir(), "qualification.yaml")
+	if err := os.WriteFile(p.SubjectFile, []byte(testSubject), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := p.Plan("nvke", "", "full")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Subject != "nvke" || len(got.Combinations) != 1 {
+		t.Errorf("plan is %s over %d combinations, want nvke over 1", got.Subject, len(got.Combinations))
+	}
+}
+
+// The file that was named wins over the one under the root, and is the one
+// reported when it describes another subject.
+func TestPlanNamesTheSubjectFileItWasGiven(t *testing.T) {
+	p := newPlanner(t, testSubject, newResolvers())
+	p.SubjectFile = filepath.Join(t.TempDir(), "qualification.yaml")
+	// A subject file must agree with itself before the planner compares it with
+	// the subject asked for, so both names change.
+	other := strings.NewReplacer("name: nvke\n", "name: other\n", "subject: nvke\n", "subject: other\n").Replace(testSubject)
+	if err := os.WriteFile(p.SubjectFile, []byte(other), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := p.Plan("nvke", "", "full")
+	if err == nil || !strings.Contains(err.Error(), p.SubjectFile+` describes "other", not "nvke"`) {
+		t.Errorf("err = %v, want it to name %s", err, p.SubjectFile)
+	}
 }

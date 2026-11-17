@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/pkg/resolve"
 )
 
 // imageSubject lists the os-image artifacts as dependencies. The images depend on

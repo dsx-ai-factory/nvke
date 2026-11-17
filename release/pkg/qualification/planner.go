@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
+	"github.com/dsx-ai-factory/nvke/release/pkg/resolve"
 )
 
 // SelectorLatest is the only selector that exists. Anything else in a
@@ -18,7 +18,9 @@ import (
 // ignoring it would resolve the component by a rule nobody wrote.
 const SelectorLatest = "latest"
 
-// Planner resolves what to qualify. It owns no state between calls.
+// Planner resolves what to qualify. It keeps no state between calls, and it is
+// not safe for concurrent use: Plan records the commit it resolved on the
+// Planner while it runs.
 type Planner struct {
 	// Policy is the matrix and the scopes over it.
 	Policy *Policy
@@ -32,7 +34,9 @@ type Planner struct {
 	VersionResolvers  map[string]resolve.Resolver
 	LocationResolvers map[string]resolve.Resolver
 
-	// Root is the repository root, where subject files are found.
+	// Root is the repository root: the tree the resolvers that read git history
+	// or files resolve against, and where subject files are found unless
+	// SubjectFile names one.
 	Root string
 
 	// Overrides are versions a person chose for components and dependencies,
@@ -52,7 +56,16 @@ type Planner struct {
 	// commit-shaped answer ignore it, the way a resolver that does not choose
 	// ignores a select. An override still wins, so a version a person named
 	// means the same thing either way.
+	//
+	// The subject's version resolver must return resolve.ResultRefKey naming a
+	// commit in the tree at Root, or planning fails.
 	ResolveAtCommit bool
+
+	// SubjectFile is the subject's qualification.yaml. Empty means the file
+	// SubjectPath names under Root, which is right when the subject lives in
+	// the tree being qualified. A subject kept apart from that tree names its
+	// file here.
+	SubjectFile string
 
 	// commit is what ResolveAtCommit resolved to, kept for the plan to record.
 	commit string
@@ -63,12 +76,20 @@ type Planner struct {
 // An empty version means the subject's own highest version, which resolves the
 // way every other component does.
 func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
-	s, err := LoadSubject(SubjectPath(p.Root, subject))
+	// A Planner used for another plan starts without the commit the last one
+	// resolved, so neither the plan nor the resolvers are handed a stale one.
+	p.commit = ""
+
+	subjectFile := p.SubjectFile
+	if subjectFile == "" {
+		subjectFile = SubjectPath(p.Root, subject)
+	}
+	s, err := LoadSubject(subjectFile)
 	if err != nil {
 		return nil, err
 	}
 	if s.Spec.Subject != subject {
-		return nil, fmt.Errorf("%s describes %q, not %q", SubjectPath(p.Root, subject), s.Spec.Subject, subject)
+		return nil, fmt.Errorf("%s describes %q, not %q", subjectFile, s.Spec.Subject, subject)
 	}
 	if err := Check(p.Policy, p.Registry, s, p.VersionResolvers, p.LocationResolvers); err != nil {
 		return nil, err
@@ -96,6 +117,11 @@ func (p *Planner) Plan(subject, version, scope string) (*Plan, error) {
 		// From the ref the subject resolved to, whether a person named the
 		// version or the tags answered, so one run has one commit and it is
 		// always the one the version points at.
+		if ref == "" {
+			return nil, fmt.Errorf("the version resolver for %s returned no %s to describe it at: "+
+				"return one that names a commit in the tree at Root, or plan without ResolveAtCommit",
+				subject, resolve.ResultRefKey)
+		}
 		if p.commit, err = resolve.CommitOf(p.Root, ref); err != nil {
 			return nil, fmt.Errorf("the commit to describe %s at: %w", subject, err)
 		}

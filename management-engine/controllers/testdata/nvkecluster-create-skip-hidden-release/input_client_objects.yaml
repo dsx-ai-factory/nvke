@@ -32,9 +32,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: hidden-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.8"
 spec:
+  kubernetes:
+    version: "1.34.8"
   machineImageRef:
     name: test-image
   machineInit:
@@ -53,9 +53,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: eligible-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.8"
 spec:
+  kubernetes:
+    version: "1.34.8"
   machineImageRef:
     name: test-image
   machineInit:

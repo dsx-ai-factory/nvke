@@ -32,9 +32,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: test-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.1"
 spec:
+  kubernetes:
+    version: "1.36.1"
   machineImageRef:
     name: test-image
   machineInit:
@@ -53,7 +53,7 @@ spec:
         - "echo success > /run/cluster-api/bootstrap-success.complete"
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-test-release
 spec:

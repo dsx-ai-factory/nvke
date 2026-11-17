@@ -5,7 +5,7 @@
 resources:
 - bases/service.nvke.nvidia.com_machineimages.yaml
 - bases/service.nvke.nvidia.com_clusterreleases.yaml
-- bases/service.nvke.nvidia.com_nodepoolreleases.yaml
+- bases/service.nvke.nvidia.com_nodeprofiles.yaml
 - bases/service.nvke.nvidia.com_nvkeclusters.yaml
 - bases/service.nvke.nvidia.com_controlplaneclasses.yaml
 - bases/service.nvke.nvidia.com_clusterreleasechannels.yaml

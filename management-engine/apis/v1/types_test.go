@@ -79,16 +79,17 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 			object: &ClusterRelease{
 				Name: "nvke-nico-vms-24.04-amd64-fde",
 				Spec: ClusterReleaseSpec{
+					Kubernetes:      ClusterReleaseKubernetes{Version: "1.36.3"},
 					MachineImageRef: MachineImageReference{Name: "nvke-nico-vms-24.04-amd64-fde"},
 					MachineInit:     testMachineInit(),
 				},
 			},
 		},
 		{
-			resource: "nodepoolreleases", kind: "NodePoolRelease",
-			object: &NodePoolRelease{
+			resource: "nodeprofiles", kind: "NodeProfile",
+			object: &NodeProfile{
 				Name: "nvke-nico-vms-24.04-amd64-fde",
-				Spec: NodePoolReleaseSpec{
+				Spec: NodeProfileSpec{
 					MachineImageRef: MachineImageReference{Name: "nvke-nico-vms-24.04-amd64-fde"},
 					MachineInit:     testMachineInit(),
 					Profile:         "ubuntu",
@@ -136,7 +137,7 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 		})
 	}
 
-	for _, kind := range []string{"NVKEClusterList", "MachineImageList", "ClusterReleaseList", "NodePoolReleaseList", "ControlPlaneClassList"} {
+	for _, kind := range []string{"NVKEClusterList", "MachineImageList", "ClusterReleaseList", "NodeProfileList", "ControlPlaneClassList"} {
 		if _, err := scheme.New(GroupVersion.WithKind(kind)); err != nil {
 			t.Fatal(err)
 		}
@@ -249,7 +250,7 @@ func TestLifecycleEditRoundTripsThroughGoTypes(t *testing.T) {
 				release.Spec.Lifecycle.Deprecated = true
 				updated = decodeJSON[map[string]any](t, encodeJSON(t, release))
 			default:
-				release := decodeJSON[NodePoolRelease](t, encodeJSON(t, published))
+				release := decodeJSON[NodeProfile](t, encodeJSON(t, published))
 				release.Spec.Lifecycle.Deprecated = true
 				updated = decodeJSON[map[string]any](t, encodeJSON(t, release))
 			}

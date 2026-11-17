@@ -12,7 +12,7 @@ import (
 
 	"github.com/onsi/ginkgo/v2/reporters"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
+	"github.com/dsx-ai-factory/nvke/release/pkg/qualification"
 )
 
 const (

@@ -30,9 +30,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: build-b-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.34.0"
 spec:
+  kubernetes:
+    version: "1.34.0"
   machineImageRef:
     name: test-image
   machineInit:

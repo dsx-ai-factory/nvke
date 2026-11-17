@@ -48,8 +48,8 @@ func TestReleaseLifecycleDefaults(t *testing.T) {
 			},
 		},
 		{
-			name:     "NodePoolReleaseWithLifecycleOmitted",
-			inputGVR: GroupVersion.WithResource("nodepoolreleases"),
+			name:     "NodeProfileWithLifecycleOmitted",
+			inputGVR: GroupVersion.WithResource("nodeprofiles"),
 			inputResourcePathFn: func(t *testing.T) string {
 				return wellKnownInputResourcePath(t)
 			},

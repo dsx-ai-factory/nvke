@@ -3,6 +3,6 @@
 
 # The unchanged cluster is already running the exact requested suffix.
 id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
-resolvedRelease:
+currentRelease:
   name: release-a
   version: 1.34.4

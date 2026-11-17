@@ -147,9 +147,9 @@ type NVKEClusterStatus struct {
 	// +listMapKey=type
 	// +kubebuilder:validation:MaxItems=32
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
-	// ResolvedRelease identifies the control-plane release selected for this cluster.
+	// CurrentRelease identifies the control-plane release currently configured in the NVKE controller.
 	// +optional
-	ResolvedRelease *ReleaseReference `json:"resolvedRelease,omitempty"`
+	CurrentRelease *ReleaseReference `json:"currentRelease,omitempty"`
 	// NodePools reports the observed state of each pool, identified by its name in spec.nodePools.
 	// +optional
 	// +listType=map

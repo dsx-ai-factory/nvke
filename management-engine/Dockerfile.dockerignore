@@ -9,4 +9,7 @@
 !controller/api/go.mod
 !controller/api/go.sum
 !controller/api/openapi.yaml
+!auth/**/*.go
+!auth/go.mod
+!auth/go.sum
 **/*_test.go
