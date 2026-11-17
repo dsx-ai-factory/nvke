@@ -151,6 +151,8 @@ func translate[E any](err error) error {
 					e.Errors = append(e.Errors, FieldError{
 						Field: p, Code: invalidCode, Message: "The field does not satisfy the resource schema.",
 					})
+				} else if fieldError, ok := admissionPolicyError[E](cause); ok {
+					e.Errors = append(e.Errors, fieldError)
 				}
 			}
 		}
@@ -158,6 +160,38 @@ func translate[E any](err error) error {
 	default:
 		return problem(http.StatusServiceUnavailable, datastoreUnavailableCode, "The datastore is unavailable.")
 	}
+}
+
+// admissionPolicyErrors holds the approved diagnostic for each admission policy in config/admission/policies.
+// Field is a datastore path, mapped to the public JSON shape like a schema cause.
+var admissionPolicyErrors = map[string]FieldError{
+	"unique-node-profile.service.nvke.nvidia.com": {
+		Field: "spec.tag", Code: invalidCode, Message: "Another node profile already publishes this profile and tag.",
+	},
+}
+
+// admissionPolicyError maps a ValidatingAdmissionPolicy denial to its approved diagnostic.
+// The API server reports a denial as a cause with no field and a message naming the policy.
+func admissionPolicyError[E any](cause metav1.StatusCause) (FieldError, bool) {
+	if cause.Field != "" {
+		return FieldError{}, false
+	}
+	rest, ok := strings.CutPrefix(cause.Message, "ValidatingAdmissionPolicy '")
+	if !ok {
+		return FieldError{}, false
+	}
+	name, _, ok := strings.Cut(rest, "'")
+	if !ok {
+		return FieldError{}, false
+	}
+	fieldError, ok := admissionPolicyErrors[name]
+	if !ok {
+		return FieldError{}, false
+	}
+	if fieldError.Field, ok = publicPath[E](fieldError.Field); !ok {
+		return FieldError{}, false
+	}
+	return fieldError, true
 }
 
 // publicPath checks a datastore field against the public JSON type using a null-valued probe.

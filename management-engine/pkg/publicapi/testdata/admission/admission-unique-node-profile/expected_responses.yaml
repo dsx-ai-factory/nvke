@@ -1,12 +1,16 @@
 - body:
     code: invalidResource
+    errors:
+    - code: invalid
+      field: /spec/tag
+      message: Another node profile already publishes this profile and tag.
     status: 422
     title: The desired state is invalid.
   headers:
     Cache-Control:
     - no-store
     Content-Length:
-    - "80"
+    - "203"
     Content-Type:
     - application/problem+json
     Date:
