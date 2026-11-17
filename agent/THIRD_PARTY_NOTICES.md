@@ -60,9 +60,9 @@ commands are not listed, because they are not distributed.
 | [github.com/munnerz/goautoneg](https://pkg.go.dev/github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822) | BSD-3-Clause | github.com/munnerz/goautoneg@v0.0.0-20191010083416-a7dc8b61c822 |
 | [github.com/opencontainers/go-digest](https://pkg.go.dev/github.com/opencontainers/go-digest@v1.0.0) | Apache-2.0 | github.com/opencontainers/go-digest@v1.0.0 |
 | [github.com/opencontainers/image-spec/specs-go](https://pkg.go.dev/github.com/opencontainers/image-spec@v1.1.1) | Apache-2.0 | github.com/opencontainers/image-spec@v1.1.1 |
-| [github.com/pandatix/go-abnf](https://pkg.go.dev/github.com/pandatix/go-abnf@v0.5.3) | MIT | github.com/pandatix/go-abnf@v0.5.3 |
+| [github.com/pandatix/go-abnf](https://pkg.go.dev/github.com/pandatix/go-abnf@v0.5.5) | MIT | github.com/pandatix/go-abnf@v0.5.5 |
 | [github.com/prometheus/client_model/go](https://pkg.go.dev/github.com/prometheus/client_model@v0.6.3) | Apache-2.0 | github.com/prometheus/client_model@v0.6.3 |
-| [github.com/prometheus/common](https://pkg.go.dev/github.com/prometheus/common@v0.73.1) | Apache-2.0 | github.com/prometheus/common@v0.73.1 |
+| [github.com/prometheus/common](https://pkg.go.dev/github.com/prometheus/common@v0.74.0) | Apache-2.0 | github.com/prometheus/common@v0.74.0 |
 | [github.com/spf13/pflag](https://pkg.go.dev/github.com/spf13/pflag@v1.1.0) | BSD-3-Clause | github.com/spf13/pflag@v1.1.0 |
 | [github.com/spiffe/go-spiffe/v2](https://pkg.go.dev/github.com/spiffe/go-spiffe/v2@v2.9.0) | Apache-2.0 | github.com/spiffe/go-spiffe/v2@v2.9.0 |
 | [github.com/sqids/sqids-go](https://pkg.go.dev/github.com/sqids/sqids-go@v0.4.1) | MIT | github.com/sqids/sqids-go@v0.4.1 |
@@ -78,17 +78,17 @@ commands are not listed, because they are not distributed.
 | [go.opentelemetry.io/otel/trace](https://pkg.go.dev/go.opentelemetry.io/otel/trace@v1.47.0) | Apache-2.0 / BSD-3-Clause | go.opentelemetry.io/otel/trace@v1.47.0 |
 | [go.uber.org/multierr](https://pkg.go.dev/go.uber.org/multierr@v1.11.0) | MIT | go.uber.org/multierr@v1.11.0 |
 | [go.uber.org/zap](https://pkg.go.dev/go.uber.org/zap@v1.28.0) | MIT | go.uber.org/zap@v1.28.0 |
-| [go.yaml.in/yaml/v2](https://pkg.go.dev/go.yaml.in/yaml/v2@v2.4.4) | Apache-2.0 | go.yaml.in/yaml/v2@v2.4.4 |
+| [go.yaml.in/yaml/v2](https://pkg.go.dev/go.yaml.in/yaml/v2@v2.4.5) | Apache-2.0 | go.yaml.in/yaml/v2@v2.4.5 |
 | [go.yaml.in/yaml/v3](https://pkg.go.dev/go.yaml.in/yaml/v3@v3.0.5) | MIT | go.yaml.in/yaml/v3@v3.0.5 |
 | [golang.org/x/net](https://pkg.go.dev/golang.org/x/net@v0.62.0) | BSD-3-Clause | golang.org/x/net@v0.62.0 |
-| [golang.org/x/oauth2](https://pkg.go.dev/golang.org/x/oauth2@v0.37.0) | BSD-3-Clause | golang.org/x/oauth2@v0.37.0 |
+| [golang.org/x/oauth2](https://pkg.go.dev/golang.org/x/oauth2@v0.38.0) | BSD-3-Clause | golang.org/x/oauth2@v0.38.0 |
 | [golang.org/x/sync](https://pkg.go.dev/golang.org/x/sync@v0.25.0) | BSD-3-Clause | golang.org/x/sync@v0.25.0 |
-| [golang.org/x/sys/unix](https://pkg.go.dev/golang.org/x/sys@v0.49.0) | BSD-3-Clause | golang.org/x/sys@v0.49.0 |
-| [golang.org/x/term](https://pkg.go.dev/golang.org/x/term@v0.47.0) | BSD-3-Clause | golang.org/x/term@v0.47.0 |
-| [golang.org/x/text](https://pkg.go.dev/golang.org/x/text@v0.43.0) | BSD-3-Clause | golang.org/x/text@v0.43.0 |
+| [golang.org/x/sys/unix](https://pkg.go.dev/golang.org/x/sys@v0.50.0) | BSD-3-Clause | golang.org/x/sys@v0.50.0 |
+| [golang.org/x/term](https://pkg.go.dev/golang.org/x/term@v0.48.0) | BSD-3-Clause | golang.org/x/term@v0.48.0 |
+| [golang.org/x/text](https://pkg.go.dev/golang.org/x/text@v0.44.0) | BSD-3-Clause | golang.org/x/text@v0.44.0 |
 | [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time@v0.16.0) | BSD-3-Clause | golang.org/x/time@v0.16.0 |
 | [google.golang.org/genproto/googleapis/api](https://pkg.go.dev/google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-4341edf3f941) | Apache-2.0 | google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-4341edf3f941 |
-| [google.golang.org/genproto/googleapis/rpc/status](https://pkg.go.dev/google.golang.org/genproto/googleapis/rpc@v0.0.0-20261026165753-2ffab32bce7e) | Apache-2.0 | google.golang.org/genproto/googleapis/rpc@v0.0.0-20261026165753-2ffab32bce7e |
+| [google.golang.org/genproto/googleapis/rpc/status](https://pkg.go.dev/google.golang.org/genproto/googleapis/rpc@v0.0.0-20261104224025-d1e00e9f33ab) | Apache-2.0 | google.golang.org/genproto/googleapis/rpc@v0.0.0-20261104224025-d1e00e9f33ab |
 | [google.golang.org/grpc](https://pkg.go.dev/google.golang.org/grpc@v1.85.0) | Apache-2.0 | google.golang.org/grpc@v1.85.0 |
 | [google.golang.org/protobuf](https://pkg.go.dev/google.golang.org/protobuf@v1.36.12) | BSD-3-Clause | google.golang.org/protobuf@v1.36.12 |
 | [gopkg.in/evanphx/json-patch.v4](https://pkg.go.dev/gopkg.in/evanphx/json-patch.v4@v4.13.0) | BSD-3-Clause | gopkg.in/evanphx/json-patch.v4@v4.13.0 |

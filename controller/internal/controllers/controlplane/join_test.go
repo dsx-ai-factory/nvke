@@ -30,7 +30,7 @@ func TestReconcileControlPlaneJoinsOmitsEmptyNodePoolIDFromLookupLog(t *testing.
 	)
 
 	temporalClient := &temporalmocks.Client{}
-	temporalClient.On("DescribeWorkflowExecution", mock.Anything, workflowID, "").
+	temporalClient.On("DescribeWorkflow", mock.Anything, workflowID, "").
 		Return(nil, serviceerror.NewNotFound("workflow not found")).Once()
 	workflowRun := &temporalmocks.WorkflowRun{}
 	workflowRun.On("GetRunID").Return(runID).Once()

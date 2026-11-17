@@ -21,9 +21,9 @@ notices-check` verifies it is up to date.
 | `github.com/go-jose/go-jose/v4/json` | BSD-3-Clause | `github.com/go-jose/go-jose/v4@v4.1.9` | https://github.com/go-jose/go-jose/blob/v4.1.9/json/LICENSE |
 | `github.com/spiffe/go-spiffe/v2` | Apache-2.0 | `github.com/spiffe/go-spiffe/v2@v2.9.0` | https://github.com/spiffe/go-spiffe/blob/v2.9.0/LICENSE |
 | `golang.org/x/net` | BSD-3-Clause | `golang.org/x/net@v0.62.0` | https://cs.opensource.google/go/x/net/+/v0.62.0:LICENSE |
-| `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.49.0` | https://cs.opensource.google/go/x/sys/+/v0.49.0:LICENSE |
-| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.43.0` | https://cs.opensource.google/go/x/text/+/v0.43.0:LICENSE |
-| `google.golang.org/genproto/googleapis/rpc/status` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20261026165753-2ffab32bce7e` | https://github.com/googleapis/go-genproto/blob/2ffab32bce7e/googleapis/rpc/LICENSE |
+| `golang.org/x/sys/unix` | BSD-3-Clause | `golang.org/x/sys@v0.50.0` | https://cs.opensource.google/go/x/sys/+/v0.50.0:LICENSE |
+| `golang.org/x/text` | BSD-3-Clause | `golang.org/x/text@v0.44.0` | https://cs.opensource.google/go/x/text/+/v0.44.0:LICENSE |
+| `google.golang.org/genproto/googleapis/rpc/status` | Apache-2.0 | `google.golang.org/genproto/googleapis/rpc@v0.0.0-20261104224025-d1e00e9f33ab` | https://github.com/googleapis/go-genproto/blob/d1e00e9f33ab/googleapis/rpc/LICENSE |
 | `google.golang.org/grpc` | Apache-2.0 | `google.golang.org/grpc@v1.85.0` | https://github.com/grpc/grpc-go/blob/v1.85.0/LICENSE |
 | `google.golang.org/protobuf` | BSD-3-Clause | `google.golang.org/protobuf@v1.36.12` | https://github.com/protocolbuffers/protobuf-go/blob/v1.36.12/LICENSE |
 
@@ -528,7 +528,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/sys/unix
 
-_BSD-3-Clause — golang.org/x/sys@v0.49.0_
+_BSD-3-Clause — golang.org/x/sys@v0.50.0_
 
 #### LICENSE
 
@@ -565,7 +565,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### golang.org/x/text
 
-_BSD-3-Clause — golang.org/x/text@v0.43.0_
+_BSD-3-Clause — golang.org/x/text@v0.44.0_
 
 #### LICENSE
 
@@ -602,7 +602,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ### google.golang.org/genproto/googleapis/rpc/status
 
-_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20261026165753-2ffab32bce7e_
+_Apache-2.0 — google.golang.org/genproto/googleapis/rpc@v0.0.0-20261104224025-d1e00e9f33ab_
 
 #### LICENSE
 
