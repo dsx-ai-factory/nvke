@@ -4,7 +4,6 @@
 # One NodeProfile per profile and tag, the pair a node pool's nodeProfile selects.
 # Both fields are immutable, so the binding checks each create against every existing
 # NodeProfile. A create with an existing name is left to the API server's already-exists check.
-# The operator API recognizes the denial by the message's leading "node profile " (pkg/resource/errors.go).
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingAdmissionPolicy
