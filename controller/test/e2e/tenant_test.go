@@ -179,6 +179,20 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 		},
 		options: nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 	}),
+	// NVSentinel cordons and drains a node whose simulated GPU overheats. Only its
+	// own scheduled lane selects the "nvsentinel" label: the datastore and fault
+	// cycle take too long for the pull-request and full CAPD runs.
+	Entry("CAPD NVSentinel", Ordered, ContinueOnFailure, Label("nvsentinel"), testSpec{
+		buildSpec: capdSpec,
+		shape: clusterShape{
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+			workerPools: []nvke.NodePoolSpec{
+				{Name: "mokka-h100", NodeNamePrefix: "mh", DesiredNodeCount: 2, NodeLabels: map[string]string{mokkaLabelKey: "h100"}},
+			},
+		},
+		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{provisioningOnly: true, mokkaGPU: true, nvsentinel: true},
+	}),
 	// Opt-in via the "cp-controller" label: it exercises cluster-level
 	// control-plane-controller provisioning (no control-plane node pool) and its
 	// update, rolling-update and delete specs.
@@ -752,6 +766,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			if spec.validate.mokkaGPU {
 				validateMokkaGPU(&test)
 			}
+			if spec.validate.nvsentinel {
+				validateNVSentinel(&test)
+			}
 			if spec.validate.tenantChecks {
 				capabilities, capabilitiesErr := runCapabilities()
 				gpuRuntime := planTenantGPURuntime(tenantGPURuntime, capabilities, capabilitiesErr)
@@ -1052,6 +1069,9 @@ type validations struct {
 	// cisBenchmarkAfterScale scans the cluster while scale has added a node to
 	// each worker pool, before scaling them back down.
 	cisBenchmarkAfterScale bool
+	// nvsentinel runs NVSentinel's fault cycle on the GPUs mokkaGPU sets up, so the
+	// entry needs both, and two Mokka nodes for the drain to move a workload between.
+	nvsentinel bool
 }
 
 // managementCluster is the cluster the controller runs on, which a tenant test reaches

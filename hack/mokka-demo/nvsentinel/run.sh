@@ -10,6 +10,8 @@
 set -euo pipefail
 
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# Shared with the e2e suite, which embeds it.
+values="$(cd -- "${here}/../../.." && pwd)/controller/test/e2e/testdata/nvsentinel-values.yaml"
 
 CLUSTER="${CLUSTER:?set CLUSTER to the NVKE workload cluster name}"
 POOL="${POOL:-mokka-sentinel}"
@@ -19,7 +21,6 @@ GPU_PROFILE="${GPU_PROFILE:-h100}"
 MOKKA_RELEASE="${MOKKA_RELEASE:-nvml-mock-sentinel}"
 GPU_OPERATOR_VERSION="${GPU_OPERATOR_VERSION:-v26.3.3}"
 CERT_MANAGER_VERSION="${CERT_MANAGER_VERSION:-v1.19.1}"
-LOCAL_PATH_VERSION="${LOCAL_PATH_VERSION:-v0.0.31}"
 NVSENTINEL_VERSION="${NVSENTINEL_VERSION:-v1.21.0}"
 TARGET_GPU="${TARGET_GPU:-0}"
 # Strictly above every Mokka profile's slowdown threshold (h100 87 C, gb300 90 C):
@@ -65,16 +66,7 @@ else
   fail "no service gpu-operator/nvidia-dcgm"
 fi
 
-step "storage and cert-manager for NVSentinel's MongoDB"
-default_sc="$(kubectl get storageclass -o jsonpath='{range .items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")]}{.metadata.name}{end}')"
-if [[ -z "$default_sc" ]]; then
-  # The workload cluster has no default StorageClass; MongoDB needs one volume.
-  kubectl apply -f "https://raw.githubusercontent.com/rancher/local-path-provisioner/${LOCAL_PATH_VERSION}/deploy/local-path-storage.yaml" >/dev/null
-  kubectl annotate storageclass local-path storageclass.kubernetes.io/is-default-class=true --overwrite >/dev/null
-  kubectl -n local-path-storage rollout status deploy/local-path-provisioner --timeout="$TIMEOUT" >/dev/null
-  default_sc=local-path
-fi
-pass "default StorageClass ${default_sc}"
+step "cert-manager, which issues NVSentinel's MongoDB certificates"
 kubectl apply -f "https://github.com/cert-manager/cert-manager/releases/download/${CERT_MANAGER_VERSION}/cert-manager.yaml" >/dev/null
 kubectl -n cert-manager wait --for=condition=Available deploy --all --timeout="$TIMEOUT" >/dev/null
 pass "cert-manager ${CERT_MANAGER_VERSION} is available"
@@ -84,7 +76,7 @@ step "NVSentinel ${NVSENTINEL_VERSION}"
 # certificates, the collection-setup Job), and the pods that use it stay unready
 # until it is done.
 helm upgrade --install nvsentinel oci://ghcr.io/nvidia/nvsentinel --version "$NVSENTINEL_VERSION" \
-  --namespace nvsentinel --create-namespace -f "${here}/nvsentinel-values.yaml" --timeout "$TIMEOUT" >/dev/null
+  --namespace nvsentinel --create-namespace -f "$values" --timeout "$TIMEOUT" >/dev/null
 kubectl -n nvsentinel wait --for=condition=complete job -l app.kubernetes.io/name=create-mongodb-database --timeout=15m >/dev/null ||
   fail "the MongoDB collection-setup Job did not complete"
 all_ready() {

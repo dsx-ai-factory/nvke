@@ -113,6 +113,7 @@ class DecideTest(unittest.TestCase):
             ("nico-e2e.yml", ["controller/internal/workflows/provision.go"], ["cli/cmd/nvkectl/main.go", "os-image/efi/mkosi.conf"]),
             ("capd-e2e.yml", ["cli/internal/nvkectl/create.go"], ["cli/internal/bootstrap/plan.go", "controller/docs/capd.md"]),
             ("capd-dsx-identity-exchange-e2e.yml", ["agent/cmd/agent/main.go"], ["controller/docs/identity.md", "management-engine/api/types.go"]),
+            ("capd-nvsentinel-e2e.yml", ["controller/test/e2e/nvsentinel_test.go"], ["controller/internal/server/server.go", "controller/test/e2e/tenant_test.go"]),
             ("nico-vms-e2e.yml", ["controller/test/e2e/nico_vms_test.go"], ["controller/internal/server/server.go"]),
             ("local-entrypoint-e2e.yml", ["controller/Tiltfile"], ["controller/internal/server/server.go"]),
             ("os-image-artifact.yml", ["os-image/packer/ubuntu.pkr.hcl"], ["os-image/checker/check_test.go", "controller/main.go"]),
@@ -134,7 +135,7 @@ class DecideTest(unittest.TestCase):
                 self.assertEqual(decide(WORKFLOWS / lane, ["hack/e2e-path-filter.py"]), "true")
 
     def test_shared_kind_action_runs_every_lane_that_uses_it(self):
-        lanes = ["nico-e2e.yml", "nico-vms-e2e.yml", "capd-e2e.yml", "capd-dsx-identity-exchange-e2e.yml",
+        lanes = ["nico-e2e.yml", "nico-vms-e2e.yml", "capd-e2e.yml", "capd-dsx-identity-exchange-e2e.yml", "capd-nvsentinel-e2e.yml",
                  "local-entrypoint-e2e.yml", "nvkectl-bootstrap-e2e.yml"]
         for lane in lanes:
             with self.subTest(lane=lane):
