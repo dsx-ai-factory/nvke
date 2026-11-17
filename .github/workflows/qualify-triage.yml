@@ -105,6 +105,7 @@ jobs:
           RUN_ID: ${{ github.event.workflow_run.id || inputs.run-id }}
           EVENT_NAME: ${{ github.event_name }}
           INPUT_ATTEMPT: ${{ inputs.attempt }}
+          EVENT_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           INPUT_POST: ${{ inputs.post }}
           VAR_POST: ${{ vars.QUALIFY_TRIAGE_POST }}
           GH_TOKEN: ${{ github.token }}
@@ -134,18 +135,24 @@ jobs:
             if [[ "${EVENT_NAME}" == workflow_dispatch && "${INPUT_POST}" == true ]]; then post=true; fi
           fi
 
-          # An automatic run reads the attempt that finished. A manual one reads
-          # what it was given, else every attempt for the summary.
-          summary_attempt="${INPUT_ATTEMPT}"
-          if [[ "${EVENT_NAME}" == workflow_run ]]; then summary_attempt="${attempt}"; fi
+          # An automatic run reads the attempt that finished, from the event and
+          # not the API: a re-run started before this step runs makes the API's
+          # latest attempt the new one, which has no failed jobs yet. A manual
+          # run reads what it was given, else every attempt for the summary and
+          # the latest for a post.
+          want_attempt="${INPUT_ATTEMPT}"
+          if [[ "${EVENT_NAME}" == workflow_run ]]; then
+            [[ "${EVENT_ATTEMPT}" =~ ^[0-9]+$ ]] || { echo "::error::the event's attempt is not a number"; exit 1; }
+            want_attempt="${EVENT_ATTEMPT}"
+          fi
 
           {
             echo "run-id=${RUN_ID}"
             echo "tag=${tag}"
             echo "url=${url}"
             echo "post=${post}"
-            echo "post-attempt=${INPUT_ATTEMPT:-${attempt}}"
-            echo "summary-attempt=${summary_attempt}"
+            echo "post-attempt=${want_attempt:-${attempt}}"
+            echo "summary-attempt=${want_attempt}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Classify
