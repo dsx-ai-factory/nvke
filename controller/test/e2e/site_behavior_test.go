@@ -569,9 +569,8 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		}
 		anonymous := expectSucceed(kubernetes.NewForConfig(rest.AnonymousClientConfig(restConfig)))
 		_, err := anonymous.CoreV1().Secrets(kubeSystemNamespace).List(ctx, metav1.ListOptions{Limit: 1})
-		if refusedBeforeAPIServer(err) {
-			AddReportEntry("anonymous access not checked through this connection, not failing the check", err.Error())
-		} else if problem := anonymousProblem(err); problem != "" {
+		anonymousRefused := refusedBeforeAPIServer(err)
+		if problem := anonymousProblem(err); !anonymousRefused && problem != "" {
 			problems = append(problems, problem)
 		}
 		var (
@@ -582,6 +581,12 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		Expect(c.List(ctx, &roleBindings)).To(Succeed())
 		problems = append(problems, unauthenticatedBindingProblems(clusterRoleBindings.Items, roleBindings.Items)...)
 		Expect(joinProblems("RBAC checks", problems)).To(Succeed())
+		// A pass would claim anonymous access was refused by the API server,
+		// when something in front of it refused the request.
+		if anonymousRefused {
+			Skip("anonymous access not checked through this connection, which refused the request before the API server; " +
+				"the rest of the check passed: " + err.Error())
+		}
 	}, Label("site-distro"), NodeTimeout(2*time.Minute))
 
 	It("has a ready endpoint behind every admission webhook", func(ctx SpecContext) {
@@ -787,10 +792,8 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		if settings.expect.certManagerPolicy {
 			selecting = expectSucceed(policiesSelecting(ctx, c, namespace, name))
 			if len(selecting) == 0 {
-				why := fmt.Sprintf("no Ready CertificateRequestPolicy selects an Issuer in %s, so approver-policy would leave the request undecided; "+
-					"a policy selecting Issuers named nvke-validate-* there lets the check run", namespace)
-				AddReportEntry("certificate issuance not checked, not failing the check", why)
-				return
+				Skip(fmt.Sprintf("certificate issuance not checked: no Ready CertificateRequestPolicy selects an Issuer in %s, so approver-policy would leave the request undecided; "+
+					"a policy selecting Issuers named nvke-validate-* there lets the check run", namespace))
 			}
 		}
 		By("creating an Issuer and a Certificate from it")

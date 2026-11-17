@@ -256,7 +256,7 @@ and [tenant](#tenant-checks) variable tables describe each one.
 | 28 | A NetworkPolicy enforced | `creates` | Unless a NetworkPolicy in the probe namespace already selects the check's pods | As on a site, in `NVKE_TENANT_NAMESPACE` |
 | 29 | A StatefulSet pod resolved and reached by its headless Service name | `creates` | Always | Always |
 | 30 | A PersistentVolumeClaim bound and written from a pod | `creates` | From `NVKE_SITE_PVC_STORAGE_CLASS`, else the default StorageClass; skips without either | From `NVKE_TENANT_PVC_STORAGE_CLASS`, else the tenant's default StorageClass; skips without either |
-| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates` | Always. With `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, the request must be approved or denied instead; a denial passes, and the report says so. Where no Ready `CertificateRequestPolicy` selects the check's Issuer in the probe namespace, approver-policy would never decide, so the check creates nothing and the report says it was not checked | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager`, and as on a site with `NVKE_TENANT_CERT_MANAGER_APPROVAL` |
+| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates` | Always. With `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, the request must be approved or denied instead; a denial passes, and the report says so. Where no Ready `CertificateRequestPolicy` selects the check's Issuer in the probe namespace, approver-policy would never decide, so the check creates nothing and skips, saying why | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager`, and as on a site with `NVKE_TENANT_CERT_MANAGER_APPROVAL` |
 
 A tenant also runs these, which compare it with the controller's record of it:
 
@@ -288,8 +288,10 @@ grants: on a site, the image's service account, so only in a pod; on a tenant,
 the provisioned ServiceAccount, wherever the suite runs. A site run outside a
 pod, or a lane that reaches its tenant as admin, runs as some other identity,
 which is not checked. Through a proxy that demands a client certificate, such
-as Teleport's, the anonymous request never reaches the API server: the report
-says it was not checked, and the bindings are still checked.
+as Teleport's, the anonymous request never reaches the API server. The
+bindings, and the identity where it applies, are still checked and fail the
+check on a problem; otherwise the check skips, saying anonymous access was not
+checked, rather than pass.
 
 **Encryption (check 20).** The check sees only the flag. Which provider the
 config writes with is in a file on the control-plane host, so a config led by
@@ -387,7 +389,7 @@ Configure it with the [health spec variables](#health-specs) and these:
 | `NVKE_SITE_APISERVER_FLAGS` | Flags every API server runs, `name=value` separated by semicolons, because values hold commas. Added to those kubeadm-config sets; a conflict between the two fails. | Unset |
 | `NVKE_SITE_ETCD_ENCRYPTED` | `true` requires `--encryption-provider-config` on every API server. It does not show which provider the config uses. | Unset |
 | `NVKE_SITE_RESERVED_MEMORY` | The least memory every node holds back from pods (capacity less allocatable), such as `2Gi`. That counts the kubelet's hard eviction threshold, 100Mi by default, with its kube and system reservations: set it to their sum. | Unset |
-| `NVKE_SITE_CERT_MANAGER_APPROVAL` | How cert-manager approves a request: `any`, where its own approver approves every one, or `policy`, where approver-policy approves only what a `CertificateRequestPolicy` allows. With `policy`, check 31 requires the approver to decide on its request, and passes on a denial, reporting it; where no policy selects its Issuer, it reports the check not run. | `any` |
+| `NVKE_SITE_CERT_MANAGER_APPROVAL` | How cert-manager approves a request: `any`, where its own approver approves every one, or `policy`, where approver-policy approves only what a `CertificateRequestPolicy` allows. With `policy`, check 31 requires the approver to decide on its request, and passes on a denial, reporting it; where no policy selects its Issuer, it skips, saying why. | `any` |
 | `NVKE_SITE_STORAGE_CLASSES` | Comma-separated StorageClasses that must exist. | Unset |
 | `NVKE_SITE_PVC_STORAGE_CLASS` | The class the PVC check binds from. | The default class |
 | `NVKE_E2E_KEEP_ON_FAILURE` | `true` leaves a failed `creates` spec's objects in the probe namespace to be inspected, site or tenant, and logs each one kept. The pod check leaves that namespace out, but checks 2 and 4 read the whole cluster, so a kept StatefulSet or Certificate fails the next run: delete every kept object by its `e2e.nvidia.com/site-run` label first. | Unset: deleted |

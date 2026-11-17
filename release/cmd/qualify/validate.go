@@ -21,6 +21,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -226,9 +227,21 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 		}
 	}
 
-	ctx, stop := context.WithCancel(ctx)
-	defer stop()
-	source, err := connect(ctx, o, kept)
+	// The suite deletes what it made through the connection after an
+	// interrupt reaches it, so once the suite starts the connection ends only
+	// when the suite has exited. Until then an interrupt ends it too.
+	connCtx, connStop := context.WithCancel(context.WithoutCancel(ctx))
+	defer connStop()
+	suiteStarted := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			connStop()
+		case <-suiteStarted:
+		case <-connCtx.Done():
+		}
+	}()
+	source, err := connect(connCtx, o, kept)
 	if err != nil {
 		return err
 	}
@@ -267,9 +280,13 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 	run.Stdout = io.MultiWriter(out, logFile)
 	run.Stderr = run.Stdout
 	// docker run passes the interrupt to the suite, which deletes what it
-	// made before it exits; a kill would leave a probe pod on the site.
+	// made before it exits; a kill would leave a probe pod on the site. Its
+	// own process group keeps a terminal's interrupt from reaching it as well,
+	// since Ginkgo skips its cleanup on a second one.
+	run.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	run.Cancel = func() error { return run.Process.Signal(os.Interrupt) }
 	run.WaitDelay = 2 * time.Minute
+	close(suiteStarted)
 	runErr := run.Run()
 
 	if report, err := os.ReadFile(filepath.Join(o.out, "artifacts", validateJUnit)); err == nil {
@@ -343,6 +360,7 @@ func connect(ctx context.Context, o validateOptions, kept keptRecord) (string, e
 		}
 		logPath := filepath.Join(o.out, "connect.log")
 		proxy := exec.CommandContext(ctx, "tsh", "proxy", "kube", o.teleportCluster, "--port", strconv.Itoa(port), "--format=unix")
+		proxy.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		exited, err := startLogged(proxy, logPath)
 		if err != nil {
 			return "", err
@@ -453,6 +471,7 @@ func forwardThroughJumpHost(ctx context.Context, kept keptRecord, port int, logP
 	}
 
 	relay := exec.CommandContext(ctx, "tsh", relayArgs(kept)...)
+	relay.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	relay.Stderr = log
 	stdin, err := relay.StdinPipe()
 	if err != nil {
