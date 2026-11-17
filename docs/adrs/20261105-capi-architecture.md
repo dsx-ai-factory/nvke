@@ -83,7 +83,7 @@ curate approved configurations, reconcile cluster intent, and govern lifecycle
 within explicitly supported NVKE compositions.
 
 The operator catalog will include `MachineImage`, `ControlPlaneClass`,
-`ClusterRelease`, `NodePoolRelease`, and `AddOnRelease`. Cluster and node pool
+`ClusterRelease`, `NodeProfile`, and `AddOnRelease`. Cluster and node pool
 releases will specify approved images and bootstrap inputs; add-on releases will
 specify approved software versions and configuration. Each release type will
 have a corresponding channel concept, providing named, operator-controlled

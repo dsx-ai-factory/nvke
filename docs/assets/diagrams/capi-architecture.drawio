@@ -57,7 +57,7 @@
         <mxCell id="g6BAtMmcGTGz7mGHK8aQ-26" style="rounded=0;orthogonalLoop=1;jettySize=auto;html=1;exitX=0.25;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" parent="1" source="g6BAtMmcGTGz7mGHK8aQ-20" target="nvke-cluster" edge="1">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-20" value="NodePoolRelease&lt;br&gt;&lt;span style=&quot;font-size: 16px; font-weight: 400;&quot;&gt;(and Channel)&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E2EED5;strokeColor=#C4D8B6;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=1;container=0;" parent="1" vertex="1">
+        <mxCell id="g6BAtMmcGTGz7mGHK8aQ-20" value="NodeProfile&lt;br&gt;&lt;span style=&quot;font-size: 16px; font-weight: 400;&quot;&gt;(and Channel)&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E2EED5;strokeColor=#C4D8B6;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=1;container=0;" parent="1" vertex="1">
           <mxGeometry x="900" y="240" width="200" height="60" as="geometry" />
         </mxCell>
         <mxCell id="cluster" value="CAPI Cluster" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#E4EFFA;strokeColor=#9BBBDD;strokeWidth=1;align=center;verticalAlign=middle;spacing=20;fontFamily=Arial;fontSize=17;fontColor=#255582;fontStyle=1;container=0;" parent="1" vertex="1">
