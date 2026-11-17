@@ -23,9 +23,9 @@ We will define each node OS release in a hand-written release spec, resolve it i
   - The manifest and a CycloneDX SBOM record what an image holds.
 
   An `os-image/v*` tag on the spec and lock names a release, and `git describe` gives the version.
-- **apt is the only resolver.** The lock is apt's own answer, resolved against the pinned sources in an isolated root. Verify is then a set comparison, not a prediction of what apt will do.
+- **apt is the only resolver.** The lock is apt's own answer, resolved against the pinned sources in an isolated root. Verify is then a set comparison, not a prediction of what apt will do: the packages installed in an image or on a node must be a subset of the lock.
 - **One origin.**
-  - A release is one immutable suite with the components `main`, `security` and `kubernetes`. It holds Ubuntu at a snapshot, pinned third-party packages and our own debs.
+  - A release is one immutable suite with the components `main`, `security` and `kubernetes`. It holds Ubuntu at a snapshot, pinned third-party packages and our own debs. Our own debs, `nvke-agent` included, are built from the release's commit before the repository is assembled, and the lock records them like any other package.
   - A pointer package, `nvke-release`, carries the sources, keyring and apt settings with no hostname in them; the site writes the mirror list at first boot.
 - **The OS is packages.**
   - Metapackages are the content of the OS: `nvke-node-base` plus one per named group.
@@ -40,7 +40,7 @@ In-place update of running nodes and patch releases build on these artifacts and
 
 What gets easier:
 - A release rebuilds with the same package set for as long as its snapshot is retained, and a reviewer reads every change to the spec as a lock diff.
-- Verify answers "is this image, or this node, the release we shipped" at package level. Anything installed from outside the repository shows up as foreign packages or drift.
+- Verify answers "is this image, or this node, the release we shipped" at package level: a package the lock does not hold shows up as foreign, and a version it does not name shows up as drift.
 - The repository and pointer package are what BYO-OS phase 1 needs, and the same artifacts serve a later in-place update.
 - A downstream extends a spec instead of forking the Packer project.
 
