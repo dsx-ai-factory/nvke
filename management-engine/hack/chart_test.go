@@ -6,6 +6,7 @@ package hack
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -16,6 +17,7 @@ import (
 
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	yamlutil "k8s.io/apimachinery/pkg/util/yaml"
+	"sigs.k8s.io/yaml"
 )
 
 func renderChart(t *testing.T, values string) ([]unstructured.Unstructured, string, error) {
@@ -949,6 +951,97 @@ func TestChartCRDInstall(t *testing.T) {
 				t.Fatalf("state.crds.install=%t: unexpected CRD %s", install, name)
 			}
 		}
+		assertAdmissionPolicies(t, objects, install)
+	}
+}
+
+// assertAdmissionPolicies checks that the chart renders every object in config/admission/policies, retained
+// like the CRDs, only when it installs the CRDs.
+func assertAdmissionPolicies(t *testing.T, objects []unstructured.Unstructured, install bool) {
+	t.Helper()
+	want := map[string]bool{}
+	if install {
+		files, err := filepath.Glob(filepath.Join("..", "config", "admission", "policies", "*.yaml"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range files {
+			data, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoder := yamlutil.NewYAMLOrJSONDecoder(bytes.NewReader(data), 4096)
+			for {
+				var object unstructured.Unstructured
+				if err := decoder.Decode(&object.Object); errors.Is(err, io.EOF) {
+					break
+				} else if err != nil {
+					t.Fatalf("decode %s: %v", file, err)
+				}
+				if len(object.Object) != 0 {
+					want[object.GetKind()+"/"+object.GetName()] = true
+				}
+			}
+		}
+	}
+	got := map[string]bool{}
+	for _, kind := range []string{"ValidatingAdmissionPolicy", "ValidatingAdmissionPolicyBinding"} {
+		for _, object := range objectsOfKind(objects, kind) {
+			got[kind+"/"+object.GetName()] = true
+			if object.GetAnnotations()["helm.sh/resource-policy"] != "keep" {
+				t.Errorf("%s/%s must be retained with the CRDs", kind, object.GetName())
+			}
+		}
+	}
+	for key := range want {
+		if !got[key] {
+			t.Errorf("state.crds.install=%t: %s is not rendered", install, key)
+		}
+	}
+	for key := range got {
+		if !want[key] {
+			t.Errorf("state.crds.install=%t: unexpected %s", install, key)
+		}
+	}
+}
+
+// TestChartAdmissionKustomizationListsEveryPolicy checks that Kustomize lists every file in
+// config/admission/policies, which Helm and envtest read by glob.
+func TestChartAdmissionKustomizationListsEveryPolicy(t *testing.T) {
+	dir := filepath.Join("..", "config", "admission")
+	data, err := os.ReadFile(filepath.Join(dir, "kustomization.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var kustomization struct {
+		Resources []string `json:"resources"`
+	}
+	if err := yaml.Unmarshal(data, &kustomization); err != nil {
+		t.Fatal(err)
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "policies", "*.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) == 0 {
+		t.Fatal("config/admission/policies has no policy files")
+	}
+	listed := map[string]bool{}
+	for _, resource := range kustomization.Resources {
+		listed[filepath.Clean(resource)] = true
+	}
+	for _, file := range files {
+		rel, err := filepath.Rel(dir, file)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !listed[rel] {
+			t.Errorf("config/admission/kustomization.yaml does not list %s", rel)
+		}
+		delete(listed, rel)
+	}
+	for resource := range listed {
+		t.Errorf("config/admission/kustomization.yaml lists %s, which is not a file in policies/", resource)
 	}
 }
 

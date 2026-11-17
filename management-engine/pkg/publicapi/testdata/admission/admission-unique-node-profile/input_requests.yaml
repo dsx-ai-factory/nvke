@@ -1,0 +1,64 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# ubuntu-gpu-2026-11 exists. Profiles may share its profile or its tag but not both; its name gets already-exists.
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: ubuntu-gpu-2026-11-copy
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-gpu
+      tag: "2026.11"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: ubuntu-cpu-2026-11
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-cpu
+      tag: "2026.11"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: ubuntu-gpu-2026-12
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-gpu
+      tag: "2026.12"
+- method: POST
+  path: /v1/node-profiles
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: ubuntu-gpu-2026-11
+    spec:
+      machineImageRef:
+        name: img-ubuntu
+      machineInit:
+        userDataTemplate: |
+          #cloud-config
+      profile: ubuntu-gpu
+      tag: "2026.11"
