@@ -111,7 +111,11 @@ func TestUnit_VerifyNodeSubject(t *testing.T) {
 	}
 	tests := map[string]parameters{
 		"exact DSX bare-metal subject": {subject: "spiffe://dsx.example.test/bm/" + nodeID},
+		"exact DSX VM subject":         {subject: "spiffe://dsx.example.test/vm/" + nodeID},
 		"different node":               {subject: "spiffe://dsx.example.test/bm/" + uuid.NewString(), wantErr: true},
+		"different VM node":            {subject: "spiffe://dsx.example.test/vm/" + uuid.NewString(), wantErr: true},
+		"unknown host kind":            {subject: "spiffe://dsx.example.test/pod/" + nodeID, wantErr: true},
+		"VM subject with suffix":       {subject: "spiffe://dsx.example.test/vm/" + nodeID + "/extra", wantErr: true},
 		"different trust domain":       {subject: "spiffe://other.example.test/bm/" + nodeID, wantErr: true},
 		"wrong path":                   {subject: "spiffe://dsx.example.test/host/" + nodeID, wantErr: true},
 		"query suffix":                 {subject: "spiffe://dsx.example.test/bm/" + nodeID + "?pod=other", wantErr: true},

@@ -60,7 +60,9 @@ For each connection, the controller presents its client certificate, reads the
 agent's `NKEAuth` JWT record, and verifies its signature, issuer, fixed audience,
 and required `exp`. When `nbf` is present, it is validated using the same clock
 skew policy as API authentication. The verified `sub` must use the configured
-SPIFFE trust domain and exact path `/bm/<node UUID>` for the node being contacted.
+SPIFFE trust domain and exact path `/bm/<node UUID>` or `/vm/<node UUID>` for the
+node being contacted. `/vm/` is the subject DSX Identity issues to a virtual
+machine through its metadata-service sidecar.
 The controller allows gRPC traffic only after those checks succeed.
 
 For TLS/JWT-enabled nodes, NVKE registers the local node-agent workload as

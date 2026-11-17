@@ -154,8 +154,9 @@ func verifyNodeSubject(subject string, trustDomain spiffeid.TrustDomain, nodeID 
 	if err != nil {
 		return fmt.Errorf("node-agent token subject is not a SPIFFE ID: %w", err)
 	}
-	wantPath := "/bm/" + nodeID
-	if parsed.TrustDomain() != trustDomain || parsed.Path() != wantPath || parsed.String() != subject {
+	// DSX exchange issues /bm/ to bare-metal hosts and /vm/ to virtual machines.
+	pathMatches := parsed.Path() == "/bm/"+nodeID || parsed.Path() == "/vm/"+nodeID
+	if parsed.TrustDomain() != trustDomain || !pathMatches || parsed.String() != subject {
 		return fmt.Errorf("node-agent token subject does not identify expected node %s", nodeID)
 	}
 	return nil
