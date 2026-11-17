@@ -21,8 +21,8 @@ type profile struct {
 
 func TestTranslateAdmissionPolicyDenial(t *testing.T) {
 	const policy = "unique-node-profile.service.nvke.nvidia.com"
-	const denial = "ValidatingAdmissionPolicy '" + policy + "' with binding '" + policy +
-		"' denied request: node profile a:b is already published by NodeProfile c"
+	const denied = "ValidatingAdmissionPolicy '" + policy + "' with binding '" + policy + "' denied request: "
+	const denial = denied + "node profile a:b is already published by NodeProfile c"
 	approved := FieldError{
 		Field: "/spec/tag", Code: invalidCode, Message: "Another node profile already publishes this profile and tag.",
 	}
@@ -36,6 +36,12 @@ func TestTranslateAdmissionPolicyDenial(t *testing.T) {
 		{"field cause", metav1.StatusCause{Field: "spec.profile", Message: denial}, nil},
 		{"policy name in a value", metav1.StatusCause{Message: "Invalid value: \"" + policy + "\""}, nil},
 		{"unterminated name", metav1.StatusCause{Message: "ValidatingAdmissionPolicy '" + policy}, nil},
+		{"configuration failure", metav1.StatusCause{Message: denied + "failed to configure policy: " +
+			"failed to find resource referenced by paramKind: 'service.nvke.nvidia.com/v1, Kind=NodeProfile'"}, nil},
+		{"missing params", metav1.StatusCause{Message: denied +
+			"no params found for policy binding with `Deny` parameterNotFoundAction"}, nil},
+		{"evaluation error", metav1.StatusCause{Message: denied +
+			"expression 'params.spec.tag != object.spec.tag' resulted in error: no such key: tag"}, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := &apierrors.StatusError{ErrStatus: metav1.Status{

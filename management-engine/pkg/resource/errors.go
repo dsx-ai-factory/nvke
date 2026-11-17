@@ -162,16 +162,28 @@ func translate[E any](err error) error {
 	}
 }
 
-// admissionPolicyErrors holds the approved diagnostic for each admission policy in config/admission/policies.
-// Field is a datastore path, mapped to the public JSON shape like a schema cause.
-var admissionPolicyErrors = map[string]FieldError{
+// admissionPolicyDiagnostic is the approved diagnostic for one admission policy's denials.
+type admissionPolicyDiagnostic struct {
+	// denial is the fixed start of the policy's messageExpression. The API server reports configuration
+	// and evaluation failures under the same policy name with other messages, which stay unmapped.
+	denial string
+	// fieldError.Field is a datastore path, mapped to the public JSON shape like a schema cause.
+	fieldError FieldError
+}
+
+// admissionPolicyDiagnostics holds the approved diagnostic for each policy in config/admission/policies, by name.
+var admissionPolicyDiagnostics = map[string]admissionPolicyDiagnostic{
 	"unique-node-profile.service.nvke.nvidia.com": {
-		Field: "spec.tag", Code: invalidCode, Message: "Another node profile already publishes this profile and tag.",
+		denial: "node profile ",
+		fieldError: FieldError{
+			Field: "spec.tag", Code: invalidCode, Message: "Another node profile already publishes this profile and tag.",
+		},
 	},
 }
 
 // admissionPolicyError maps a ValidatingAdmissionPolicy denial to its approved diagnostic.
-// The API server reports a denial as a cause with no field and a message naming the policy.
+// The API server reports a denial as a cause with no field and the message
+// "ValidatingAdmissionPolicy '<name>' [with binding '<binding>'] denied request: <message>".
 func admissionPolicyError[E any](cause metav1.StatusCause) (FieldError, bool) {
 	if cause.Field != "" {
 		return FieldError{}, false
@@ -180,17 +192,24 @@ func admissionPolicyError[E any](cause metav1.StatusCause) (FieldError, bool) {
 	if !ok {
 		return FieldError{}, false
 	}
-	name, _, ok := strings.Cut(rest, "'")
+	name, rest, ok := strings.Cut(rest, "'")
 	if !ok {
 		return FieldError{}, false
 	}
-	fieldError, ok := admissionPolicyErrors[name]
+	diagnostic, ok := admissionPolicyDiagnostics[name]
 	if !ok {
 		return FieldError{}, false
 	}
-	if fieldError.Field, ok = publicPath[E](fieldError.Field); !ok {
+	_, message, ok := strings.Cut(rest, " denied request: ")
+	if !ok || !strings.HasPrefix(message, diagnostic.denial) {
 		return FieldError{}, false
 	}
+	field, ok := publicPath[E](diagnostic.fieldError.Field)
+	if !ok {
+		return FieldError{}, false
+	}
+	fieldError := diagnostic.fieldError
+	fieldError.Field = field
 	return fieldError, true
 }
 
