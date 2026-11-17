@@ -61,12 +61,12 @@ func MachineImage(verbs ...resource.Operation) resource.Registration {
 	})
 }
 
-// NodePoolRelease returns a registration for PublicNodeProfile with the caller's selected operations.
+// NodeProfile returns a registration for PublicNodeProfile with the caller's selected operations.
 // An empty selection enables no operations.
-func NodePoolRelease(verbs ...resource.Operation) resource.Registration {
-	return resource.NewRegistration[v1.PublicNodeProfile, v1.NodePoolRelease]("/v1/node-profiles", resource.ResourceInfo{
-		GVK:      schema.GroupVersionKind{Group: "service.nvke.nvidia.com", Version: "v1", Kind: "NodePoolRelease"},
-		Resource: "nodepoolreleases", Scope: resource.Scope("Cluster"),
+func NodeProfile(verbs ...resource.Operation) resource.Registration {
+	return resource.NewRegistration[v1.PublicNodeProfile, v1.NodeProfile]("/v1/node-profiles", resource.ResourceInfo{
+		GVK:      schema.GroupVersionKind{Group: "service.nvke.nvidia.com", Version: "v1", Kind: "NodeProfile"},
+		Resource: "nodeprofiles", Scope: resource.Scope("Cluster"),
 		HasStatus: false, Verbs: verbs,
 	})
 }

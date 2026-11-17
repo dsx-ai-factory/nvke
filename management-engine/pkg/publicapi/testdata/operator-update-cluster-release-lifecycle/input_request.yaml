@@ -9,6 +9,8 @@ body:
   metadata:
     name: control-plane-v1
   spec:
+    kubernetes:
+      version: "1.36.3"
     machineImageRef:
       name: ubuntu-2404-amd64
     machineInit:

@@ -126,10 +126,10 @@ items:
       type: NVKEControllerUpdateFailed
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
-        reconcile node pool "workers-no-release": no NodePoolRelease publishes node profile "example:9.9.9"
-        reconcile node pool "workers-no-image": get MachineImage "missing-image" for NodePoolRelease "worker-no-image-release": MachineImage.service.nvke.nvidia.com "missing-image" not found
-        reconcile node pool "workers-deprecated": NodePoolRelease "worker-deprecated-release" for node profile "example:1.36.4" is deprecated
-        reconcile node pool "workers-ambiguous": node profile "example:1.36.5" is published by more than one NodePoolRelease
+        reconcile node pool "workers-no-release": no NodeProfile publishes node profile "example:9.9.9"
+        reconcile node pool "workers-no-image": get MachineImage "missing-image" for NodeProfile "worker-no-image-release": MachineImage.service.nvke.nvidia.com "missing-image" not found
+        reconcile node pool "workers-deprecated": NodeProfile "worker-deprecated-release" for node profile "example:1.36.4" is deprecated
+        reconcile node pool "workers-ambiguous": node profile "example:1.36.5" is published by more than one NodeProfile
       observedGeneration: 1
       reason: ReconcileFailed
       status: "False"
@@ -142,10 +142,10 @@ items:
             * NVKEControllerProvisioning: Reported
         * Synced:
           * NodePoolsReconciled:
-            * reconcile node pool "workers-no-release": no NodePoolRelease publishes node profile "example:9.9.9"
-            * reconcile node pool "workers-no-image": get MachineImage "missing-image" for NodePoolRelease "worker-no-image-release": MachineImage.service.nvke.nvidia.com "missing-image" not found
-            * reconcile node pool "workers-deprecated": NodePoolRelease "worker-deprecated-release" for node profile "example:1.36.4" is deprecated
-            * reconcile node pool "workers-ambiguous": node profile "example:1.36.5" is published by more than one NodePoolRelease
+            * reconcile node pool "workers-no-release": no NodeProfile publishes node profile "example:9.9.9"
+            * reconcile node pool "workers-no-image": get MachineImage "missing-image" for NodeProfile "worker-no-image-release": MachineImage.service.nvke.nvidia.com "missing-image" not found
+            * reconcile node pool "workers-deprecated": NodeProfile "worker-deprecated-release" for node profile "example:1.36.4" is deprecated
+            * reconcile node pool "workers-ambiguous": node profile "example:1.36.5" is published by more than one NodeProfile
       observedGeneration: 1
       reason: NotReady
       status: "False"
@@ -159,10 +159,10 @@ items:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
         * NodePoolsReconciled:
-          * reconcile node pool "workers-no-release": no NodePoolRelease publishes node profile "example:9.9.9"
-          * reconcile node pool "workers-no-image": get MachineImage "missing-image" for NodePoolRelease "worker-no-image-release": MachineImage.service.nvke.nvidia.com "missing-image" not found
-          * reconcile node pool "workers-deprecated": NodePoolRelease "worker-deprecated-release" for node profile "example:1.36.4" is deprecated
-          * reconcile node pool "workers-ambiguous": node profile "example:1.36.5" is published by more than one NodePoolRelease
+          * reconcile node pool "workers-no-release": no NodeProfile publishes node profile "example:9.9.9"
+          * reconcile node pool "workers-no-image": get MachineImage "missing-image" for NodeProfile "worker-no-image-release": MachineImage.service.nvke.nvidia.com "missing-image" not found
+          * reconcile node pool "workers-deprecated": NodeProfile "worker-deprecated-release" for node profile "example:1.36.4" is deprecated
+          * reconcile node pool "workers-ambiguous": node profile "example:1.36.5" is published by more than one NodeProfile
       observedGeneration: 1
       reason: NotSynced
       status: "False"

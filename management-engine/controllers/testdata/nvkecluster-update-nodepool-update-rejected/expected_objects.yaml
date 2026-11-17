@@ -108,7 +108,7 @@ items:
       message: |-
         reconcile node pool "workers-move": update infra of nvke controller node pool "workers-move" for release "worker-b-release": NVKE controller request returned HTTP 503: Service Unavailable
         reconcile node pool "workers-unresolved": scale nvke controller node pool "workers-unresolved" to 2 replicas: NVKE controller request returned HTTP 503: Service Unavailable
-        no NodePoolRelease publishes node profile "example:9.9.9"
+        no NodeProfile publishes node profile "example:9.9.9"
       observedGeneration: 2
       reason: ReconcileFailed
       status: "False"
@@ -119,7 +119,7 @@ items:
           * NodePoolsReconciled:
             * reconcile node pool "workers-move": update infra of nvke controller node pool "workers-move" for release "worker-b-release": NVKE controller request returned HTTP 503: Service Unavailable
             * reconcile node pool "workers-unresolved": scale nvke controller node pool "workers-unresolved" to 2 replicas: NVKE controller request returned HTTP 503: Service Unavailable
-            * no NodePoolRelease publishes node profile "example:9.9.9"
+            * no NodeProfile publishes node profile "example:9.9.9"
       observedGeneration: 2
       reason: NotReady
       status: "False"
@@ -135,7 +135,7 @@ items:
         * NodePoolsReconciled:
           * reconcile node pool "workers-move": update infra of nvke controller node pool "workers-move" for release "worker-b-release": NVKE controller request returned HTTP 503: Service Unavailable
           * reconcile node pool "workers-unresolved": scale nvke controller node pool "workers-unresolved" to 2 replicas: NVKE controller request returned HTTP 503: Service Unavailable
-          * no NodePoolRelease publishes node profile "example:9.9.9"
+          * no NodeProfile publishes node profile "example:9.9.9"
       observedGeneration: 2
       reason: NotSynced
       status: "False"

@@ -106,8 +106,8 @@ items:
       type: NVKEControllerUpdateFailed
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
-        reconcile node pool "workers-to-missing": no NodePoolRelease publishes node profile "example:9.9.9"
-        reconcile node pool "workers-to-deprecated": NodePoolRelease "worker-deprecated-release" for node profile "example:1.36.2" is deprecated
+        reconcile node pool "workers-to-missing": no NodeProfile publishes node profile "example:9.9.9"
+        reconcile node pool "workers-to-deprecated": NodeProfile "worker-deprecated-release" for node profile "example:1.36.2" is deprecated
       observedGeneration: 2
       reason: ReconcileFailed
       status: "False"
@@ -116,8 +116,8 @@ items:
       message: |-
         * Synced:
           * NodePoolsReconciled:
-            * reconcile node pool "workers-to-missing": no NodePoolRelease publishes node profile "example:9.9.9"
-            * reconcile node pool "workers-to-deprecated": NodePoolRelease "worker-deprecated-release" for node profile "example:1.36.2" is deprecated
+            * reconcile node pool "workers-to-missing": no NodeProfile publishes node profile "example:9.9.9"
+            * reconcile node pool "workers-to-deprecated": NodeProfile "worker-deprecated-release" for node profile "example:1.36.2" is deprecated
       observedGeneration: 2
       reason: NotReady
       status: "False"
@@ -131,8 +131,8 @@ items:
     - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
         * NodePoolsReconciled:
-          * reconcile node pool "workers-to-missing": no NodePoolRelease publishes node profile "example:9.9.9"
-          * reconcile node pool "workers-to-deprecated": NodePoolRelease "worker-deprecated-release" for node profile "example:1.36.2" is deprecated
+          * reconcile node pool "workers-to-missing": no NodeProfile publishes node profile "example:9.9.9"
+          * reconcile node pool "workers-to-deprecated": NodeProfile "worker-deprecated-release" for node profile "example:1.36.2" is deprecated
       observedGeneration: 2
       reason: NotSynced
       status: "False"
