@@ -4,6 +4,7 @@
 package qualification
 
 import (
+	"slices"
 	"strings"
 	"testing"
 )
@@ -260,6 +261,41 @@ func TestShippedPolicyGivesOnlyThePerfStreamItsOwnTestGridGroup(t *testing.T) {
 		}
 		if got := s.Parameters.TestGridGroup; got != want {
 			t.Errorf("%s names TestGrid group %q, want %q", s.Name, got, want)
+		}
+	}
+}
+
+// Each DSX label runs exactly the datahalls it names. A DSX stream added later
+// fails here until it is placed in these scopes on purpose.
+func TestShippedPolicyKeepsEachDSXScopeToItsStreams(t *testing.T) {
+	p, err := LoadPolicy("../../policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	const (
+		l40s  = "dsx-l40s-amd64-ubuntu-24.04-kube-1.36"
+		vr200 = "dsx-vr200-arm64-ubuntu-26.04-kube-1.36"
+		gb300 = "dsx-gb300-arm64-ubuntu-26.04-kube-1.36"
+	)
+	for name, want := range map[string][]string{
+		"dsx":       {l40s, vr200},
+		"dsx-amd64": {l40s},
+		"dsx-arm64": {vr200},
+		"dsx-gb300": {gb300},
+	} {
+		scope, ok := p.Spec.Scopes[name]
+		if !ok {
+			t.Errorf("the policy has no %s scope", name)
+			continue
+		}
+		var selected []string
+		for _, s := range p.Spec.Streams {
+			if scope.Matches(s) {
+				selected = append(selected, s.Name)
+			}
+		}
+		if !slices.Equal(selected, want) {
+			t.Errorf("scope %s selects %v, want %v", name, selected, want)
 		}
 	}
 }
