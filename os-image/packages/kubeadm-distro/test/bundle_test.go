@@ -40,8 +40,8 @@ var bundleScript = func() string {
 // fixture server has to serve exactly the URLs those pins produce.
 const (
 	fixtureVersion    = "v1.36.3"
-	fixtureContainerd = "2.3.0"
-	fixtureRunc       = "v1.4.2"
+	fixtureContainerd = "2.3.7"
+	fixtureRunc       = "v1.5.3"
 	fixtureHelm       = "v4.1.4"
 	fixtureCriTools   = "v1.36.0"
 	fixtureCNI        = "v1.6.0"
