@@ -166,9 +166,12 @@ jobs:
           TRIAGE="${RUNNER_TEMP}/triage" RULES=release/triage.yaml \
             release/hack/triage-run.sh "${RUN_ID}" | tee -a "${GITHUB_STEP_SUMMARY}"
 
-      # Only a real post needs the thread. A dry run prints what would be sent.
+      # A dry run needs the thread too: a reply is only rendered when there is a
+      # thread to reply in. Downloading it takes no secret. A run with no saved
+      # thread, or an expired one, previews nothing; the summary above still
+      # names every failure.
       - name: Restore the thread
-        if: steps.run.outputs.tag != '' && steps.run.outputs.post == 'true'
+        if: steps.run.outputs.tag != ''
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
