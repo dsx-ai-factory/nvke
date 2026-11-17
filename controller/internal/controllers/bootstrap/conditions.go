@@ -52,6 +52,26 @@ const (
 	BootstrapAuthorizationSyncFailedReason = "BootstrapAuthorizationSyncFailed"
 )
 
+const (
+	// KubeletClientCertificateIssuedCondition reports whether the Machine's initial kubelet client certificate was issued.
+	KubeletClientCertificateIssuedCondition = keys.Domain + "/KubeletClientCertificateIssued"
+
+	// KubeletClientCertificateIssuedReason means a validated kubelet client certificate is present on the tenant CSR.
+	KubeletClientCertificateIssuedReason = "ClientCertificateIssued"
+	// KubeletClientCSRWaitingForBootstrapIdentityReason means the Machine has not joined and its bootstrap identity is not set.
+	KubeletClientCSRWaitingForBootstrapIdentityReason = "WaitingForBootstrapIdentity"
+	// KubeletClientCSRWaitingReason means the bootstrap identity is set and the client CSR has not arrived.
+	KubeletClientCSRWaitingReason = "WaitingForClientCSR"
+	// KubeletClientCSRInvalidReason means the controller will not approve a client certificate for this Machine.
+	KubeletClientCSRInvalidReason = "ClientCSRInvalid"
+	// KubeletClientCSRWaitingForSigningReason means the client CSR is approved and the signer has not issued the certificate yet.
+	KubeletClientCSRWaitingForSigningReason = "WaitingForClientCertificateSigning"
+	// KubeletClientCSRFailedReason means an operation failed while approving the client CSR. The message is the error.
+	KubeletClientCSRFailedReason = "ClientCSRFailed"
+	// KubeletClientCSRApprovalReason is recorded on the tenant CSR Approved condition when this controller approves it.
+	KubeletClientCSRApprovalReason = "NVKEValidatedBootstrapIdentity"
+)
+
 func SetBootstrapIdentityResolvedCondition(
 	ctx context.Context,
 	k8sClient client.Client,
@@ -90,6 +110,26 @@ func setBootstrapAuthorizationSyncedCondition(
 		reason,
 		message,
 		constants.FieldManagerBootstrapAuthorization,
+	)
+}
+
+func setKubeletClientCertificateCondition(
+	ctx context.Context,
+	k8sClient client.Client,
+	machine *clusterv1.Machine,
+	status metav1.ConditionStatus,
+	reason string,
+	message string,
+) error {
+	return setMachineCondition(
+		ctx,
+		k8sClient,
+		machine,
+		KubeletClientCertificateIssuedCondition,
+		status,
+		reason,
+		message,
+		constants.FieldManagerKubeletClientCSR,
 	)
 }
 
