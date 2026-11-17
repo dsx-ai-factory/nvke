@@ -203,8 +203,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			Skip("-e2e.site-stage is not set")
 		case siteStageProvision, siteStageBootstrap, siteStageDeployment:
 		case siteStageFull:
-			env := expectSucceed(runEnvironment())
-			if err := fullStageSupported(env.Provider); err != nil {
+			if err := fullStageSupported(expectSucceed(runEnvironment()).Provider); err != nil {
 				Fail(err.Error())
 			}
 		default:
