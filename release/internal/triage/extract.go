@@ -5,6 +5,7 @@ package triage
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"regexp"
@@ -18,13 +19,21 @@ const (
 	// annotation are kept. A step that prints its own diagnosis, as the
 	// artifact check does, prints it just before it fails.
 	contextLines = 12
-	// failureLines is how many lines of a Ginkgo failure block are kept.
-	failureLines = 6
+	// failureLines is how many lines of a Ginkgo failure block are kept. The
+	// block ends at a blank line, so this only caps a long one. A clusterctl
+	// failure prints its progress before the error that ends it, and the error
+	// is the seventh line.
+	failureLines = 10
 	// maxLine bounds a single log line. Teardown dumps are long.
 	maxLine = 1 << 20
-	// maxHeredoc is how many lines of a here-document are skipped before it is
-	// taken to be something else and read as output again.
-	maxHeredoc = 400
+)
+
+const (
+	// groupOpen starts the block the runner prints for a step before its output:
+	// the step's script, its shell line and its whole env listing, up to the
+	// next ##[endgroup]. All of it is the workflow's own source, not output.
+	groupOpen  = "##[group]Run "
+	groupClose = "##[endgroup]"
 )
 
 var (
@@ -40,18 +49,15 @@ var (
 	ginkgoHeader = regexp.MustCompile(`^\[FAILED\] [^\[]`)
 	// typeLine is the Go type Gomega prints before an error's message.
 	typeLine = regexp.MustCompile(`^<\*[\w.]+ \| 0x[0-9a-f]+>:`)
-	// heredoc starts a here-document in the workflow's own shell source,
-	// which a step prints before its output. The delimiter is upper case and
-	// follows a command, so Ginkgo's "<< End Additional Progress Reports" and a
-	// shift such as 1<<20 are not mistaken for one.
-	heredoc = regexp.MustCompile(`\S\s*<<-?['"]?([A-Z][A-Z0-9_]*)['"]?(\s|$)`)
 )
 
 // Evidence is the part of a job's log that says why it failed.
 //
 // A job log also holds the workflow's own shell source, so a search of the
-// whole log for 403 or EOF matches an echo or a heredoc. Evidence keeps only
-// what a failing step wrote: the runner's error annotations, the first Ginkgo
+// whole log for 403 or EOF matches an echo or a heredoc. The runner marks that
+// source exactly: each step's script, shell and env sit between "##[group]Run"
+// and the next "##[endgroup]", and Extract skips them. Evidence keeps only what
+// a failing step wrote: the runner's error annotations, the first Ginkgo
 // failure, and the lines before the first annotation.
 type Evidence struct {
 	// Annotations are the ##[error] lines, less the bare exit-code one.
@@ -81,8 +87,7 @@ func (e Evidence) Text() string {
 type scan struct {
 	e         Evidence
 	ring      []string
-	until     string // the terminator of the here-document being skipped
-	skipped   int    // how many lines of it have been skipped
+	inSource  bool // inside a step's "##[group]Run" block
 	snapshot  bool
 	gotWhere  bool
 	gotBlock  bool
@@ -94,15 +99,21 @@ type scan struct {
 func Extract(r io.Reader) (Evidence, error) {
 	var s scan
 
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), maxLine)
+	br := bufio.NewReaderSize(r, 64*1024)
 
-	for sc.Scan() {
-		s.line(strings.TrimSpace(ansi.ReplaceAllString(timestamp.ReplaceAllString(sc.Text(), ""), "")))
-	}
+	for {
+		text, err := readLine(br)
+		if text != "" || err == nil {
+			s.line(strings.TrimSpace(ansi.ReplaceAllString(timestamp.ReplaceAllString(text, ""), "")))
+		}
 
-	if err := sc.Err(); err != nil {
-		return Evidence{}, fmt.Errorf("reading the job log: %w", err)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+
+		if err != nil {
+			return Evidence{}, fmt.Errorf("reading the job log: %w", err)
+		}
 	}
 
 	// A step that failed a spec says why in the failure. Its preceding output
@@ -112,6 +123,28 @@ func Extract(r io.Reader) (Evidence, error) {
 	}
 
 	return s.e, nil
+}
+
+// readLine returns the next line, cut at maxLine bytes: the rest of an overlong
+// line, such as a teardown dump on one line, is read and dropped, so one line
+// cannot stop the triage of a whole log. It returns io.EOF with the last line.
+func readLine(br *bufio.Reader) (string, error) {
+	var out []byte
+
+	for {
+		part, isPrefix, err := br.ReadLine()
+		if err != nil {
+			return string(out), err
+		}
+
+		if room := maxLine - len(out); room > 0 {
+			out = append(out, part[:min(room, len(part))]...)
+		}
+
+		if !isPrefix {
+			return string(out), nil
+		}
+	}
 }
 
 func (s *scan) line(line string) {
@@ -124,17 +157,14 @@ func (s *scan) line(line string) {
 		return
 	}
 
-	if s.until != "" {
-		s.skipped++
-		if line == s.until || s.skipped > maxHeredoc {
-			s.until = ""
-		}
+	if s.inSource {
+		s.inSource = line != groupClose
 
 		return
 	}
 
-	if m := heredoc.FindStringSubmatch(line); m != nil && !strings.HasPrefix(line, "##[") {
-		s.until, s.skipped = m[1], 0
+	if strings.HasPrefix(line, groupOpen) {
+		s.inSource = true
 
 		return
 	}
@@ -172,7 +202,7 @@ func (s *scan) line(line string) {
 		}
 	}
 
-	if !s.snapshot && !strings.Contains(line, "::error::") && !strings.HasPrefix(line, "##[") && !strings.HasPrefix(line, "echo ") {
+	if !s.snapshot && !strings.HasPrefix(line, "##[") {
 		s.ring = append(s.ring, line)
 		if len(s.ring) > contextLines {
 			s.ring = s.ring[1:]

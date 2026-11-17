@@ -13,7 +13,8 @@ type Result struct {
 	Rule string `json:"rule,omitempty"`
 	// Action is what may be done about it. ActionNone for an unknown failure.
 	Action Action `json:"action"`
-	// Evidence is the line of the log that matched, for a person to check.
+	// Evidence is the line of the log where the match ends, for a person to
+	// check. For a rule that spans lines, that is the line that says why.
 	Evidence string `json:"evidence,omitempty"`
 	// Note says what the failure means and what to do.
 	Note string `json:"note"`
@@ -42,7 +43,7 @@ func (c *Config) Classify(step string, e Evidence) Result {
 			Class:    r.Class,
 			Rule:     r.Name,
 			Action:   r.Action,
-			Evidence: lineAround(text, loc[0]),
+			Evidence: lineAround(text, max(loc[0], loc[1]-1)),
 			Note:     strings.TrimSpace(r.Note),
 		}
 	}

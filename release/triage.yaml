@@ -133,7 +133,7 @@ rules:
 
   - name: cert-manager-deadline
     class: site-cert-manager
-    match: 'Waiting for cert-manager to be available'
+    match: 'Waiting for cert-manager to be available\.\.\.(\s|\\n)+Error:'
     action: none
     note: >-
       cert-manager did not become available during clusterctl init. Read the

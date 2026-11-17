@@ -187,7 +187,7 @@ func TestClassify(t *testing.T) {
 			wantRule:   "node-readiness-timeout",
 			wantClass:  "tenant-node-not-ready",
 			wantAction: ActionRerunFailed,
-			wantInEvid: "node_readiness_test.go",
+			wantInEvid: "Timed out after 2700",
 		},
 		{
 			name: "site cloud-init",
@@ -266,10 +266,13 @@ func TestClassify(t *testing.T) {
 			name: "workflow source in the log is not evidence",
 			step: "Check every artifact the plan names",
 			log: log(
-				`          echo "::error::could not confirm os-image/releases/v1/amd64/x.qcow2 exists: HTTP 403"`,
+				"##[group]Run set -Eeuo pipefail",
+				`echo "::error::could not confirm os-image/releases/v1/amd64/x.qcow2 exists: HTTP 403"`,
 				"cat > cfg.yaml <<EOF",
 				"os-image/releases/v1/amd64/x.qcow2 exists: HTTP 403",
 				"EOF",
+				"shell: /usr/bin/bash -e {0}",
+				"##[endgroup]",
 				"##[error]something else entirely",
 				exit1,
 			),
@@ -277,7 +280,65 @@ func TestClassify(t *testing.T) {
 			wantAction: ActionNone,
 		},
 		{
-			name: "a Ginkgo << marker does not start a here-document",
+			name: "source that quotes a rule's phrase is not evidence",
+			step: "Run the e2e suite",
+			log: log(
+				"##[group]Run ./hack/e2e.sh",
+				"if ! grep -q 'Waiting for cert-manager to be available... Error:' out.log; then",
+				"##[endgroup]",
+				"##[error]something else entirely",
+				exit1,
+			),
+			wantClass:  ClassUnknown,
+			wantAction: ActionNone,
+		},
+		{
+			name: "an unterminated heredoc in the source does not hide a real error",
+			step: "Check every artifact the plan names",
+			log: log(
+				"##[group]Run ./check.sh",
+				`echo "usage: cat <<EOF"`,
+				"##[endgroup]",
+				"##[error]os-image/releases/v1.2.3 exists: HTTP 403",
+				exit1,
+			),
+			wantRule:   "os-image-not-published",
+			wantClass:  "os-image-not-published",
+			wantAction: ActionRerunImageBuild,
+			wantInEvid: "HTTP 403",
+		},
+		{
+			name: "cert-manager deadline with the error on its own line",
+			step: "Run the e2e suite",
+			log: log(
+				"  [FAILED] should install the NVKE stack",
+				"  Unexpected error:",
+				"      <*fmt.wrapError | 0x25251a77a080>: ",
+				"      clusterctl init: Process exited with status 1",
+				"      Fetching providers",
+				"      Installing cert-manager version=\"v1.21.1\"",
+				"      Waiting for cert-manager to be available...",
+				"      Error: context deadline exceeded",
+				exit1,
+			),
+			wantRule:   "cert-manager-deadline",
+			wantClass:  "site-cert-manager",
+			wantAction: ActionNone,
+			wantInEvid: "Error: context deadline exceeded",
+		},
+		{
+			name: "cert-manager progress that did not fail is not the deadline",
+			step: "Run the e2e suite",
+			log: log(
+				"  [FAILED] Unexpected error:",
+				"      clusterctl init: Process exited with status 1 Installing cert-manager Waiting for cert-manager to be available... Installing provider infrastructure-nico Error: failed to apply",
+				exit1,
+			),
+			wantClass:  ClassUnknown,
+			wantAction: ActionNone,
+		},
+		{
+			name: "a Ginkgo << marker is not source",
 			step: "Run the e2e suite",
 			log: log(
 				"<< End Additional Progress Reports",
@@ -396,5 +457,26 @@ func TestStepNarrowsARule(t *testing.T) {
 
 	if got := c.Classify("Run the e2e suite", e); got.Class != ClassUnknown {
 		t.Fatalf("on another step got class %q, want unknown", got.Class)
+	}
+}
+
+func TestAnOverlongLineDoesNotStopTheLog(t *testing.T) {
+	cfg, err := Load(shipped)
+	if err != nil {
+		t.Fatalf("the shipped rules do not load: %v", err)
+	}
+
+	// A teardown dump on one line, longer than maxLine, then the real error.
+	huge := strings.Repeat("x", 3*maxLine)
+	in := log(huge, "##[error]os-image/releases/v1.2.3/amd64/x.qcow2 exists: HTTP 403", exit1)
+
+	e, err := Extract(strings.NewReader(in))
+	if err != nil {
+		t.Fatalf("an overlong line failed the extraction: %v", err)
+	}
+
+	got := cfg.Classify("Check every artifact the plan names", e)
+	if got.Rule != "os-image-not-published" {
+		t.Errorf("rule = %q, want os-image-not-published; the line after the overlong one was lost", got.Rule)
 	}
 }

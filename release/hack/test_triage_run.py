@@ -3,6 +3,7 @@
 
 """Exercise triage-run.sh with a stub gh and a stub triage, so nothing is fetched."""
 
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -29,8 +30,17 @@ case "${args}" in
 esac
 """
 
-# triage classify ...: prints the JSON in $STUB_RESULT whatever the log says.
+# triage classify ...: prints the JSON in $STUB_RESULT whatever the log says,
+# and fails the way an unreadable log does when the log says CLASSIFY-FAILS.
 STUB_TRIAGE = """#!/usr/bin/env bash
+args=("$@")
+for ((i = 0; i < ${#args[@]}; i++)); do
+  if [[ "${args[i]}" == --log ]]; then log="${args[i + 1]}"; fi
+done
+if grep -q CLASSIFY-FAILS "${log}"; then
+  echo "triage: reading the job log: bufio.Scanner: token too long" >&2
+  exit 1
+fi
 cat "${STUB_RESULT}"
 """
 
@@ -53,7 +63,7 @@ class TriageRunTest(unittest.TestCase):
         path.write_text(body)
         path.chmod(0o755)
 
-    def run_script(self, *args):
+    def run_script(self, *args, **extra):
         env = dict(
             os.environ,
             PATH=f"{self.root}:{os.environ['PATH']}",
@@ -62,6 +72,7 @@ class TriageRunTest(unittest.TestCase):
             STUB_JOBS=str(self.jobs),
             STUB_LOGS=str(self.logs),
             STUB_RESULT=str(self.result),
+            **extra,
         )
         return subprocess.run([str(SCRIPT), *args], capture_output=True, text=True, env=env)
 
@@ -105,6 +116,25 @@ class TriageRunTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("| job-a | 1 | Run the e2e suite | log expired or unavailable | none | |", r.stdout)
         self.assertIn("| job-b | 1 | Plan | log expired or unavailable | none | |", r.stdout)
+
+    def test_a_job_that_cannot_be_classified_does_not_stop_the_others(self):
+        self.jobs.write_text("11\t1\tRun the e2e suite\tjob-a\n12\t1\tPlan\tjob-b\n")
+        (self.logs / "11.log").write_text("CLASSIFY-FAILS\n")
+        (self.logs / "12.log").write_text("fine\n")
+        r = self.run_script("1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("| job-a | 1 | Run the e2e suite | log expired or unavailable | none | |", r.stdout)
+        self.assertIn("| job-b | 1 | Plan | c | none | `e` |", r.stdout)
+        self.assertIn("could not classify job 11", r.stderr)
+
+    def test_a_job_that_cannot_be_classified_is_not_posted_either(self):
+        self.jobs.write_text("11\t1\tRun the e2e suite\tjob-a\n12\t1\tPlan\tjob-b\n")
+        (self.logs / "11.log").write_text("CLASSIFY-FAILS\n")
+        (self.logs / "12.log").write_text("fine\n")
+        r = self.run_script("1", FORMAT="jsonl")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rows = [json.loads(line) for line in r.stdout.splitlines() if line.strip()]
+        self.assertEqual([row["class"] for row in rows], ["log-unavailable", "c"])
 
     def test_log_text_cannot_break_the_table_or_inject_markup(self):
         self.jobs.write_text("11\t1\tRun the e2e suite\tjob-a\n")

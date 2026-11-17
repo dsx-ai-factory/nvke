@@ -97,8 +97,13 @@ while IFS=$'\t' read -r id attempt_of step name; do
 
     if "${expired}"; then
         result='{"class": "log-unavailable", "action": "none", "evidence": "", "note": "The job log expired or could not be read."}'
-    else
-        result="$("${triage}" classify --rules "${rules}" --step "${step}" --log "${log}")"
+    elif ! result="$("${triage}" classify --rules "${rules}" --step "${step}" --log "${log}" 2>"${work}/classify.err")"; then
+        # One job that cannot be classified must not stop the rest, or the
+        # reply for the others is lost with it. It is reported like a log that
+        # is gone: the summary says so, and nothing is posted for it.
+        echo "triage-run: could not classify job ${id}: $(head -c 300 "${work}/classify.err")" >&2
+        expired=true
+        result='{"class": "log-unavailable", "action": "none", "evidence": "", "note": "The job log could not be classified."}'
     fi
 
     if [[ "${format}" == jsonl ]]; then
