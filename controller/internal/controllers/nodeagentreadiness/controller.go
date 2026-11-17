@@ -76,18 +76,10 @@ func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcil
 		return reconcile.Result{}, nil
 	}
 
-	probeCtx, cancel := context.WithTimeout(ctx, c.cfg.AgentReadiness.WithDefaults().Timeout)
-	defer cancel()
-
-	started := time.Now()
-	metrics.NodeAgentProbeStarted()
-	agentVersion, probeErr := c.nodeAgentClient.GetAgentVersion(probeCtx, node)
-	metrics.NodeAgentProbeFinished(time.Since(started), probeErr)
-	// Manager shutdown must not turn cancellation into a node-health failure.
-	if ctx.Err() != nil {
-		return reconcile.Result{}, ctx.Err()
+	probe, err := c.probeAgent(ctx, node)
+	if err != nil {
+		return reconcile.Result{}, err
 	}
-	probe := nodeAgentProbe{agentVersion: agentVersion, err: probeErr}
 	if !applyNodeAgentReadiness(&node, probe) {
 		return reconcile.Result{RequeueAfter: c.requeueAfter()}, nil
 	}
@@ -115,6 +107,29 @@ func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcil
 	}
 
 	return reconcile.Result{RequeueAfter: c.requeueAfter()}, nil
+}
+
+// probeAgent checks node-agent reachability and reports the outcome as a
+// nodeAgentProbe. A node with no IP address has nothing to dial: it is
+// reported unready without probing, so a pending node never dials localhost
+// and the probe metrics count real dials only.
+func (c *AgentReadinessController) probeAgent(ctx context.Context, node db.Node) (nodeAgentProbe, error) {
+	if node.IP == "" {
+		return nodeAgentProbe{err: agent.ErrNoAddress}, nil
+	}
+
+	probeCtx, cancel := context.WithTimeout(ctx, c.cfg.AgentReadiness.WithDefaults().Timeout)
+	defer cancel()
+
+	started := time.Now()
+	metrics.NodeAgentProbeStarted()
+	agentVersion, err := c.nodeAgentClient.GetAgentVersion(probeCtx, node)
+	metrics.NodeAgentProbeFinished(time.Since(started), err)
+	// Manager shutdown must not turn cancellation into a node-health failure.
+	if ctx.Err() != nil {
+		return nodeAgentProbe{}, ctx.Err()
+	}
+	return nodeAgentProbe{agentVersion: agentVersion, err: err}, nil
 }
 
 func (c *AgentReadinessController) requeueAfter() time.Duration {

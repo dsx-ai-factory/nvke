@@ -26,7 +26,7 @@ import (
 func TestUnit_AgentReadinessControllerRequeuesAfterProbe(t *testing.T) {
 	ctx := context.Background()
 	nodeID := uuid.New()
-	node := db.Node{ID: nodeID, Name: "worker-1"}
+	node := db.Node{ID: nodeID, Name: "worker-1", IP: "192.0.2.10"}
 
 	database := &testutil.MockDB{}
 	database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
@@ -72,7 +72,7 @@ func TestUnit_AgentProbeUsesDedicatedDeadline(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const probeTimeout = 5 * time.Second
 		nodeID := uuid.New()
-		node := db.Node{ID: nodeID, Conditions: db.NodeConditions{
+		node := db.Node{ID: nodeID, IP: "192.0.2.10", Conditions: db.NodeConditions{
 			NodeAgentReady: db.NewCondition(false, context.DeadlineExceeded.Error()),
 		}}
 		database := &testutil.MockDB{}
@@ -95,7 +95,7 @@ func TestUnit_AgentProbeShutdownDoesNotChangeReadiness(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		nodeID := uuid.New()
 		database := &testutil.MockDB{}
-		database.On("GetNode", mock.Anything, nodeID).Return(db.Node{ID: nodeID}, nil).Once()
+		database.On("GetNode", mock.Anything, nodeID).Return(db.Node{ID: nodeID, IP: "192.0.2.10"}, nil).Once()
 		probeStarted := make(chan struct{})
 		c := NewAgentReadinessController(config.Config{}, slog.New(slog.DiscardHandler), dbwrapper.New(database, nil), &blockingAgent{started: probeStarted})
 		ctx, cancel := context.WithCancel(t.Context())
@@ -131,10 +131,66 @@ func TestUnit_AgentProbeJitterBounds(t *testing.T) {
 	require.InDelta(t, 120, (total / 1000).Seconds(), 2)
 }
 
+type countingAgentClient struct {
+	agent.Client
+	getAgentVersionCalls int
+}
+
+func (a *countingAgentClient) GetAgentVersion(context.Context, db.Node) (string, error) {
+	a.getAgentVersionCalls++
+	return "", nil
+}
+
+func TestUnit_AgentProbeSkippedForNodeWithNoIP(t *testing.T) {
+	nodeID := uuid.New()
+	node := db.Node{ID: nodeID, AgentVersion: "v9.9.9", Conditions: db.NodeConditions{
+		NodeAgentReady: db.NewCondition(true, "Node agent is reachable"),
+	}}
+	database := &testutil.MockDB{}
+	database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+	tx := &testutil.MockTx{}
+	database.MockTx = tx
+	tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(node, nil).Once()
+	tx.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
+	tx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(updated *db.Node) bool {
+		return updated.Conditions.NodeAgentReady.Status == db.ConditionStatusFalse &&
+			updated.Conditions.NodeAgentReady.Message == noAddressMessage &&
+			updated.AgentVersion == node.AgentVersion
+	})).Return(node, nil).Once()
+	client := &countingAgentClient{}
+	c := NewAgentReadinessController(config.Config{}, slog.New(slog.DiscardHandler), dbwrapper.New(database, nil), client)
+
+	result, err := c.Reconcile(t.Context(), dbreconcile.NodeKey(nodeID))
+	require.NoError(t, err)
+	require.Equal(t, 2*time.Minute, result.RequeueAfter)
+	require.Zero(t, client.getAgentVersionCalls)
+	database.AssertExpectations(t)
+	tx.AssertExpectations(t)
+}
+
+func TestUnit_AgentProbeNoIPConditionUnchangedSkipsWrite(t *testing.T) {
+	nodeID := uuid.New()
+	node := db.Node{ID: nodeID, Conditions: db.NodeConditions{
+		NodeAgentReady: db.NewCondition(false, noAddressMessage),
+	}}
+	database := &testutil.MockDB{}
+	database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
+	client := &countingAgentClient{}
+	c := NewAgentReadinessController(config.Config{}, slog.New(slog.DiscardHandler), dbwrapper.New(database, nil), client)
+
+	result, err := c.Reconcile(t.Context(), dbreconcile.NodeKey(nodeID))
+	require.NoError(t, err)
+	require.Equal(t, 2*time.Minute, result.RequeueAfter)
+	require.Zero(t, client.getAgentVersionCalls)
+	database.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+	database.AssertExpectations(t)
+}
+
 func TestUnit_AgentProbeTimeoutMarksReadyNodeUnready(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		nodeID := uuid.New()
-		node := db.Node{ID: nodeID, AgentVersion: "v9.9.9", Conditions: db.NodeConditions{
+		node := db.Node{ID: nodeID, IP: "192.0.2.10", AgentVersion: "v9.9.9", Conditions: db.NodeConditions{
 			NodeAgentReady: db.NewCondition(true, "Node agent is reachable"),
 		}}
 		database := &testutil.MockDB{}

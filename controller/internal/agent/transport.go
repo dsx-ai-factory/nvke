@@ -28,6 +28,15 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodecontract"
 )
 
+var (
+	// ErrNoAddress reports a dial against a node that has no IP address yet, such
+	// as a pending node the infrastructure provider has not allocated.
+	ErrNoAddress = errors.New("node has no IP address")
+
+	// errClientCertificateAbsent reports that an optional client certificate file does not exist.
+	errClientCertificateAbsent = errors.New("client certificate file does not exist")
+)
+
 // Transport dials node agents using each node's pinned authentication profile.
 //
 // Every caller that reaches an agent goes through it. That is a requirement
@@ -112,6 +121,9 @@ func NewTransport(
 // Dial opens a connection to the node's agent and returns it with the cleanup
 // the caller must invoke.
 func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, func(), error) {
+	if node.IP == "" {
+		return nil, nil, ErrNoAddress
+	}
 	endpoint := net.JoinHostPort(node.IP, t.cfg.NodeAgent.Port)
 
 	var closeFuncs []func() error
@@ -191,9 +203,6 @@ func (t *Transport) externalClientCertificateFor(node db.Node) *tls.Certificate 
 	}
 	return t.externalClientCertificate
 }
-
-// errClientCertificateAbsent reports that an optional client certificate file does not exist.
-var errClientCertificateAbsent = errors.New("client certificate file does not exist")
 
 // loadOptionalClientCertificate returns errClientCertificateAbsent when the certificate file does not exist.
 func loadOptionalClientCertificate(certPath, keyPath string) (*tls.Certificate, error) {

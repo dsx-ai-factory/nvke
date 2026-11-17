@@ -4,7 +4,16 @@
 package nodeagentreadiness
 
 import (
+	"errors"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+)
+
+const (
+	// noAddressMessage is the nodeAgentReady message for a node that has no IP
+	// address to dial.
+	noAddressMessage = "Node has no IP address"
 )
 
 type nodeAgentProbe struct {
@@ -26,6 +35,9 @@ func applyNodeAgentReadiness(node *db.Node, agentProbe nodeAgentProbe) bool {
 
 func nodeAgentCondition(existing db.Condition, agentProbe nodeAgentProbe) db.Condition {
 	if agentProbe.err != nil {
+		if errors.Is(agentProbe.err, agent.ErrNoAddress) {
+			return updatedCondition(existing, db.ConditionStatusFalse, noAddressMessage)
+		}
 		return updatedCondition(existing, db.ConditionStatusFalse, agentProbe.err.Error())
 	}
 
