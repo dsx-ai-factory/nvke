@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/api/serviceerror"
-	temporalapi "go.temporal.io/api/workflowservice/v1"
 	tc "go.temporal.io/sdk/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
@@ -28,7 +27,7 @@ type fencedTemporal struct {
 	started bool
 }
 
-func (r *fencedTemporal) DescribeWorkflowExecution(context.Context, string, string) (*temporalapi.DescribeWorkflowExecutionResponse, error) {
+func (r *fencedTemporal) DescribeWorkflow(context.Context, string, string) (*tc.WorkflowExecutionDescription, error) {
 	return nil, serviceerror.NewNotFound("not found")
 }
 
