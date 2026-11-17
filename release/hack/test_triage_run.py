@@ -13,14 +13,20 @@ import unittest
 
 SCRIPT = Path(__file__).with_name("triage-run.sh")
 
-# gh api <path> [--jq ...]: the jobs listing prints what its jq would have
-# printed, one tab-separated line per failed job, from $STUB_JOBS; a log is the
-# file $STUB_LOGS/<job id>.log, and a job without one fails the way a missing
-# artifact does.
+# gh api <path> [--jq ...]: the jobs listing runs the script's own --jq query
+# over the JSON jobs in $STUB_JOBS, as gh would, so a filter the script drops
+# changes what a test sees; a log is the file $STUB_LOGS/<job id>.log, and a job
+# without one fails the way a missing artifact does.
 STUB_GH = """#!/usr/bin/env bash
 args="$*"
 case "${args}" in
-  *"/jobs?"*) cat "${STUB_JOBS}" ;;
+  *"/jobs?"*)
+    argv=("$@")
+    for ((i = 0; i < ${#argv[@]}; i++)); do
+      if [[ "${argv[i]}" == --jq ]]; then query="${argv[i + 1]}"; fi
+    done
+    jq -r "${query}" "${STUB_JOBS}"
+    ;;
   *"/jobs/"*"/logs"*)
     id="${args#*/jobs/}"
     id="${id%%/logs*}"
@@ -54,7 +60,7 @@ class TriageRunTest(unittest.TestCase):
         self.logs.mkdir()
         self.script("gh", STUB_GH)
         self.script("triage", STUB_TRIAGE)
-        self.jobs = self.root / "jobs.tsv"
+        self.jobs = self.root / "jobs.json"
         self.result = self.root / "result.json"
         self.result.write_text('{"class": "c", "action": "none", "evidence": "e", "note": "n"}')
 
@@ -62,6 +68,24 @@ class TriageRunTest(unittest.TestCase):
         path = self.root / name
         path.write_text(body)
         path.chmod(0o755)
+
+    def write_jobs(self, lines):
+        """Write the jobs gh would list, from tab-separated "id attempt step name"
+        lines. An empty step is a failed job with no failed step."""
+        jobs = []
+        for line in lines.splitlines():
+            job_id, attempt, step, name = line.split("\t")
+            jobs.append(
+                {
+                    "id": int(job_id),
+                    "run_attempt": int(attempt),
+                    "name": name,
+                    "conclusion": "failure",
+                    "steps": [{"name": step, "conclusion": "failure"}] if step else [],
+                }
+            )
+        jobs.append({"id": 99, "run_attempt": 1, "name": "passed-job", "conclusion": "success", "steps": []})
+        self.jobs.write_text(json.dumps({"jobs": jobs}))
 
     def run_script(self, *args, **extra):
         env = dict(
@@ -83,14 +107,14 @@ class TriageRunTest(unittest.TestCase):
             self.assertEqual(r.stdout, "", bad)
 
     def test_a_run_with_no_failed_job_says_so(self):
-        self.jobs.write_text("")
+        self.write_jobs("")
         r = self.run_script("1")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("No job of this run failed.", r.stdout)
         self.assertNotIn("| Job |", r.stdout)
 
     def test_a_failed_job_is_classified(self):
-        self.jobs.write_text("11\t1\tRun the e2e suite\tforge-gb200-amd64\n")
+        self.write_jobs("11\t1\tRun the e2e suite\tforge-gb200-amd64\n")
         (self.logs / "11.log").write_text("some log\n")
         self.result.write_text(
             '{"class": "forge-capacity", "action": "wait-then-rerun", "evidence": "need 2, unusedUsable=1", "note": "n"}'
@@ -101,15 +125,38 @@ class TriageRunTest(unittest.TestCase):
         self.assertIn("| forge-gb200-amd64 | 1 | Run the e2e suite | forge-capacity | wait-then-rerun | `need 2, unusedUsable=1` |", r.stdout)
 
     def test_every_attempt_is_listed(self):
-        self.jobs.write_text("11\t1\tPlan\tjob-a\n12\t2\tPlan\tjob-a\n")
+        self.write_jobs("11\t1\tPlan\tjob-a\n12\t2\tPlan\tjob-a\n")
         for i in ("11", "12"):
             (self.logs / f"{i}.log").write_text("log\n")
         r = self.run_script("1")
         rows = [line for line in r.stdout.splitlines() if line.startswith("| job-a")]
         self.assertEqual(len(rows), 2, r.stdout)
 
+    def test_a_given_attempt_lists_only_that_attempt(self):
+        self.write_jobs("11\t1\tPlan\tjob-a\n12\t2\tPlan\tjob-a\n")
+        for i in ("11", "12"):
+            (self.logs / f"{i}.log").write_text("log\n")
+        r = self.run_script("1", ATTEMPT="2")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        rows = [line for line in r.stdout.splitlines() if line.startswith("| job-a")]
+        self.assertEqual(len(rows), 1, r.stdout)
+        self.assertIn("| job-a | 2 |", rows[0])
+
+    def test_a_passed_job_is_not_listed(self):
+        self.write_jobs("11\t1\tPlan\tjob-a\n")
+        (self.logs / "11.log").write_text("log\n")
+        r = self.run_script("1")
+        self.assertNotIn("passed-job", r.stdout)
+
+    def test_a_failed_job_with_no_failed_step_keeps_its_name(self):
+        self.write_jobs("11\t1\t\tjob-a\n")
+        (self.logs / "11.log").write_text("log\n")
+        r = self.run_script("1")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("| job-a | 1 | none |", r.stdout)
+
     def test_an_expired_log_is_listed_not_dropped(self):
-        self.jobs.write_text("11\t1\tRun the e2e suite\tjob-a\n12\t1\tPlan\tjob-b\n")
+        self.write_jobs("11\t1\tRun the e2e suite\tjob-a\n12\t1\tPlan\tjob-b\n")
         # job 11 has no log file: gh fails. Job 12's log is the expired-blob error.
         (self.logs / "12.log").write_text("<Error><Code>BlobNotFound</Code></Error>\n")
         r = self.run_script("1")
@@ -118,7 +165,7 @@ class TriageRunTest(unittest.TestCase):
         self.assertIn("| job-b | 1 | Plan | log expired or unavailable | none | |", r.stdout)
 
     def test_a_job_that_cannot_be_classified_does_not_stop_the_others(self):
-        self.jobs.write_text("11\t1\tRun the e2e suite\tjob-a\n12\t1\tPlan\tjob-b\n")
+        self.write_jobs("11\t1\tRun the e2e suite\tjob-a\n12\t1\tPlan\tjob-b\n")
         (self.logs / "11.log").write_text("CLASSIFY-FAILS\n")
         (self.logs / "12.log").write_text("fine\n")
         r = self.run_script("1")
@@ -128,7 +175,7 @@ class TriageRunTest(unittest.TestCase):
         self.assertIn("could not classify job 11", r.stderr)
 
     def test_a_job_that_cannot_be_classified_is_not_posted_either(self):
-        self.jobs.write_text("11\t1\tRun the e2e suite\tjob-a\n12\t1\tPlan\tjob-b\n")
+        self.write_jobs("11\t1\tRun the e2e suite\tjob-a\n12\t1\tPlan\tjob-b\n")
         (self.logs / "11.log").write_text("CLASSIFY-FAILS\n")
         (self.logs / "12.log").write_text("fine\n")
         r = self.run_script("1", FORMAT="jsonl")
@@ -137,7 +184,7 @@ class TriageRunTest(unittest.TestCase):
         self.assertEqual([row["class"] for row in rows], ["log-unavailable", "c"])
 
     def test_log_text_cannot_break_the_table_or_inject_markup(self):
-        self.jobs.write_text("11\t1\tRun the e2e suite\tjob-a\n")
+        self.write_jobs("11\t1\tRun the e2e suite\tjob-a\n")
         (self.logs / "11.log").write_text("log\n")
         self.result.write_text(
             '{"class": "c", "action": "none", '

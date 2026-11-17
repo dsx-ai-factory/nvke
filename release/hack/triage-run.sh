@@ -55,11 +55,13 @@ if [[ -n "${attempt}" ]]; then
     only=".run_attempt == ${attempt}"
 fi
 
-# One line per failed job: id, attempt, the failed step, the job name. @tsv
-# escapes tabs and newlines in a value, so a name cannot split a line.
+# One line per failed job: id, attempt, the job name, the failed step. The step
+# is last because it can be empty, and read collapses adjacent tabs, so an empty
+# field anywhere else would shift the ones after it. @tsv escapes tabs and
+# newlines in a value, so a name cannot split a line.
 gh api --paginate "repos/${repo}/actions/runs/${run}/jobs?filter=all&per_page=100" \
     --jq ".jobs[] | select(.conclusion == \"failure\" and (${only}))
-          | [.id, .run_attempt, ([.steps[]? | select(.conclusion == \"failure\") | .name] | first // \"\"), .name]
+          | [.id, .run_attempt, .name, ([.steps[]? | select(.conclusion == \"failure\") | .name] | first // \"\")]
           | @tsv" >"${work}/jobs.tsv"
 
 if [[ "${format}" == markdown ]]; then
@@ -86,7 +88,7 @@ cell() {
     jq -Rrs 'gsub("[|`\r\n]"; " ") | gsub("[<>]"; "") | sub("\\s+$"; "")' <<<"$1"
 }
 
-while IFS=$'\t' read -r id attempt_of step name; do
+while IFS=$'\t' read -r id attempt_of name step; do
     log="${work}/${id}.log"
 
     expired=false

@@ -166,6 +166,12 @@ func (s *scan) line(line string) {
 	if strings.HasPrefix(line, groupOpen) {
 		s.inSource = true
 
+		// A new step starts: what the last one printed, and handled, is not
+		// the failure of this one.
+		if !s.snapshot {
+			s.ring = s.ring[:0]
+		}
+
 		return
 	}
 

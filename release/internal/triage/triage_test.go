@@ -308,6 +308,21 @@ func TestClassify(t *testing.T) {
 			wantInEvid: "HTTP 403",
 		},
 		{
+			name: "what an earlier step printed is not the failure of the next",
+			step: "Free disk space",
+			log: log(
+				"##[group]Run actions/download-artifact@v8",
+				"##[endgroup]",
+				"Artifact not found for name: qualify-site-inputs",
+				"##[group]Run ./free-disk.sh",
+				"##[endgroup]",
+				"##[error]No space left on device",
+				exit1,
+			),
+			wantClass:  ClassUnknown,
+			wantAction: ActionNone,
+		},
+		{
 			name: "cert-manager deadline with the error on its own line",
 			step: "Run the e2e suite",
 			log: log(
