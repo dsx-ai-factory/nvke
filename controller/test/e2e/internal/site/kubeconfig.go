@@ -66,6 +66,7 @@ func KeepKubeconfig(cluster Cluster, dir, name string) (string, error) {
 		return "", err
 	}
 	out := filepath.Join(dir, name+".kubeconfig")
+	// #nosec G703 -- dir is the operator's key directory for the run
 	if err := os.WriteFile(out, kept, 0o600); err != nil {
 		return "", err
 	}

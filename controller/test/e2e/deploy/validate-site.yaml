@@ -56,6 +56,14 @@ rules:
   - apiGroups: [cert-manager.io]
     resources: [certificates]
     verbs: [get, list]
+  # Only where NVKE_SITE_CERT_MANAGER_APPROVAL is policy, for the creates
+  # specs; namespaces only where a policy selects namespaces by label:
+  # - apiGroups: [policy.cert-manager.io]
+  #   resources: [certificaterequestpolicies]
+  #   verbs: [list]
+  # - apiGroups: [""]
+  #   resources: [namespaces]
+  #   verbs: [get]
   # Only where NVKE_SITE_COMPONENTS lists argocd or cnpg:
   # - apiGroups: [argoproj.io]
   #   resources: [applications]

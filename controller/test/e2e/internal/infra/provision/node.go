@@ -235,6 +235,40 @@ func KeyPath(keyDir, node string) string {
 	return filepath.Join(keyDir, node+".key")
 }
 
+// Record is how a kept node is reached after the run, written beside its key
+// for a tool to read rather than a person to copy out of the log. It holds no
+// credential: Key and Kubeconfig name files.
+type Record struct {
+	Name       string `json:"name"`
+	Address    string `json:"address"`
+	User       string `json:"user"`
+	JumpHost   string `json:"jumpHost,omitempty"`
+	JumpLogin  string `json:"jumpLogin,omitempty"`
+	Key        string `json:"key"`
+	Kubeconfig string `json:"kubeconfig,omitempty"`
+}
+
+// RecordPath is where SaveRecord writes node's record under keyDir.
+func RecordPath(keyDir, node string) string {
+	return filepath.Join(keyDir, node+".json")
+}
+
+// SaveRecord writes r to RecordPath(keyDir, r.Name), readable only by the
+// runner's user, as the key beside it is.
+func SaveRecord(keyDir string, r Record) error {
+	if r.Name == "" || filepath.Base(r.Name) != r.Name || r.Name == "." || r.Name == ".." {
+		return fmt.Errorf("node name %q cannot name a file", r.Name)
+	}
+	data, err := json.MarshalIndent(r, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := privateDir(keyDir); err != nil {
+		return err
+	}
+	return os.WriteFile(RecordPath(keyDir, r.Name), append(data, '\n'), 0o600)
+}
+
 // CheckKeyPath reports whether Save could write node's key under keyDir, so
 // a provider can refuse before it creates a machine rather than after.
 func CheckKeyPath(keyDir, node string) error {

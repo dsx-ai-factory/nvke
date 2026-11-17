@@ -241,7 +241,7 @@ func TestE2E(t *testing.T) {
 	if summary != "" {
 		// Printed rather than logged: the image runs without -test.v, which
 		// shows a t.Log line only for a failed test.
-		fmt.Println(summary)
+		fmt.Fprintln(os.Stdout, summary)
 		validateProfileSummary = summary
 	}
 

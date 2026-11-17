@@ -475,13 +475,24 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			if dir := cfg.Lifecycle.NodeKeyDir; dir != "" {
 				GinkgoLogr.Info("the site node can be logged into through its jump host with this run's key",
 					"key", provision.KeyPath(dir, node.Name), "user", node.User, "ip", node.IP)
+				record := provision.Record{
+					Name: node.Name, Address: node.IP, User: node.User,
+					JumpHost: node.JumpHost, JumpLogin: node.JumpLogin,
+					Key: provision.KeyPath(dir, node.Name),
+				}
 				if cluster.Kubeconfig != "" {
 					if path, err := site.KeepKubeconfig(cluster, dir, node.Name); err != nil {
 						GinkgoLogr.Error(err, "writing the kept site's kubeconfig")
 					} else {
+						record.Kubeconfig = path
 						GinkgoLogr.Info("the site's admin kubeconfig reaches it once the node's API server port is forwarded through the jump host",
 							"kubeconfig", path, "forward", fmt.Sprintf("127.0.0.1:%d to %s:127.0.0.1:%d", cluster.APIServerPort, node.IP, cluster.APIServerPort))
 					}
+				}
+				if err := provision.SaveRecord(dir, record); err != nil {
+					GinkgoLogr.Error(err, "writing the kept site's record")
+				} else {
+					GinkgoLogr.Info("qualify validate reads the kept site from its record", "record", provision.RecordPath(dir, node.Name))
 				}
 			}
 			GinkgoLogr.Info("the instance survives this run and must be released by hand", "name", node.Name)
@@ -716,11 +727,12 @@ func newForgeProvider(cfg config.Config, env *environment.Environment) (infra.Pr
 		return nil, err
 	}
 	provider, err := forge.New(forge.Options{
-		Env:      forgeEnv,
-		SiteName: forgeSite.Key,
-		APIKey:   apiKey,
-		JumpHost: forgeSite.JumpHost,
-		NodeUser: cfg.Node.User,
+		Env:       forgeEnv,
+		SiteName:  forgeSite.Key,
+		APIKey:    apiKey,
+		JumpHost:  forgeSite.JumpHost,
+		JumpLogin: forgeSite.TeleportLogin,
+		NodeUser:  cfg.Node.User,
 		// The site node boots the OS image built for its own architecture,
 		// which is the same image a tenant control plane of that architecture
 		// boots. A GPU tenant's workers boot a different one.

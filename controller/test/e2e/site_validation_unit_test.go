@@ -352,9 +352,9 @@ func TestUnit_SitePodProblemsCatchStuckAndEvicted(t *testing.T) {
 			}},
 		},
 	}
-	controller := true
+	isController := true
 	evictedOwned := corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "evicted-owned", OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "rs", Controller: &controller}}},
+		ObjectMeta: metav1.ObjectMeta{Namespace: "ns", Name: "evicted-owned", OwnerReferences: []metav1.OwnerReference{{Kind: "ReplicaSet", Name: "rs", Controller: &isController}}},
 		Status:     corev1.PodStatus{Phase: corev1.PodFailed, Reason: "Evicted"},
 	}
 	evictedBare := corev1.Pod{

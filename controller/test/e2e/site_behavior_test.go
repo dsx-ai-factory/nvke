@@ -6,6 +6,7 @@ package e2e
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
@@ -315,6 +316,9 @@ func (c siteChecks) describe() []string {
 		}
 		lines = append(lines, "probe pull secrets: "+strings.Join(secrets, ", "))
 	}
+	if c.scope != nil {
+		lines = append(lines, siteScopeEnv+"="+siteScopeNamespaces+": "+strings.Join(slices.Sorted(maps.Keys(c.scope)), ", "))
+	}
 	if keepOnFailure() {
 		lines = append(lines, keepOnFailureEnv+"=true")
 	}
@@ -388,18 +392,30 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 
 	It("has every Argo CD Application Synced and Healthy", func(ctx SpecContext) {
 		component(componentArgoCD)
+		var outside []string
+		reportOutsideScope("Argo CD Applications", &outside)
 		Eventually(func(ctx context.Context) error {
 			applications := &unstructured.UnstructuredList{}
 			applications.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "ApplicationList"})
 			if err := c.List(ctx, applications); err != nil {
 				return err
 			}
-			return joinProblems("Argo CD Applications", argoApplicationProblems(applications.Items))
+			in, other := splitScope(settings.checks.scope, applications.Items, argoApplicationDestination)
+			outside = nil
+			if len(other) > 0 {
+				outside = argoApplicationProblems(other)
+			}
+			if settings.checks.scope != nil && len(in) == 0 {
+				return joinProblems("Argo CD Applications", []string{"none deploys to a namespace " + siteScopeEnv + " covers"})
+			}
+			return joinProblems("Argo CD Applications", argoApplicationProblems(in))
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
 	It("runs the CloudNativePG operator with every database cluster healthy", func(ctx SpecContext) {
 		namespace := component(componentCNPG)
+		var outside []string
+		reportOutsideScope("CloudNativePG clusters", &outside)
 		Eventually(func(ctx context.Context) error {
 			if err := componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentCNPG, namespace, nil); err != nil {
 				return err
@@ -409,7 +425,9 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			if err := c.List(ctx, clusters); err != nil {
 				return err
 			}
-			return joinProblems("CloudNativePG clusters", cnpgClusterProblems(clusters.Items))
+			in, other := splitScope(settings.checks.scope, clusters.Items, unstructuredNamespace)
+			outside = cnpgClusterProblems(other)
+			return joinProblems("CloudNativePG clusters", cnpgClusterProblems(in))
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
@@ -551,7 +569,9 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		}
 		anonymous := expectSucceed(kubernetes.NewForConfig(rest.AnonymousClientConfig(restConfig)))
 		_, err := anonymous.CoreV1().Secrets(kubeSystemNamespace).List(ctx, metav1.ListOptions{Limit: 1})
-		if problem := anonymousProblem(err); problem != "" {
+		if refusedBeforeAPIServer(err) {
+			AddReportEntry("anonymous access not checked through this connection, not failing the check", err.Error())
+		} else if problem := anonymousProblem(err); problem != "" {
 			problems = append(problems, problem)
 		}
 		var (
@@ -763,6 +783,16 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			Skip("the cluster is not expected to run cert-manager")
 		}
 		name := "nvke-validate-" + labels[siteRunLabel]
+		var selecting []string
+		if settings.expect.certManagerPolicy {
+			selecting = expectSucceed(policiesSelecting(ctx, c, namespace, name))
+			if len(selecting) == 0 {
+				why := fmt.Sprintf("no Ready CertificateRequestPolicy selects an Issuer in %s, so approver-policy would leave the request undecided; "+
+					"a policy selecting Issuers named nvke-validate-* there lets the check run", namespace)
+				AddReportEntry("certificate issuance not checked, not failing the check", why)
+				return
+			}
+		}
 		By("creating an Issuer and a Certificate from it")
 		issuer, certificate := siteCertificate(namespace, name, labels)
 		Expect(c.Create(ctx, issuer)).To(Succeed())
@@ -782,8 +812,10 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 					return err
 				}
 				var err error
-				decision, err = certificateRequestDecision(requests.Items, name)
-				return err
+				if decision, err = certificateRequestDecision(requests.Items, name); err != nil {
+					return fmt.Errorf("%w (selected by %s; approver-policy also leaves a request whose requester RBAC does not let use any of them)", err, strings.Join(selecting, ", "))
+				}
+				return nil
 			}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(2 * time.Second).Should(Succeed())
 			GinkgoLogr.Info("certificate request", "request", decision.request, "approved", decision.approved, "reason", decision.reason)
 			if !decision.approved {
@@ -840,6 +872,102 @@ func certificateRequestDecision(requests []unstructured.Unstructured, certificat
 		return certificateDecision{}, fmt.Errorf("cert-manager has made no CertificateRequest for Certificate %s", certificate)
 	}
 	return certificateDecision{}, fmt.Errorf("the approver has neither approved nor denied the CertificateRequest for Certificate %s", certificate)
+}
+
+// policiesSelecting lists the CertificateRequestPolicies approver-policy would
+// weigh for a request from the Issuer named issuer in namespace.
+func policiesSelecting(ctx context.Context, c client.Client, namespace, issuer string) ([]string, error) {
+	policies := &unstructured.UnstructuredList{}
+	policies.SetAPIVersion("policy.cert-manager.io/v1alpha1")
+	policies.SetKind("CertificateRequestPolicyList")
+	if err := c.List(ctx, policies); err != nil {
+		return nil, err
+	}
+	namespaceLabels := func() (map[string]string, error) {
+		var ns corev1.Namespace
+		if err := c.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
+			return nil, err
+		}
+		return ns.Labels, nil
+	}
+	return selectingPolicies(policies.Items, namespace, issuer, namespaceLabels)
+}
+
+// selectingPolicies names the policies that are Ready and whose selector
+// takes a request in namespace from the Issuer named issuer, as
+// approver-policy's predicates decide it. approver-policy leaves a request no
+// policy selects undecided. namespaceLabels is read only where a policy
+// selects by label.
+func selectingPolicies(policies []unstructured.Unstructured, namespace, issuer string, namespaceLabels func() (map[string]string, error)) ([]string, error) {
+	var names []string
+	var labels map[string]string
+	for _, policy := range policies {
+		if !policyReady(policy) || !issuerSelected(policy, issuer) {
+			continue
+		}
+		selector, found, _ := unstructured.NestedMap(policy.Object, "spec", "selector", "namespace")
+		if found {
+			matchNames, _, _ := unstructured.NestedStringSlice(selector, "matchNames")
+			if len(matchNames) > 0 && !slices.ContainsFunc(matchNames, func(pattern string) bool { return wildcardMatches(pattern, namespace) }) {
+				continue
+			}
+			matchLabels, hasLabels, _ := unstructured.NestedStringMap(selector, "matchLabels")
+			if hasLabels {
+				if labels == nil {
+					var err error
+					if labels, err = namespaceLabels(); err != nil {
+						return nil, fmt.Errorf("namespace %s, for policy %s's label selector: %w", namespace, policy.GetName(), err)
+					}
+				}
+				if !klabels.SelectorFromSet(matchLabels).Matches(klabels.Set(labels)) {
+					continue
+				}
+			}
+		}
+		names = append(names, policy.GetName())
+	}
+	return names, nil
+}
+
+func policyReady(policy unstructured.Unstructured) bool {
+	conditions, _, _ := unstructured.NestedSlice(policy.Object, "status", "conditions")
+	for _, raw := range conditions {
+		if condition, _ := raw.(map[string]any); condition["type"] == "Ready" && condition["status"] == "True" {
+			return true
+		}
+	}
+	return false
+}
+
+// issuerSelected applies the policy's issuerRef selector to a cert-manager.io
+// Issuer: a field it leaves out matches anything.
+func issuerSelected(policy unstructured.Unstructured, issuer string) bool {
+	for field, value := range map[string]string{"name": issuer, "kind": "Issuer", "group": "cert-manager.io"} {
+		pattern, found, _ := unstructured.NestedString(policy.Object, "spec", "selector", "issuerRef", field)
+		if found && !wildcardMatches(pattern, value) {
+			return false
+		}
+	}
+	return true
+}
+
+// wildcardMatches is approver-policy's: * matches any run of characters,
+// and nothing else is special.
+func wildcardMatches(pattern, s string) bool {
+	head, tail, wild := strings.Cut(pattern, "*")
+	if !wild {
+		return pattern == s
+	}
+	if !strings.HasPrefix(s, head) {
+		return false
+	}
+	s = s[len(head):]
+	for i := 0; i <= len(s); i++ {
+		if wildcardMatches(tail, s[i:]) {
+			return true
+		}
+	}
+	return false
 }
 
 // siteBehaviorClient is siteClient with the APIs these specs read.
@@ -945,6 +1073,13 @@ func argoApplicationProblems(applications []unstructured.Unstructured) []string 
 	}
 	slices.Sort(problems)
 	return problems
+}
+
+// argoApplicationDestination is the namespace an Application deploys to,
+// which is what scopes it: Applications themselves all live in Argo CD's.
+func argoApplicationDestination(app unstructured.Unstructured) string {
+	namespace, _, _ := unstructured.NestedString(app.Object, "spec", "destination", "namespace")
+	return namespace
 }
 
 // cnpgHealthy is the phase CloudNativePG reports for a cluster with nothing
@@ -1331,6 +1466,15 @@ func describeAttributes(a authorizationv1.ResourceAttributes) string {
 		what += "." + a.Group
 	}
 	return a.Verb + " " + what + " in every namespace"
+}
+
+// refusedBeforeAPIServer reports whether the far end of the TLS connection
+// sent an alert. An API server answers a request with no client certificate
+// over HTTP, so an alert comes from a proxy in front of it, such as Teleport's,
+// and the request never reached the API server to be refused.
+func refusedBeforeAPIServer(err error) bool {
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr.Op == "remote error"
 }
 
 // anonymousProblem reads an anonymous request for kube-system's Secrets:

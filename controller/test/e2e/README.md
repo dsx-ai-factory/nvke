@@ -256,7 +256,7 @@ and [tenant](#tenant-checks) variable tables describe each one.
 | 28 | A NetworkPolicy enforced | `creates` | Unless a NetworkPolicy in the probe namespace already selects the check's pods | As on a site, in `NVKE_TENANT_NAMESPACE` |
 | 29 | A StatefulSet pod resolved and reached by its headless Service name | `creates` | Always | Always |
 | 30 | A PersistentVolumeClaim bound and written from a pod | `creates` | From `NVKE_SITE_PVC_STORAGE_CLASS`, else the default StorageClass; skips without either | From `NVKE_TENANT_PVC_STORAGE_CLASS`, else the tenant's default StorageClass; skips without either |
-| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates` | Always. With `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, the request must be approved or denied instead; a denial passes, and the report says so | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager`, and as on a site with `NVKE_TENANT_CERT_MANAGER_APPROVAL` |
+| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates` | Always. With `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, the request must be approved or denied instead; a denial passes, and the report says so. Where no Ready `CertificateRequestPolicy` selects the check's Issuer in the probe namespace, approver-policy would never decide, so the check creates nothing and the report says it was not checked | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager`, and as on a site with `NVKE_TENANT_CERT_MANAGER_APPROVAL` |
 
 A tenant also runs these, which compare it with the controller's record of it:
 
@@ -287,7 +287,9 @@ must be unable to read Secrets or bind roles where it is one this README
 grants: on a site, the image's service account, so only in a pod; on a tenant,
 the provisioned ServiceAccount, wherever the suite runs. A site run outside a
 pod, or a lane that reaches its tenant as admin, runs as some other identity,
-which is not checked.
+which is not checked. Through a proxy that demands a client certificate, such
+as Teleport's, the anonymous request never reaches the API server: the report
+says it was not checked, and the bindings are still checked.
 
 **Encryption (check 20).** The check sees only the flag. Which provider the
 config writes with is in a file on the control-plane host, so a config led by
@@ -335,7 +337,10 @@ account. That account needs:
   WebhookConfigurations, RoleBindings and ClusterRoleBindings,
   `cert-manager.io` Certificates, and, where the run
   lists their components, `argoproj.io` Applications and `postgresql.cnpg.io`
-  Clusters; and `get` on the non-resource URLs `/readyz`, `/livez` and
+  Clusters; for the `creates` specs with
+  `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, `list` on `policy.cert-manager.io`
+  CertificateRequestPolicies, and `get` on Namespaces where a policy selects
+  them by label; and `get` on the non-resource URLs `/readyz`, `/livez` and
   `/version`
 - in `kube-system`, `get` on ConfigMaps (`kubeadm-config`) and
   `coordination.k8s.io` Leases (kube-vip's)
@@ -376,12 +381,13 @@ Configure it with the [health spec variables](#health-specs) and these:
 | `NVKE_SITE_PROBE_IMAGE` | The probe and server pods' image, which needs `sh`, `nslookup`, `wget`, `curl` and `nc`. Point it at a mirror on a site without internet access. | The suite's kubectl image |
 | `NVKE_SITE_PROBE_PULL_SECRETS` | Comma-separated Secrets in the probe namespace that the probe and server pods pull their image with. They run as the namespace's `default` service account, not the runner's, so a pull Secret on the runner's account does not reach them. | Unset |
 | `NVKE_SITE_COMPONENTS` | Optional components the site runs, comma-separated, each `name` or `name=namespace`: `argocd` (default namespace `argocd`), `cnpg` (`cnpg-system`), `teleport` (`teleport-agent`), `kube-vip` (`kube-system`), and `cert-manager` (`cert-manager`). Every site runs cert-manager and checks 2, 4 and 31 cover it; listing it adds check 15. | Unset |
+| `NVKE_SITE_SCOPE` | `cluster` or `namespaces`. `namespaces` holds checks 2, 3, 4, 12 and 13 to the `NVKE_SITE_NAMESPACES` namespaces and each `NVKE_SITE_COMPONENTS` component's, an Argo CD Application by the namespace it deploys to. What those checks find elsewhere goes in the report and fails nothing. The other checks stay cluster-wide. See [a shared site](#a-shared-site). | `cluster` |
 | `NVKE_SITE_REQUIRED_WORKLOADS` | `namespace/workload`, comma-separated: a Deployment, StatefulSet or DaemonSet that must exist and run a ready pod. | Unset |
 | `NVKE_SITE_WORKLOAD_VERSIONS` | `namespace/workload=version`, comma-separated: a Deployment, StatefulSet or DaemonSet one of whose containers runs an image tagged `version`, with or without a leading `v`. | Unset |
 | `NVKE_SITE_APISERVER_FLAGS` | Flags every API server runs, `name=value` separated by semicolons, because values hold commas. Added to those kubeadm-config sets; a conflict between the two fails. | Unset |
 | `NVKE_SITE_ETCD_ENCRYPTED` | `true` requires `--encryption-provider-config` on every API server. It does not show which provider the config uses. | Unset |
 | `NVKE_SITE_RESERVED_MEMORY` | The least memory every node holds back from pods (capacity less allocatable), such as `2Gi`. That counts the kubelet's hard eviction threshold, 100Mi by default, with its kube and system reservations: set it to their sum. | Unset |
-| `NVKE_SITE_CERT_MANAGER_APPROVAL` | How cert-manager approves a request: `any`, where its own approver approves every one, or `policy`, where approver-policy approves only what a `CertificateRequestPolicy` allows. With `policy`, check 31 requires the approver to decide on its request, and passes on a denial, reporting it. | `any` |
+| `NVKE_SITE_CERT_MANAGER_APPROVAL` | How cert-manager approves a request: `any`, where its own approver approves every one, or `policy`, where approver-policy approves only what a `CertificateRequestPolicy` allows. With `policy`, check 31 requires the approver to decide on its request, and passes on a denial, reporting it; where no policy selects its Issuer, it reports the check not run. | `any` |
 | `NVKE_SITE_STORAGE_CLASSES` | Comma-separated StorageClasses that must exist. | Unset |
 | `NVKE_SITE_PVC_STORAGE_CLASS` | The class the PVC check binds from. | The default class |
 | `NVKE_E2E_KEEP_ON_FAILURE` | `true` leaves a failed `creates` spec's objects in the probe namespace to be inspected, site or tenant, and logs each one kept. The pod check leaves that namespace out, but checks 2 and 4 read the whole cluster, so a kept StatefulSet or Certificate fails the next run: delete every kept object by its `e2e.nvidia.com/site-run` label first. | Unset: deleted |
@@ -451,48 +457,51 @@ variables it can set is one, and it cannot turn authentication off
 This repository ships no profiles. A site's profile belongs with the rest of
 that site's configuration.
 
+#### A shared site
+
+By default checks 2, 3 and 4 read the whole cluster, so on a site that also
+runs other teams' workloads, one of theirs failing fails the run. Set
+`NVKE_SITE_SCOPE: namespaces` in that site's profile to hold those checks, and
+the Argo CD and CloudNativePG ones, to the namespaces nvke installs into or
+depends on: `NVKE_SITE_NAMESPACES` and the declared components' namespaces.
+List there any namespace nvke relies on but does not install, such as the
+CNI's or the one its database clusters run in, or it goes unchecked. Problems
+outside the scope go in the report as `... outside NVKE_SITE_SCOPE` entries.
+Nodes, the API server, CoreDNS, admission webhooks and RBAC stay cluster-wide,
+because a broken one breaks nvke whoever owns it.
+
 ### From a workstation
 
-[`hack/validate-site.sh`](hack/validate-site.sh) runs the image with Docker
-against a site the workstation can reach, given a site file: a shell file,
-kept outside the repository, that says how to reach the site, which profile
-and image to use, and the two versions.
+`qualify validate` builds the image from your checkout and runs it with
+Docker against a site your workstation can reach. A site kept by
+[`qualify local --keep-site`](#hardware-qualification) needs only its run
+directory: the node, its key, its kubeconfig and both versions come from the
+run, and the node is reached through its jump host with your Teleport login.
 
 ```bash
-# my-site.env
-CONNECT=kubeconfig              # or teleport, or ssh
-KUBECONFIG_FILE=$HOME/.kube/my-site
-PROFILE=$HOME/sites/my-site-profile.yaml
-CONTROLLER_VERSION=v0.3.0
-KUBERNETES_VERSION=v1.34.2
-IMAGE=<registry>/nvke-validate:v0.3.0
+go run ./release/cmd/qualify validate --run-dir <qualify local run dir>
 ```
+
+Any other site is named by its Teleport kube cluster, after a `tsh login`, or
+by a kubeconfig, with its profile and the two versions:
 
 ```bash
-controller/test/e2e/hack/validate-site.sh my-site.env --dry-run   # list the checks
-controller/test/e2e/hack/validate-site.sh my-site.env             # read-only
-controller/test/e2e/hack/validate-site.sh my-site.env --full      # with creates
+go run ./release/cmd/qualify validate --teleport-cluster <cluster> --profile <site profile> \
+  --controller-version <version> --kubernetes-version <version>
+go run ./release/cmd/qualify validate --kubeconfig <file> --profile <site profile> \
+  --controller-version <version> --kubernetes-version <version>
 ```
 
-How it reaches the site:
-
-- `kubeconfig` uses `KUBECONFIG_FILE` (and `KUBE_CONTEXT`). The image has no
-  exec credential plugins, so the kubeconfig must carry certificates or a
-  token.
-- `teleport` runs `tsh proxy kube` for `TELEPORT_KUBE_CLUSTER` after a
-  `tsh login`, and gives the container the local proxy's kubeconfig.
-- `ssh` forwards the API server port of `KUBECONFIG_FILE`'s `127.0.0.1` server
-  from `SSH_TARGET`, with `SSH_KEY` and an optional `SSH_PROXY_COMMAND`.
-  `QUALIFY_RUN=<run dir>` fills these and both versions from a run kept with
-  [`qualify local --keep-site`](#hardware-qualification).
-
-Read-only runs `site-validate && !creates`: the checks that create nothing
-but a short-lived probe pod. `--full` runs `site-validate`, and `--only=<labels>`
-narrows either. Any `NVKE_*` or `NKE_E2E_*` variable the site file exports
-reaches the image, which is how a run adds a tenant. Each run writes its
-reports, its log and the inputs it used, without credentials, to
-`RUNS_DIR/<site file>-<time>/` (default `~/nvke-validate-runs`), and prints the
-failures and the reasons for each skip.
+The image has no exec credential plugins, so a `--kubeconfig` must carry
+certificates or a token. A run is read-only, `site-validate && !creates`,
+which creates nothing but a short-lived probe pod. `--full` adds the
+`creates` specs, `--only <labels>` narrows either, `--dry-run` lists what
+would run, and `--image` runs a published image instead of building one. Any
+`NVKE_*` or `NKE_E2E_*` variable in the environment reaches the image, which
+is how a run adds a tenant. Each run prints where it writes its reports, log
+and inputs (no credentials): `validate-<time>` under `--run-dir`, otherwise
+under your user cache, or `--out`. It ends with the failures, the reason for
+each skip, and anything a scoped check found outside its scope.
 
 ### Tenant checks
 
@@ -745,7 +754,9 @@ Three of the variables need more RBAC than `validate-site.yaml` grants by
 default: listing `argocd` or `cnpg` in `NVKE_SITE_COMPONENTS` needs the
 commented Application or Cluster rule in its ClusterRole uncommented,
 `NVKE_SITE_CERT_MANAGER_APPROVAL=policy` needs the commented
-CertificateRequest rule in `nvke-validate-probe` uncommented, and setting
+CertificateRequest rule in `nvke-validate-probe` and the commented
+CertificateRequestPolicy rule, with the Namespace one where a policy selects by
+label, in the ClusterRole uncommented, and setting
 `NVKE_SITE_PROBE_NAMESPACE` needs the `nvke-validate-probe` Role and
 RoleBinding moved to that namespace. A profile that sets them needs the same.
 
@@ -1140,22 +1151,16 @@ A kept site's admin kubeconfig goes there too, as `<node>.kubeconfig`, aimed at
 `127.0.0.1` on the node's API server port, so it works once that port is
 forwarded to the node's loopback through the jump host. A kept tenant's
 kubeconfig, as the controller publishes it, goes there as `<cluster>.kubeconfig`.
-Both are mode 0600.
+A kept site's `<node>.json` records how it is reached: its address, login,
+jump host and kubeconfig, with no credential. All are mode 0600.
 
-To run the [validation image](#running-the-image) against a kept site, forward
-the node's API server port through the jump host with the run's key, and give
-the container a copy of `<node>.kubeconfig` whose server is
-`host.docker.internal` on the forwarded port: the copy keeps the
-`tls-server-name` pin, so the certificate still matches. The run's
-`steps.env` holds the two versions the image requires: the last
-`SITE_NVKE_CONTROLLER_VERSION` is what the controller reports, and
-`KUBERNETES_VERSION` is what the site was built with. A lane site is laid out
-like `deploy/nico`, so its profile needs only what the lane declares,
-`NVKE_SITE_COMPONENTS: [cert-manager]` and its StorageClass in
-`NVKE_SITE_STORAGE_CLASSES`. Add
-`-ginkgo.label-filter='site-validate && !creates'` to create nothing on it but
-a short-lived probe pod. [From a workstation](#from-a-workstation) does all of
-this with `CONNECT=ssh` and `QUALIFY_RUN`.
+To run the [validation image](#running-the-image) against a kept site, run
+`qualify validate --run-dir` on the run, as [From a workstation](#from-a-workstation)
+shows. It reads the node's record, forwards its API server port through the
+jump host, and takes the two versions from the run's `steps.env`. A lane site
+is laid out like `deploy/nico`, so its profile needs only what the lane
+declares: `NVKE_SITE_COMPONENTS: [cert-manager]` and its StorageClass in
+`NVKE_SITE_STORAGE_CLASSES`.
 
 Prerequisites, all read from the shell that runs the suite. Neither the proxy
 nor the jump host nor any identifier is checked in, and secrets are read only

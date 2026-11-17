@@ -4,7 +4,14 @@
 package e2e
 
 import (
+	"crypto/tls"
 	"errors"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -271,6 +278,15 @@ func TestUnit_SiteArgoApplicationProblems(t *testing.T) {
 	}, argoApplicationProblems([]unstructured.Unstructured{healthy, drifted, unknown}))
 }
 
+func TestUnit_SiteArgoApplicationScopedByDestination(t *testing.T) {
+	nke := unstructuredWith(t, "argocd", "nke", map[string]any{"spec.destination.namespace": "nke"})
+	other := unstructuredWith(t, "argocd", "other-team", map[string]any{"spec.destination.namespace": "other-team"})
+	clusterScoped := unstructuredWith(t, "argocd", "crds", nil)
+	in, out := splitScope(siteScope{"argocd": true, "nke": true}, []unstructured.Unstructured{nke, other, clusterScoped}, argoApplicationDestination)
+	require.Equal(t, []unstructured.Unstructured{nke}, in, "an Application in Argo CD's namespace is scoped by where it deploys")
+	require.Equal(t, []unstructured.Unstructured{other, clusterScoped}, out)
+}
+
 func TestUnit_SiteCNPGClusterProblems(t *testing.T) {
 	require.Empty(t, cnpgClusterProblems(nil), "an operator with no clusters is healthy")
 	healthy := unstructuredWith(t, "db", "a", map[string]any{"spec.instances": int64(3), "status.readyInstances": int64(3), "status.phase": cnpgHealthy})
@@ -458,6 +474,114 @@ func TestUnit_SiteAnonymousProblem(t *testing.T) {
 	require.Empty(t, anonymousProblem(apierrors.NewForbidden(secrets, "", errors.New("no"))))
 	require.Equal(t, "an anonymous request listed kube-system's Secrets", anonymousProblem(nil))
 	require.Contains(t, anonymousProblem(errors.New("connection refused")), "failed other than as refused")
+}
+
+func TestUnit_SiteWildcardMatches(t *testing.T) {
+	for _, c := range []struct {
+		pattern, s string
+		want       bool
+	}{
+		{"*", "anything", true},
+		{"*", "", true},
+		{"", "", true},
+		{"", "x", false},
+		{"nvke-validate-*", "nvke-validate-abc123", true},
+		{"nvke-validate-*", "other", false},
+		{"mongodb-psmdb-*", "mongodb-psmdb-ca", true},
+		{"*-issuer", "site-issuer", true},
+		{"a*b*c", "axxbyyc", true},
+		{"a*b*c", "axxbyy", false},
+		{"Issuer", "Issuer", true},
+		{"issuer", "Issuer", false},
+		{"a?c", "abc", false},
+	} {
+		require.Equal(t, c.want, wildcardMatches(c.pattern, c.s), "%q against %q", c.pattern, c.s)
+	}
+}
+
+func TestUnit_SiteSelectingPolicies(t *testing.T) {
+	policy := func(name string, selector map[string]any, ready bool) unstructured.Unstructured {
+		status := "False"
+		if ready {
+			status = "True"
+		}
+		return unstructured.Unstructured{Object: map[string]any{
+			"metadata": map[string]any{"name": name},
+			"spec":     map[string]any{"selector": selector},
+			"status":   map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": status}}},
+		}}
+	}
+	noLabels := func() (map[string]string, error) {
+		t.Error("no policy selects by label, so the namespace is not read")
+		return nil, errors.New("namespace read")
+	}
+	shared := []unstructured.Unstructured{
+		policy("capi-selfsigned", map[string]any{
+			"issuerRef": map[string]any{"group": "cert-manager.io", "kind": "Issuer", "name": "capi-selfsigned-issuer"},
+			"namespace": map[string]any{"matchNames": []any{"capi-system"}},
+		}, true),
+		policy("site-issuer", map[string]any{"issuerRef": map[string]any{"kind": "ClusterIssuer", "name": "site-issuer"}}, true),
+		policy("event-bus", map[string]any{"namespace": map[string]any{"matchNames": []any{"event-bus"}}}, true),
+	}
+	got, err := selectingPolicies(shared, "default", "nvke-validate-abc123", noLabels)
+	require.NoError(t, err)
+	require.Empty(t, got, "a shared site's policies select other teams' issuers and namespaces")
+
+	got, err = selectingPolicies(shared, "event-bus", "nvke-validate-abc123", noLabels)
+	require.NoError(t, err)
+	require.Equal(t, []string{"event-bus"}, got, "a namespace selector alone takes any issuer there")
+
+	wildcard := policy("validate", map[string]any{
+		"issuerRef": map[string]any{"name": "nvke-validate-*"},
+		"namespace": map[string]any{"matchNames": []any{"nvke-*"}},
+	}, true)
+	got, err = selectingPolicies(append(shared, wildcard), "nvke-validate", "nvke-validate-abc123", noLabels)
+	require.NoError(t, err)
+	require.Equal(t, []string{"validate"}, got)
+
+	notReady := policy("not-ready", map[string]any{}, false)
+	everything := policy("everything", map[string]any{"issuerRef": map[string]any{}}, true)
+	got, err = selectingPolicies([]unstructured.Unstructured{notReady, everything}, "default", "x", noLabels)
+	require.NoError(t, err)
+	require.Equal(t, []string{"everything"}, got, "an empty issuerRef takes every issuer; a policy not Ready is not weighed")
+
+	reads := 0
+	byTeam := func(team string) unstructured.Unstructured {
+		return policy(team, map[string]any{"namespace": map[string]any{"matchLabels": map[string]any{"team": team}}}, true)
+	}
+	got, err = selectingPolicies([]unstructured.Unstructured{byTeam("platform"), byTeam("other")}, "default", "x", func() (map[string]string, error) {
+		reads++
+		return map[string]string{"team": "platform"}, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"platform"}, got)
+	require.Equal(t, 1, reads, "the namespace is read once")
+
+	_, err = selectingPolicies([]unstructured.Unstructured{byTeam("platform")}, "default", "x", func() (map[string]string, error) {
+		return nil, errors.New("forbidden")
+	})
+	require.ErrorContains(t, err, "forbidden")
+}
+
+func TestUnit_SiteRefusedBeforeAPIServer(t *testing.T) {
+	alert := &net.OpError{Op: "remote error", Err: errors.New("tls: certificate required")}
+	require.True(t, refusedBeforeAPIServer(&url.Error{Op: "Get", URL: "https://proxy/api", Err: alert}))
+	require.False(t, refusedBeforeAPIServer(&net.OpError{Op: "dial", Err: errors.New("connection refused")}))
+	require.False(t, refusedBeforeAPIServer(apierrors.NewUnauthorized("no")))
+	require.False(t, refusedBeforeAPIServer(nil))
+
+	proxy := httptest.NewUnstartedServer(http.NotFoundHandler())
+	proxy.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert, MinVersion: tls.VersionTLS13}
+	proxy.Config.ErrorLog = log.New(io.Discard, "", 0)
+	proxy.StartTLS()
+	defer proxy.Close()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, proxy.URL, http.NoBody)
+	require.NoError(t, err)
+	resp, err := proxy.Client().Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+	require.True(t, refusedBeforeAPIServer(err), "a proxy requiring a client certificate: %v", err)
 }
 
 func TestUnit_SiteUnauthenticatedBindingProblems(t *testing.T) {
