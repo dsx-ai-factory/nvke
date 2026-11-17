@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# NVSentinel on Mokka's simulated GPUs: a CAPD cluster with two Mokka nodes,
+# where an overheated GPU must get its node cordoned, drained and uncordoned.
+# The datastore and fault cycle take longer than the pull-request and full CAPD
+# runs allow, so this lane runs on a schedule, and on a pull request only when
+# it changes the scenario or the Mokka setup it builds on.
+
+name: CAPD NVSentinel E2E
+
+on:
+  push:
+    branches:
+      - main
+      - "pull-request/[0-9]+"
+    paths:
+      - controller/test/e2e/nvsentinel*.go
+      - controller/test/e2e/mokka*.go
+      - controller/test/e2e/internal/kube/exec.go
+      - controller/test/e2e/testdata/nvsentinel-values.yaml
+      - controller/test/e2e/testdata/mokka-gpu-operator-values.yaml
+      - .github/workflows/capd-nvsentinel-e2e.yml
+      - .github/workflows/backend-e2e.yml
+      - .github/workflows/e2e-pr-path-filter.yml
+      - hack/e2e-path-filter.py
+      # Installs the pinned kind and kubectl the suite runs on.
+      - .github/actions/setup-kind/**
+  # Twice a day, like every other e2e lane; it also catches the controller
+  # changes the paths above leave out. :45 past continues the 3,15 ladder: :00
+  # nvkectl-bootstrap and nico-vms, :15 local-entrypoint, :30 identity exchange.
+  schedule:
+    - cron: '45 3,15 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: CAPD NVSentinel E2E-${{ github.ref }}-${{ github.ref == 'refs/heads/main' && github.sha || '' }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  changes:
+    uses: ./.github/workflows/e2e-pr-path-filter.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
+  capd-nvsentinel:
+    needs: changes
+    if: needs.changes.outputs.run_e2e == 'true'
+    # Same two pools capd-e2e uses.
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+        include:
+          - arch: amd64
+            runner: linux-amd64-cpu16
+          - arch: arm64
+            runner: linux-arm64-cpu16
+    uses: ./.github/workflows/backend-e2e.yml
+    permissions:
+      contents: read
+    with:
+      backend: capd
+      arch: ${{ matrix.arch }}
+      runner: ${{ matrix.runner }}
+      label-filter: nvsentinel
+      providers: '["capi_core", "bgp-containers", "capd", "capd-reboot-controller"]'
+      needs-capnico-source: true
+      use-nke-stack: true
+      timeout-minutes: 75

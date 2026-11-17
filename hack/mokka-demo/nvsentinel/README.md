@@ -8,8 +8,8 @@ The run:
 
 1. Runs [`../demo.sh`](../README.md) for a pool of two Mokka nodes.
 2. Turns on GPU Operator's standalone DCGM, which the GPU Health Monitor polls.
-3. Installs local-path-provisioner if the cluster has no default StorageClass, and cert-manager, for NVSentinel's MongoDB.
-4. Installs NVSentinel with [`nvsentinel-values.yaml`](nvsentinel-values.yaml), Mokka's guide values: MongoDB through the Percona operator, the thermal-margin watch acting rather than dry-run, and the circuit breaker off for a two-node pool.
+3. Installs cert-manager, which issues NVSentinel's MongoDB certificates.
+4. Installs NVSentinel with [`nvsentinel-values.yaml`](../../../controller/test/e2e/testdata/nvsentinel-values.yaml), Mokka's guide values: MongoDB through the Percona operator, here in an `emptyDir` so the cluster needs no StorageClass, the thermal-margin watch acting rather than dry-run, and the circuit breaker off for a two-node pool.
 5. Runs a Deployment that requests one GPU on the pool.
 6. Heats one GPU on the workload's node, then resets it.
 
@@ -22,7 +22,7 @@ It prints `PASS` or `FAIL` for each check and exits non-zero if any fails:
 
 ## Run it
 
-Prerequisites are those of [`demo.sh`](../README.md#before-you-begin), plus network access to `ghcr.io` for the NVSentinel chart, `github.com` and `raw.githubusercontent.com` for cert-manager and local-path-provisioner, and Docker Hub for the Percona images. NVSentinel's core modules run on the control-plane node, so a drain never evicts them.
+Prerequisites are those of [`demo.sh`](../README.md#before-you-begin), plus network access to `ghcr.io` for the NVSentinel chart, `github.com` for cert-manager, and Docker Hub for the Percona images. NVSentinel's core modules run on the control-plane node, so a drain never evicts them.
 
 ```bash
 CLUSTER=<WORKLOAD_CLUSTER> hack/mokka-demo/nvsentinel/run.sh
@@ -36,9 +36,18 @@ CLUSTER=<WORKLOAD_CLUSTER> hack/mokka-demo/nvsentinel/run.sh
 | `GPU_PROFILE` | `h100` | Mokka GPU profile |
 | `MOKKA_RELEASE` | `nvml-mock-sentinel` | Helm release name for Mokka |
 | `TARGET_GPU` / `HOT_TEMP_C` | `0` / `142` | GPU index to heat, and its temperature, above every profile's slowdown threshold |
-| `NVSENTINEL_VERSION` / `CERT_MANAGER_VERSION` / `LOCAL_PATH_VERSION` / `GPU_OPERATOR_VERSION` | `v1.21.0` / `v1.19.1` / `v0.0.31` / `v26.3.3` | Versions |
+| `NVSENTINEL_VERSION` / `CERT_MANAGER_VERSION` / `GPU_OPERATOR_VERSION` | `v1.21.0` / `v1.19.1` / `v26.3.3` | Versions |
 | `TENANT_KUBECONFIG` | from `nvkectl get kubeconfig` | The workload cluster's kubeconfig |
 | `TIMEOUT` | `20m` | Helm and readiness timeout |
+
+## In CI
+
+The e2e suite's `CAPD NVSentinel` entry runs the same scenario in Go on a CAPD cluster with two `h100` Mokka nodes. Its own lane, `capd-nvsentinel-e2e.yml`, runs it twice a day, and on pull requests that change the scenario or the Mokka setup. To run it against a local stack:
+
+```bash
+cd controller
+LOCAL_NKE_E2E_LABEL_FILTER=nvsentinel hack/local-backend-e2e.sh
+```
 
 ## What it does not prove
 
@@ -56,4 +65,4 @@ helm uninstall nvml-mock-sentinel --namespace mokka
 nvkectl delete nodepool mokka-sentinel --cluster <WORKLOAD_CLUSTER>
 ```
 
-Remove local-path-provisioner the same way if the run installed it, then GPU Operator, as in [`demo.sh`'s clean-up](../README.md#clean-up).
+Then GPU Operator, as in [`demo.sh`'s clean-up](../README.md#clean-up).

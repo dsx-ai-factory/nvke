@@ -1,0 +1,136 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# NVSentinel values for nodes whose GPUs are Mokka's nvml-mock, from Mokka's
+# NVSentinel guide (https://github.com/NVIDIA/k8s-test-infra/tree/main/docs/guides/nv-sentinel).
+# The GPU Health Monitor's thermal-margin watch drives the remediation pipeline:
+# MongoDB store, fault-quarantine, node-drainer. Unlike the guide, the datastore
+# keeps its data in an emptyDir, so the cluster needs no StorageClass.
+global:
+  dryRun: false
+
+  # Core modules run on the control plane, so a drain never evicts them.
+  systemNodeSelector:
+    node-role.kubernetes.io/control-plane: ""
+  systemNodeTolerations:
+    - key: node-role.kubernetes.io/control-plane
+      operator: Exists
+      effect: NoSchedule
+
+  dcgm:
+    mode: operator-service
+    enabled: true
+    service:
+      endpoint: "nvidia-dcgm.gpu-operator.svc"
+      port: 5555
+
+  # The Percona operator names the replica-set service <cluster>-rs0 and requires
+  # TLS; cert-manager issues the client certificate.
+  datastore:
+    provider: "mongodb"
+    connection:
+      host: "mongodb-rs0.nvsentinel.svc.cluster.local"
+      port: 27017
+      database: "HealthEventsDatabase"
+      collection: "HealthEvents"
+      tokenCollection: "ResumeTokens"
+      extraParams:
+        replicaSet: "rs0"
+        tls: "true"
+    options:
+      maxConnections: "25"
+      maxIdleConnections: "10"
+      connectionMaxLifetime: "1h"
+      pollInterval: "5s"
+
+  gpuHealthMonitor:
+    enabled: true
+  syslogHealthMonitor:
+    enabled: false
+  cspHealthMonitor:
+    enabled: false
+  kubernetesObjectMonitor:
+    enabled: false
+  nicHealthMonitor:
+    enabled: false
+
+  mongodbStore:
+    enabled: true
+  faultQuarantine:
+    enabled: true
+  nodeDrainer:
+    enabled: true
+  # Remediation beyond a drain reboots or replaces the node; nothing simulates that.
+  faultRemediation:
+    enabled: false
+  janitor:
+    enabled: false
+  janitorProvider:
+    enabled: false
+  healthEventsAnalyzer:
+    enabled: false
+
+  labeler:
+    enabled: true
+  # Records each GPU's slowdown T.Limit offset, which the thermal-margin watch needs.
+  metadataCollector:
+    enabled: true
+  eventExporter:
+    enabled: false
+  preflight:
+    enabled: false
+
+podMonitor:
+  enabled: false
+networkPolicy:
+  enabled: false
+
+# Mokka stands in for the driver, so no driver pod tells the labeler it is installed.
+labeler:
+  assumeDriverInstalled: true
+
+gpu-health-monitor:
+  dcgmHealthCheck:
+    # Mokka reports this NVLink error on every GPU; left active, it keeps the node
+    # quarantined after the GPU cools.
+    suppressedErrorCodes:
+      - DCGM_FR_NVLINK_EFFECTIVE_BER_THRESHOLD
+  # The fault under test. Store-only is the default, which never cordons.
+  dcgmFieldsMonitoring:
+    gpuTempLimitMonitoringEnabled: true
+    gpuTempLimitStoreOnly: false
+
+# Evict at once: the sample workload never finishes, so AllowCompletion would never drain it.
+node-drainer:
+  userNamespaces:
+    - name: "*"
+      mode: "Immediate"
+
+# One cordoned node is half of a two-node pool, which trips the breaker and stops the uncordon.
+fault-quarantine:
+  circuitBreaker:
+    enabled: false
+
+# Percona rather than Bitnami MongoDB: its images are published for amd64 and arm64.
+mongodb-store:
+  useBitnami: false
+  usePerconaOperator: true
+
+  psmdb-db:
+    # NVSentinel needs only change streams, which one member provides.
+    unsafeFlags:
+      replsetSize: true
+    replsets:
+      rs0:
+        size: 1
+        resources:
+          requests:
+            cpu: "250m"
+            memory: "512Mi"
+          limits:
+            cpu: "1"
+            memory: "2Gi"
+        volumeSpec:
+          emptyDir: {}
+          pvc: null
+        sidecars: []
