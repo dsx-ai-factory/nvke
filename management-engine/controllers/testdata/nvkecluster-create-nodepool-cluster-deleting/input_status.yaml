@@ -3,7 +3,7 @@
 
 id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
 observedGeneration: 1
-resolvedRelease:
+currentRelease:
   name: pinned-release
   version: "1.34.8"
 nodePools:

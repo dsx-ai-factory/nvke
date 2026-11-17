@@ -182,6 +182,9 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 	}
 
 	release, err := r.resolveClusterRelease(ctx, cluster)
+	if err == nil {
+		setReleaseSupportedCondition(cluster, release, time.Now())
+	}
 	var kubernetesVersion *version.Version
 	if err == nil {
 		kubernetesVersion, err = clusterReleaseKubernetesVersion(release)
@@ -238,7 +241,7 @@ func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *i
 		return ctrl.Result{}, deleteErr
 	}
 	if clusterErr == nil {
-		cluster.Status.ResolvedRelease = &internalv1.ReleaseReference{
+		cluster.Status.CurrentRelease = &internalv1.ReleaseReference{
 			Name: internalv1.ResourceName(release.Name), Version: kubernetesVersion.String(),
 		}
 		conditions.Set(cluster, metav1.Condition{
@@ -432,8 +435,8 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 			if err := r.Get(ctx, client.ObjectKey{Name: string(candidate.Name)}, &release); err != nil {
 				return nil, fmt.Errorf("get ClusterRelease %q from channel %q: %w", candidate.Name, channel.Name, err)
 			}
-			if resolved := cluster.Status.ResolvedRelease; resolved != nil {
-				if candidate.Name == resolved.Name {
+			if current := cluster.Status.CurrentRelease; current != nil {
+				if candidate.Name == current.Name {
 					return &release, nil
 				}
 				if time.Since(release.CreationTimestamp.Time) < candidate.MinimumUpgradeAge.Duration {
@@ -450,6 +453,24 @@ func (r *NVKEClusterReconciler) resolveClusterRelease(ctx context.Context, clust
 		}
 	}
 	return nil, fmt.Errorf("channel %q has no valid releases for version %q", channel.Name, selection.Version)
+}
+
+func setReleaseSupportedCondition(cluster *internalv1.NVKECluster, release *internalv1.ClusterRelease, now time.Time) {
+	condition := metav1.Condition{
+		Type:    internalv1.ReleaseSupportedCondition,
+		Status:  metav1.ConditionTrue,
+		Reason:  internalv1.ReleaseSupportedReason,
+		Message: fmt.Sprintf("Selected ClusterRelease %q is supported", release.Name),
+	}
+	deadline := release.Spec.Lifecycle.SupportedUntil
+	if deadline != nil && !now.Before(deadline.Time) {
+		condition.Status = metav1.ConditionFalse
+		condition.Reason = internalv1.SupportExpiredReason
+		condition.Message = fmt.Sprintf("Selected ClusterRelease %q support expired at %s; select a supported release", release.Name, deadline.UTC().Format(time.RFC3339))
+	} else if deadline != nil {
+		condition.Message = fmt.Sprintf("Selected ClusterRelease %q is supported until %s", release.Name, deadline.UTC().Format(time.RFC3339))
+	}
+	conditions.Set(cluster, condition)
 }
 
 func clusterReleaseKubernetesVersion(release *internalv1.ClusterRelease) (*version.Version, error) {
@@ -572,7 +593,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 
 	observedPool, err := r.NVKEController.FindNodePool(ctx, observedCluster.Name, string(pool.Name))
 	if errors.Is(err, nvkecontroller.ErrNotFound) {
-		release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
+		release, image, err := r.resolveNodePoolRelease(ctx, pool, status.CurrentRelease)
 		if err != nil {
 			return err
 		}
@@ -590,7 +611,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 			return fmt.Errorf("create nvke controller node pool %q: %w", pool.Name, err)
 		}
 		status.ID = observedPool.ID.String()
-		status.ResolvedRelease = &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
+		status.CurrentRelease = &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
 		propagateNodePoolConditions(target, observedPool)
 		return setNodePoolConditions(target)
 	}
@@ -633,14 +654,14 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 		observedPool = updatedPool
 	}
 	if resolved != nil {
-		status.ResolvedRelease = resolved
+		status.CurrentRelease = resolved
 	}
 	propagateNodePoolConditions(target, observedPool)
 	return errors.Join(resolveErr, setNodePoolConditions(target))
 }
 
 func (r *NVKEClusterReconciler) resolveExistingNodePoolRelease(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, status *internalv1.NodePoolStatus, observedPool *api.NodePool) (*internalv1.ReleaseReference, *api.InfraNodePoolProvider, error) {
-	release, image, err := r.resolveNodePoolRelease(ctx, pool, status.ResolvedRelease)
+	release, image, err := r.resolveNodePoolRelease(ctx, pool, status.CurrentRelease)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -936,6 +957,7 @@ var nvkeClusterOwnedConditions = []string{
 	internalv1.NVKEControllerUpdateFailedCondition,
 	internalv1.ClusterReconciledCondition,
 	internalv1.NodePoolsReconciledCondition,
+	internalv1.ReleaseSupportedCondition,
 }
 
 var nvkeControllerNegativeConditionTypes = []string{

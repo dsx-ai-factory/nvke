@@ -29,3 +29,9 @@ const (
 	NotSyncedReason   = "NotSynced"
 	SyncUnknownReason = "SyncUnknown"
 )
+
+const (
+	ReleaseSupportedCondition = "ReleaseSupported"
+	ReleaseSupportedReason    = "ReleaseSupported"
+	SupportExpiredReason      = "SupportExpired"
+)
