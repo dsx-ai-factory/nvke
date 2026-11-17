@@ -472,36 +472,121 @@ because a broken one breaks nvke whoever owns it.
 
 ### From a workstation
 
-`qualify validate` builds the image from your checkout and runs it with
-Docker against a site your workstation can reach. A site kept by
-[`qualify local --keep-site`](#hardware-qualification) needs only its run
-directory: the node, its key, its kubeconfig and both versions come from the
-run, and the node is reached through its jump host with your Teleport login.
+`qualify validate` runs the image with Docker against a site your
+workstation can reach, as one command, and summarizes the result. The checks
+run as the kubeconfig's identity, not as a service account in the site.
+
+#### What you need
+
+- A checkout of this repository, with the command run from its root.
+- Go, at the version in `go.work`.
+- `docker` with a running daemon, and `kubectl`, on `PATH`. To build the
+  image, which is the default, also `git`, `make` and `docker buildx`; the
+  build pulls its `golang` and `alpine` base images from Docker Hub and needs
+  no token.
+- `tsh` on `PATH` for `--run-dir` and `--teleport-cluster`.
+- For `--image`, the image pulled first (`docker pull <image>`, after a
+  `docker login` where the registry needs one): the run reads it from the
+  local image store and does not pull it.
+
+Without `--image` the image is built from your checkout, tagged
+`nvke-validate:<git describe>`, so its checks are the checkout's. Hold a site
+to the checks its controller shipped with by passing `--image` built from
+that release tag, as [building the image yourself](#building-the-image-yourself)
+describes. An image from a tag whose README does not document
+[validation profiles](#validation-profile) or `NVKE_SITE_SCOPE` ignores them.
+
+#### A site kept by `qualify local`
 
 ```bash
 go run ./release/cmd/qualify validate --run-dir <qualify local run dir>
 ```
 
-Any other site is named by its Teleport kube cluster, after a `tsh login`, or
-by a kubeconfig, with its profile and the two versions:
+The run directory must come from a run with `--keep-site`, whose
+`node-keys/` holds one site record. The node's address, login and SSH key,
+its kubeconfig and both versions come from the run, so this needs no profile
+and no versions. The node is reached through its jump host, so `tsh` must be
+able to `tsh ssh` to the jump host as the record's login: a `tsh login` to
+the Teleport cluster the jump host is enrolled in, or `TELEPORT_PROXY` and
+`TELEPORT_IDENTITY_FILE`. Where `TELEPORT_PROXY` is unset,
+`FORGE_TELEPORT_PROXY` sets it. See [reaching the jump host](#reaching-the-jump-host).
+
+#### A site behind Teleport
 
 ```bash
-go run ./release/cmd/qualify validate --teleport-cluster <cluster> --profile <site profile> \
-  --controller-version <version> --kubernetes-version <version>
-go run ./release/cmd/qualify validate --kubeconfig <file> --profile <site profile> \
+tsh login --proxy=<proxy> --user=<user>
+tsh kube ls                          # the name to pass
+go run ./release/cmd/qualify validate --teleport-cluster <name> --profile <site profile> \
   --controller-version <version> --kubernetes-version <version>
 ```
 
-The image has no exec credential plugins, so a `--kubeconfig` must carry
-certificates or a token. A run is read-only, `site-validate && !creates`,
-which creates nothing but a short-lived probe pod. `--full` adds the
-`creates` specs, `--only <labels>` narrows either, `--dry-run` lists what
-would run, and `--image` runs a published image instead of building one. Any
-`NVKE_*` or `NKE_E2E_*` variable in the environment reaches the image, which
-is how a run adds a tenant. Each run prints where it writes its reports, log
-and inputs (no credentials): `validate-<time>` under `--run-dir`, otherwise
-under your user cache, or `--out`. It ends with the failures, the reason for
-each skip, and anything a scoped check found outside its scope.
+The run starts `tsh proxy kube` for the cluster and stops it when it ends.
+Your Teleport role must give you that cluster, with Kubernetes groups that
+hold at least the permissions below.
+
+#### A site any kubeconfig reaches
+
+```bash
+go run ./release/cmd/qualify validate --kubeconfig <file> [--context <name>] --profile <site profile> \
+  --controller-version <version> --kubernetes-version <version>
+```
+
+The image has no exec credential plugins, so the kubeconfig must carry
+client certificates or a token; one that runs `tsh`, `kubelogin` or a cloud
+CLI fails before any check runs, and `--teleport-cluster` is the way in for a
+Teleport site. A server on `127.0.0.1` is reached from the container: through
+`host.docker.internal` under Docker Desktop, and through the host's network
+on Linux.
+
+#### Inputs
+
+| Flag | What it is | Where it comes from |
+| --- | --- | --- |
+| `--profile` | The site's [validation profile](#validation-profile): a YAML file of `NVKE_SITE_*` and controller settings saying how the site is laid out. Without one the checks expect a site built from `deploy/nico`. | The site's own configuration. This repository ships none. |
+| `--controller-version` | The version the controller must report, such as `v0.23.1`. | The controller's image tag: `kubectl get deploy -A -l app.kubernetes.io/name=nvke-controller -o jsonpath='{.items[0].spec.template.spec.containers[0].image}'` |
+| `--kubernetes-version` | The version the site was built to run, such as `v1.34.2`. | The site's build record, not the API server: check 9 compares the API server and every kubelet with it. |
+| `--full` | Also run the `creates` checks: 26–31, and 37 on a tenant. | |
+| `--only <expr>` | A Ginkgo label expression the run is narrowed to, such as `readiness`. | |
+| `--dry-run` | List what would run, and run nothing. | |
+| `--image` | Run this image instead of building one. | See above. |
+| `--out` | Where the run's files go. | Default: `validate-<time>` under `--run-dir`, else `nvke/validate/<site>-<time>` under your user cache directory (`~/Library/Caches` on macOS, `~/.cache` on Linux). |
+
+Any `NVKE_*` or `NKE_E2E_*` variable in your environment reaches the image
+as it is and wins over the profile, so one run can change one value. That is
+also how a run adds [a tenant](#tenant-checks) (`NVKE_TENANT_VALIDATE=true`
+and `NVKE_TENANT_CLUSTER`) and how it names the identity the controller API
+check presents where the controller authenticates
+(`NKE_E2E_TOKEN_NAMESPACE`, `NKE_E2E_TOKEN_SERVICE_ACCOUNT`).
+[Running it on a site](#running-it-on-a-site) shows how to tell whether it
+does. `--controller-version`, `--kubernetes-version` and `--profile` set
+their own variables, so the environment's values of those are not passed.
+
+#### Credentials
+
+The kubeconfig's identity needs the permissions
+[running the image](#running-the-image) lists for the service account. In a
+read-only run, that includes creating and deleting the DNS probe pod in the
+probe namespace. From a workstation that namespace is `default` unless
+`NVKE_SITE_PROBE_NAMESPACE` names another. Where the controller
+authenticates its API, the identity also needs `create` on
+`serviceaccounts/token` for the `NKE_E2E_TOKEN_*` service account. An admin
+kubeconfig has all of this. Check 24 tests the runner's own identity only in
+a pod, so an admin identity does not fail it from a workstation.
+
+The only credential the run writes is the kubeconfig it hands the
+container, kept in the run directory with mode `0600` and deleted when the
+run ends.
+
+#### What a run leaves
+
+The run prints its directory first. That directory holds `artifacts/`, with
+the JUnit and JSON reports, plus `run.log`, `inputs.env` (the flags and the
+names of the variables passed, not their values), a copy of the profile and,
+for `--run-dir` and `--teleport-cluster`, `connect.log`. The run ends with
+the counts, every failure, the reason for each skip, and what a check
+reported without failing, such as a scoped check's findings outside its
+scope. It exits non-zero when a check fails. An interrupt reaches the
+suite, which deletes what it made on the site before it exits.
 
 ### Tenant checks
 
