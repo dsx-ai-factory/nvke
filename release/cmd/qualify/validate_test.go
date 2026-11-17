@@ -216,8 +216,8 @@ func TestSummarizeJUnit(t *testing.T) {
 <testcase name="[It] site validation runs every workload"><properties>
   <property name="workloads outside NVKE_SITE_SCOPE, not failing the check" value="&#34;Deployment other-team/broken: 0 of 1 available\nDeployment other-team/b: 0 of 1 available&#34;"></property>
 </properties></testcase>
-<testcase name="[It] site validation refuses anonymous access"><properties>
-  <property name="anonymous access not checked through this connection, not failing the check" value="&#34;remote error: tls: certificate required&#34;"></property>
+<testcase name="[It] site validation has no pod failing outside its scope"><properties>
+  <property name="pods outside NVKE_SITE_SCOPE, not failing the check" value="&#34;other-team/p: CrashLoopBackOff&#34;"></property>
 </properties></testcase>
 <testcase name="[It] site validation has no pod failing"><failure message="pods: ns/p CrashLoopBackOff&#xA;more"></failure></testcase>
 <testcase name="[It] site validation runs Argo CD"><skipped message="NVKE_SITE_COMPONENTS does not list argocd"></skipped></testcase>
@@ -232,7 +232,7 @@ func TestSummarizeJUnit(t *testing.T) {
 		"FAILED  [It] site validation has no pod failing: pods: ns/p CrashLoopBackOff\n",
 		"skipped [It] site validation runs Argo CD: NVKE_SITE_COMPONENTS does not list argocd",
 		"workloads outside NVKE_SITE_SCOPE, not failing the check:\n    Deployment other-team/broken: 0 of 1 available\n    Deployment other-team/b",
-		"anonymous access not checked through this connection, not failing the check:\n    remote error: tls: certificate required",
+		"pods outside NVKE_SITE_SCOPE, not failing the check:\n    other-team/p: CrashLoopBackOff",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary lacks %q:\n%s", want, got)
