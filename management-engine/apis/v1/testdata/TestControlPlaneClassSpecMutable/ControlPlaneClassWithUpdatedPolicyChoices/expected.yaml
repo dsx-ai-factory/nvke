@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: "service.nvke.nvidia.com/v1"
+kind: "ControlPlaneClass"
+metadata:
+  name: "standard"
+spec:
+  controlPlane:
+    replicas: 5
+    instanceTypePreferences:
+      - "provider.example/instance-types/CP_Large"
+    systemReservedMemory: "32Gi"
+  rollout:
+    strategy:
+      type: "RollingUpdate"
+      rollingUpdate:
+        maxSurge: 1
+  lifecycle:
+    deprecated: false
+    hidden: false
