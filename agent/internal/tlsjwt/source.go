@@ -52,14 +52,14 @@ type TokenSource interface {
 	Token(ctx context.Context) (string, error)
 }
 
-// CachingTokenSource fetches a JWT-SVID for the controller audience, exchanges
-// it for a DSX identity token, and reuses that token until it is close to
-// expiring. Refreshes are serialized so a burst of connections triggers one
-// exchange rather than one per connection.
+// mintFunc obtains a fresh DSX identity token.
+type mintFunc func(ctx context.Context) (Token, error)
+
+// CachingTokenSource obtains a DSX identity token for the controller audience
+// and reuses it until it is close to expiring. Refreshes are serialized so a
+// burst of connections triggers one fetch rather than one per connection.
 type CachingTokenSource struct {
-	fetchSVID     FetchSVIDFunc
-	exchanger     Exchanger
-	audience      string
+	mint          mintFunc
 	refreshBefore time.Duration
 	now           func() time.Time
 
@@ -67,8 +67,8 @@ type CachingTokenSource struct {
 	cached Token
 }
 
-// NewCachingTokenSource returns a token source over the workload API and the
-// DSX Identity exchange.
+// NewCachingTokenSource returns a token source that fetches a JWT-SVID from
+// the workload API and exchanges it with DSX Identity.
 func NewCachingTokenSource(fetchSVID FetchSVIDFunc, exchanger Exchanger, audience string) (*CachingTokenSource, error) {
 	if fetchSVID == nil {
 		return nil, errors.New("node-agent token source requires a jwt-svid source")
@@ -76,16 +76,41 @@ func NewCachingTokenSource(fetchSVID FetchSVIDFunc, exchanger Exchanger, audienc
 	if exchanger == nil {
 		return nil, errors.New("node-agent token source requires a token exchanger")
 	}
-	if audience != ControllerAudience && audience != LegacyControllerAudience {
-		return nil, fmt.Errorf("unsupported controller audience %q", audience)
+	if err := validateAudience(audience); err != nil {
+		return nil, err
 	}
+	return newCachingTokenSource(func(ctx context.Context) (Token, error) {
+		svid, err := fetchSVID(ctx, audience)
+		if err != nil {
+			return Token{}, fmt.Errorf("fetching jwt-svid for audience %s: %w", audience, err)
+		}
+		if svid == "" {
+			return Token{}, fmt.Errorf("workload api returned an empty jwt-svid for audience %s", audience)
+		}
+		token, err := exchanger.Exchange(ctx, svid)
+		if err != nil {
+			return Token{}, fmt.Errorf("exchanging jwt-svid for a dsx identity token: %w", err)
+		}
+		if token.Value == "" {
+			return Token{}, errors.New("token exchange returned an empty dsx identity token")
+		}
+		return token, nil
+	}), nil
+}
+
+func newCachingTokenSource(mint mintFunc) *CachingTokenSource {
 	return &CachingTokenSource{
-		fetchSVID:     fetchSVID,
-		exchanger:     exchanger,
-		audience:      audience,
+		mint:          mint,
 		refreshBefore: DefaultRefreshBefore,
 		now:           time.Now,
-	}, nil
+	}
+}
+
+func validateAudience(audience string) error {
+	if audience != ControllerAudience && audience != LegacyControllerAudience {
+		return fmt.Errorf("unsupported controller audience %q", audience)
+	}
+	return nil
 }
 
 // Token returns a cached DSX identity token, refreshing it first when none is
@@ -100,23 +125,12 @@ func (s *CachingTokenSource) Token(ctx context.Context) (string, error) {
 		return s.cached.Value, nil
 	}
 
-	svid, err := s.fetchSVID(ctx, s.audience)
+	token, err := s.mint(ctx)
 	if err != nil {
-		return "", fmt.Errorf("fetching jwt-svid for audience %s: %w", s.audience, err)
-	}
-	if svid == "" {
-		return "", fmt.Errorf("workload api returned an empty jwt-svid for audience %s", s.audience)
-	}
-
-	token, err := s.exchanger.Exchange(ctx, svid)
-	if err != nil {
-		return "", fmt.Errorf("exchanging jwt-svid for a dsx identity token: %w", err)
-	}
-	if token.Value == "" {
-		return "", errors.New("token exchange returned an empty dsx identity token")
+		return "", err
 	}
 	if !s.now().Add(s.refreshBefore).Before(token.Expiry) {
-		return "", fmt.Errorf("token exchange returned a token too close to expiry at %s", token.Expiry.UTC())
+		return "", fmt.Errorf("dsx identity returned a token too close to expiry at %s", token.Expiry.UTC())
 	}
 
 	s.cached = token

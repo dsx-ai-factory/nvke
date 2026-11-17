@@ -102,6 +102,7 @@ type AgentConfig struct {
 	GRPCAuthMode             string
 	DSXIdentityExchangeURL   string
 	DSXIdentityCABundle      string
+	DSXIdentityMetadataURL   string
 	DSXIdentityTimeout       time.Duration
 	ControllerClientCABundle string
 	ControllerAudience       string
@@ -130,14 +131,20 @@ func validateAuthConfig(cfg AgentConfig) error {
 
 	switch cfg.GRPCAuthMode {
 	case authModeSPIFFEMTLS:
+		if cfg.DSXIdentityMetadataURL != "" {
+			return fmt.Errorf("--dsx-identity-metadata-url requires --grpc-auth-mode=%s", authModeTLSJWT)
+		}
 		return nil
 	case authModeTLSJWT:
 		if cfg.DisableMTLS {
 			return fmt.Errorf("--grpc-auth-mode=%s cannot be combined with --disable-mtls: "+
 				"the agent must authenticate the controller before it sends an identity token", authModeTLSJWT)
 		}
-		if cfg.DSXIdentityExchangeURL == "" {
-			return fmt.Errorf("--grpc-auth-mode=%s requires --dsx-identity-exchange-url", authModeTLSJWT)
+		if cfg.DSXIdentityExchangeURL != "" && cfg.DSXIdentityMetadataURL != "" {
+			return errors.New("--dsx-identity-exchange-url and --dsx-identity-metadata-url are mutually exclusive")
+		}
+		if cfg.DSXIdentityExchangeURL == "" && cfg.DSXIdentityMetadataURL == "" {
+			return fmt.Errorf("--grpc-auth-mode=%s requires --dsx-identity-exchange-url or --dsx-identity-metadata-url", authModeTLSJWT)
 		}
 		return nil
 	default:
@@ -256,6 +263,31 @@ func buildTLSJWTCredentials(
 	cfg AgentConfig,
 	base credentials.TransportCredentials,
 ) (credentials.TransportCredentials, error) {
+	audience := cfg.ControllerAudience
+	if audience == "" {
+		audience = tlsjwt.LegacyControllerAudience
+	}
+	tokens, err := buildTokenSource(ctx, cfg, audience)
+	if err != nil {
+		return nil, err
+	}
+
+	return tlsjwt.NewServerCredentials(base, tokens, slog.Default())
+}
+
+func buildTokenSource(ctx context.Context, cfg AgentConfig, audience string) (tlsjwt.TokenSource, error) {
+	if cfg.DSXIdentityMetadataURL != "" {
+		metadata, err := tlsjwt.NewMetadataClient(cfg.DSXIdentityMetadataURL, cfg.DSXIdentityTimeout)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create dsx metadata service client: %w", err)
+		}
+		tokens, err := tlsjwt.NewMetadataTokenSource(metadata, audience)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create node-agent token source: %w", err)
+		}
+		return tokens, nil
+	}
+
 	jwtSource, err := workloadapi.NewJWTSource(ctx, workloadapi.WithClientOptions(workloadapi.WithAddr(cfg.SPIFFESocketPath)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create jwt-svid source: %w", err)
@@ -266,16 +298,11 @@ func buildTLSJWTCredentials(
 		return nil, fmt.Errorf("failed to create dsx identity exchange client: %w", err)
 	}
 
-	audience := cfg.ControllerAudience
-	if audience == "" {
-		audience = tlsjwt.LegacyControllerAudience
-	}
 	tokens, err := tlsjwt.NewCachingTokenSource(tlsjwt.WorkloadAPISVIDs(jwtSource), exchanger, audience)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create node-agent token source: %w", err)
 	}
-
-	return tlsjwt.NewServerCredentials(base, tokens, slog.Default())
+	return tokens, nil
 }
 
 func logAuditEvent(logger *slog.Logger, ctx context.Context, method string, startedAt time.Time, err error) {
@@ -360,7 +387,8 @@ func startSecureServer(ctx context.Context, cfg AgentConfig, agentServer *server
 
 		var transportCredentials credentials.TransportCredentials = credentials.NewTLS(tlsCfg)
 		if cfg.GRPCAuthMode == authModeTLSJWT {
-			slog.Info("adding TLS/JWT authentication to gRPC", "exchange_endpoint", cfg.DSXIdentityExchangeURL)
+			slog.Info("adding TLS/JWT authentication to gRPC",
+				"exchange_endpoint", cfg.DSXIdentityExchangeURL, "metadata_service", cfg.DSXIdentityMetadataURL)
 			transportCredentials, err = buildTLSJWTCredentials(ctx, cfg, transportCredentials)
 			if err != nil {
 				slog.Error("failed to build TLS/JWT credentials", "err", err)
@@ -497,10 +525,17 @@ func main() {
 		"PEM CA bundle authenticating the DSX Identity endpoint. When empty, the system trust store is used. "+
 			"Also set via NKE_DSX_IDENTITY_CA_BUNDLE",
 	)
+	dsxIdentityMetadataURL := flag.String(
+		"dsx-identity-metadata-url",
+		envOr("NKE_DSX_IDENTITY_METADATA_URL", ""),
+		"DSX metadata service base URL. When set, --grpc-auth-mode=tls-jwt fetches the DSX identity token from it "+
+			"instead of the SPIRE workload API and --dsx-identity-exchange-url. Also set via NKE_DSX_IDENTITY_METADATA_URL. "+
+			"Example: http://169.254.169.254",
+	)
 	dsxIdentityTimeout := flag.Duration(
 		"dsx-identity-timeout",
 		defaultDSXIdentityTimeout,
-		"Timeout for one DSX Identity token-exchange request",
+		"Timeout for one DSX Identity token-exchange or metadata service request",
 	)
 	controllerClientCABundle := registerControllerClientCABundleFlag(flag.CommandLine)
 	versionFlag := flag.Bool("version", false, "Print the version and exit")
@@ -562,6 +597,7 @@ func main() {
 		GRPCAuthMode:             *grpcAuthMode,
 		DSXIdentityExchangeURL:   *dsxIdentityExchangeURL,
 		DSXIdentityCABundle:      *dsxIdentityCABundle,
+		DSXIdentityMetadataURL:   *dsxIdentityMetadataURL,
 		DSXIdentityTimeout:       *dsxIdentityTimeout,
 		ControllerClientCABundle: *controllerClientCABundle,
 		ControllerAudience:       *controllerAudience,
