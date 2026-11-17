@@ -1,0 +1,12 @@
+apiVersion: service.nvke.nvidia.com/v1
+kind: NodeProfile
+metadata:
+  name: ubuntu-gpu-2026-11
+spec:
+  machineImageRef:
+    name: img-ubuntu
+  machineInit:
+    userDataTemplate: |
+      #cloud-config
+  profile: ubuntu-gpu
+  tag: "2026.11"

@@ -1,0 +1,41 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# One NodeProfile per profile and tag, the pair a node pool's nodeProfile selects.
+# Both fields are immutable, so the binding checks each create against every existing
+# NodeProfile. A create with an existing name is left to the API server's already-exists check.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: unique-node-profile.service.nvke.nvidia.com
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: service.nvke.nvidia.com/v1
+    kind: NodeProfile
+  matchConstraints:
+    resourceRules:
+    - apiGroups: [service.nvke.nvidia.com]
+      apiVersions: [v1]
+      resources: [nodeprofiles]
+      operations: [CREATE]
+  validations:
+  - expression: >-
+      params.metadata.name == object.metadata.name ||
+      params.spec.profile != object.spec.profile || params.spec.tag != object.spec.tag
+    messageExpression: >-
+      'node profile ' + object.spec.profile + ':' + object.spec.tag +
+      ' is already published by NodeProfile ' + params.metadata.name
+    reason: Invalid
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: unique-node-profile.service.nvke.nvidia.com
+spec:
+  policyName: unique-node-profile.service.nvke.nvidia.com
+  validationActions: [Deny]
+  paramRef:
+    selector: {}
+    parameterNotFoundAction: Allow

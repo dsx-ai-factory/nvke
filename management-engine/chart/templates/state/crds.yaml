@@ -9,4 +9,17 @@
 ---
 {{ toYaml $crd }}
 {{- end }}
+{{- /* Admission policies enforce rules the CRD schemas cannot express, so they share the CRDs' lifecycle. */}}
+{{- /* Each file holds a policy and its binding; the comment-only header has no kind. */}}
+{{- range $path, $_ := .Files.Glob "files/admission/*.yaml" }}
+{{- range $document := regexSplit "(?m)^---[ \t]*$" ($.Files.Get $path) -1 }}
+{{- $object := fromYaml $document }}
+{{- if $object.kind }}
+{{- $retention := dict "helm.sh/resource-policy" "keep" "argocd.argoproj.io/sync-wave" "-1" "argocd.argoproj.io/sync-options" "Prune=false" }}
+{{- $_ := set $object.metadata "annotations" (merge $retention (default dict $object.metadata.annotations)) }}
+---
+{{ toYaml $object }}
+{{- end }}
+{{- end }}
+{{- end }}
 {{- end }}
