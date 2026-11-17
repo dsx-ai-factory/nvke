@@ -74,9 +74,13 @@ pass "cert-manager ${CERT_MANAGER_VERSION} is available"
 step "NVSentinel ${NVSENTINEL_VERSION}"
 # No --wait: the datastore comes up in stages (Percona operator, replica set,
 # certificates, the collection-setup Job), and the pods that use it stay unready
-# until it is done.
-helm upgrade --install nvsentinel oci://ghcr.io/nvidia/nvsentinel --version "$NVSENTINEL_VERSION" \
-  --namespace nvsentinel --create-namespace -f "$values" --timeout "$TIMEOUT" >/dev/null
+# until it is done. A second try covers the API server serving the chart's
+# Percona CRDs a moment after Helm creates them.
+install_nvsentinel() {
+  helm upgrade --install nvsentinel oci://ghcr.io/nvidia/nvsentinel --version "$NVSENTINEL_VERSION" \
+    --namespace nvsentinel --create-namespace -f "$values" --timeout "$TIMEOUT" >/dev/null
+}
+install_nvsentinel || install_nvsentinel
 kubectl -n nvsentinel wait --for=condition=complete job -l app.kubernetes.io/name=create-mongodb-database --timeout=15m >/dev/null ||
   fail "the MongoDB collection-setup Job did not complete"
 all_ready() {

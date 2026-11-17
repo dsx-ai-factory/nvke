@@ -97,11 +97,15 @@ func validateNVSentinel(test *tenantTest) {
 
 		values := filepath.Join(GinkgoT().TempDir(), "values.yaml")
 		Expect(os.WriteFile(values, nvsentinelValues, 0o600)).To(Succeed())
-		Expect(helmOnTenant(ctx, test, "upgrade", "--install", "nvsentinel", nvsentinelChart, "--version", nvsentinelVersion,
-			"--namespace", nvsentinelNamespace, "--create-namespace", "--values", values,
-		)).To(Succeed())
+		// Helm creates the chart's Percona CRDs first, but the API server can serve them a
+		// moment late, failing the install before it creates anything.
+		Eventually(func(ctx context.Context) error {
+			return helmOnTenant(ctx, test, "upgrade", "--install", "nvsentinel", nvsentinelChart, "--version", nvsentinelVersion,
+				"--namespace", nvsentinelNamespace, "--create-namespace", "--values", values,
+			)
+		}).WithContext(ctx).WithTimeout(helmRun).WithPolling(sitePoll).Should(Succeed())
 		ready(ctx, nvsentinelNamespace, nvsentinelWait)
-	}, NodeTimeout(2*helmRun+mokkaWait+nvsentinelWait+time.Minute))
+	}, NodeTimeout(3*helmRun+mokkaWait+nvsentinelWait+time.Minute))
 
 	It("cordons and drains a node whose GPU overheats, and uncordons it once the GPU cools", func(ctx SpecContext) {
 		connect(ctx)
