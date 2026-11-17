@@ -305,6 +305,20 @@ func locationStrategies() []string {
 	}
 }
 
+// IsVersionStrategy reports whether name is a version strategy this package
+// implements. A caller that adds a strategy of its own uses it to see that the
+// name is free.
+func IsVersionStrategy(name string) bool {
+	return slices.Contains(versionStrategies(), name)
+}
+
+// IsLocationStrategy reports whether name is a location strategy this package
+// implements. A caller that adds a strategy of its own uses it to see that the
+// name is free.
+func IsLocationStrategy(name string) bool {
+	return slices.Contains(locationStrategies(), name)
+}
+
 // checkWith rejects a with map that lacks a required key or carries a key the
 // strategy does not take.
 func checkWith(strategy string, with map[string]string, required, optional []string) error {

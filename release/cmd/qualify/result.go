@@ -13,7 +13,7 @@ import (
 	"github.com/onsi/ginkgo/v2/types"
 	"github.com/spf13/cobra"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
+	"github.com/dsx-ai-factory/nvke/release/pkg/qualification"
 )
 
 // resultCmd builds the result command, which records what one stream of one

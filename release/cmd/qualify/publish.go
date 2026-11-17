@@ -13,7 +13,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/release/internal/publish"
 	"github.com/dsx-ai-factory/nvke/release/internal/publish/testgrid"
-	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
+	"github.com/dsx-ai-factory/nvke/release/pkg/qualification"
 )
 
 // publishTimeout bounds the GCS calls this command makes -- not the whole

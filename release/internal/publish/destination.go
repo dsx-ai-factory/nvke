@@ -10,7 +10,7 @@ package publish
 import (
 	"context"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
+	"github.com/dsx-ai-factory/nvke/release/pkg/qualification"
 )
 
 // Destination is where a stream's qualification evidence goes.
