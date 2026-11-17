@@ -807,9 +807,10 @@ withheld_vars() {
 }
 
 # The host a URL names, which an error can carry without the rest of the
-# URL: a DNS lookup, a certificate that does not match.
+# URL: a DNS lookup, a certificate that does not match. Whitespace goes
+# first, or it hides the port, and an IPv6 address loses its brackets.
 host_of() {
-  printf '%s' "$1" | sed -E 's|^[[:space:]]*[A-Za-z][A-Za-z0-9+.-]*://||; s|[/?#].*$||; s|:[0-9]*$||; s|[[:space:]]*$||'
+  printf '%s' "$1" | tr -d '[:space:]' | sed -E 's|^[A-Za-z][A-Za-z0-9+.-]*://||; s|[/?#].*$||; s|:[0-9]*$||; s|^\[(.*)\]$|\1|'
 }
 
 # The suite names the jump host in its own errors ("not reachable
