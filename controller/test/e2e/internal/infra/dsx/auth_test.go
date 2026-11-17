@@ -395,6 +395,44 @@ func TestDatahallCAExtendsASuppliedRootPool(t *testing.T) {
 	}
 }
 
+// wrappedTransport stands for a caller's instrumentation around a transport.
+type wrappedTransport struct{ http.RoundTripper }
+
+// A transport the CA cannot be added to is passed through while no CA is
+// supplied, and refused, naming the variable, while one is.
+func TestDatahallCARefusesACustomTransport(t *testing.T) {
+	caller := &http.Client{Transport: wrappedTransport{http.DefaultTransport}}
+
+	t.Setenv("DSX_DATAHALL_3_CA_CERT", "")
+	if got, err := withDatahallCA(caller, "datahall-3"); err != nil || got != caller {
+		t.Errorf("no CA supplied = %v, %v; want the client unchanged", got, err)
+	}
+
+	t.Setenv("DSX_DATAHALL_3_CA_CERT", selfSignedPEM(t))
+	if got, err := withDatahallCA(caller, "datahall-3"); err == nil || got != nil || !strings.Contains(err.Error(), "DSX_DATAHALL_3_CA_CERT") {
+		t.Errorf("a CA with a custom transport = %v, %v; want a refusal naming the variable", got, err)
+	}
+}
+
+// With neither SSA_ISSUER nor an issuerPath, both exported entry points refuse
+// before any exchange, naming the variable and the datahall.
+func TestEntryPointsRequireAnIssuer(t *testing.T) {
+	t.Setenv(EnvIssuer, "")
+	t.Setenv(testClientIDVar, "nvssa-prd-supplied")
+	t.Setenv(testClientSecretVar, "ssap-supplied")
+	t.Setenv(CACertEnvName(testSite), "")
+	site := Site{Key: testSite, API: "https://hall1.example"}
+
+	client, err := SSAClientFor(site)
+	if err == nil || client != (SSAClient{}) || !strings.Contains(err.Error(), EnvIssuer) || !strings.Contains(err.Error(), testSite) {
+		t.Errorf("SSAClientFor = %+v, %v; want no client and an error naming %s and %s", client, err, EnvIssuer, testSite)
+	}
+	token, err := MintToken(context.Background(), site)
+	if err == nil || token != "" || !strings.Contains(err.Error(), EnvIssuer) || !strings.Contains(err.Error(), testSite) {
+		t.Errorf("MintToken = %q, %v; want no token and an error naming %s and %s", token, err, EnvIssuer, testSite)
+	}
+}
+
 // selfSignedPEM is a CA certificate that no test server presents.
 func selfSignedPEM(t *testing.T) string {
 	t.Helper()

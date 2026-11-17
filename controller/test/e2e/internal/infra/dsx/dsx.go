@@ -104,6 +104,8 @@ type Options struct {
 	// spiffe.enabled=false, or every dial fails as a TLS handshake error.
 	DisableMTLS bool
 
+	// HTTPClient's Transport must be nil or an *http.Transport when the
+	// datahall supplies a CA: New refuses any other RoundTripper then.
 	HTTPClient   *http.Client
 	ReadyTimeout time.Duration
 	ReachTimeout time.Duration
