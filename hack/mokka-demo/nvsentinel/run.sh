@@ -83,34 +83,34 @@ kubectl -n cert-manager wait --for=condition=Available deploy --all --timeout="$
 pass "cert-manager ${CERT_MANAGER_VERSION} is available"
 
 step "NVSentinel ${NVSENTINEL_VERSION}"
-# No --wait: the datastore comes up in stages (Percona operator, replica set,
-# certificates, the collection-setup Job), and the pods that use it stay unready
-# until it is done. A second try covers the API server serving the chart's
-# Percona CRDs a moment after Helm creates them.
+helm status nvsentinel --namespace nvsentinel >/dev/null 2>&1 &&
+  die "a release named nvsentinel exists; uninstall it first (README.md, Clean up)"
+# helm waits for the datastore, which comes up in stages (Percona operator, replica
+# set, certificates, the collection-setup Job), and for the pods that use it. A quick
+# second try covers the API server serving the chart's Percona CRDs a moment after
+# Helm creates them.
 install_nvsentinel() {
   helm upgrade --install nvsentinel oci://ghcr.io/nvidia/nvsentinel --version "$NVSENTINEL_VERSION" \
-    --namespace nvsentinel --create-namespace -f "$guide_values" -f "$values" --timeout "$TIMEOUT" >/dev/null
+    --namespace nvsentinel --create-namespace -f "$guide_values" -f "$values" \
+    --wait --wait-for-jobs --timeout "$TIMEOUT" >/dev/null
 }
-install_nvsentinel || install_nvsentinel
-kubectl -n nvsentinel wait --for=condition=complete job -l app.kubernetes.io/name=create-mongodb-database --timeout=15m >/dev/null ||
-  fail "the MongoDB collection-setup Job did not complete"
-all_ready() {
-  local pods
-  pods="$(kubectl -n nvsentinel get pods --field-selector=status.phase!=Succeeded \
-    -o jsonpath='{range .items[*]}{.metadata.name} {.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}')" || return 1
-  [[ -n "$pods" ]] && ! grep -qv ' True$' <<<"$pods"
-}
-if wait_for 900 all_ready; then
-  pass "NVSentinel pods are Ready"
+started=$SECONDS
+if install_nvsentinel || { ((SECONDS - started < 120)) && install_nvsentinel; }; then
+  pass "NVSentinel's workloads are ready and its Jobs complete"
 else
-  fail "NVSentinel pods not Ready: $(kubectl -n nvsentinel get pods --no-headers | awk '$2 !~ /^([0-9]+)\/\1$/ && $3 != "Completed" {print $1}' | tr '\n' ' ')"
+  die "NVSentinel did not come up"
 fi
 
 step "a GPU workload for the drainer to move"
+# In its own namespace, the only one the override lets NVSentinel drain.
 kubectl apply -f - >/dev/null <<WORKLOAD
+apiVersion: v1
+kind: Namespace
+metadata: {name: nvsentinel-sample}
+---
 apiVersion: apps/v1
 kind: Deployment
-metadata: {name: nvsentinel-sample, namespace: default}
+metadata: {name: nvsentinel-sample, namespace: nvsentinel-sample}
 spec:
   replicas: 1
   selector: {matchLabels: {app: nvsentinel-sample}}
@@ -123,8 +123,8 @@ spec:
           image: registry.k8s.io/pause:3.10
           resources: {limits: {nvidia.com/gpu: 1}}
 WORKLOAD
-kubectl -n default rollout status deploy/nvsentinel-sample --timeout=5m >/dev/null
-workload_node() { kubectl -n default get pods -l app=nvsentinel-sample --field-selector=status.phase=Running -o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null; }
+kubectl -n nvsentinel-sample rollout status deploy/nvsentinel-sample --timeout=5m >/dev/null
+workload_node() { kubectl -n nvsentinel-sample get pods -l app=nvsentinel-sample --field-selector=status.phase=Running -o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null; }
 target="$(workload_node)"
 [[ -n "$target" ]] || die "the sample workload is not running"
 pass "sample workload runs on ${target}"
@@ -156,7 +156,7 @@ if wait_for 600 uncordoned; then
 else
   fail "${target} is still cordoned"
 fi
-kubectl -n default delete deploy nvsentinel-sample --ignore-not-found >/dev/null
+kubectl delete namespace nvsentinel-sample --ignore-not-found --wait=false >/dev/null
 
 printf '\n'
 if ((failures)); then
