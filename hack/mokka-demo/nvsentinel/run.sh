@@ -44,12 +44,15 @@ wait_for() {
   done
 }
 
-# On any exit, cool the GPU this run heats, then remove the kubeconfig it fetched.
+# On any exit, cool the GPU this run heats, delete the namespace it created, then
+# remove the kubeconfig it fetched.
 mock=""
+own_namespace=""
 own_kubeconfig=""
 cleanup() {
   local status=$?
   [[ -z "$mock" ]] || kubectl -n mokka exec "$mock" -- nvml-mock-ctl reset --gpu "$TARGET_GPU" >/dev/null 2>&1 || true
+  [[ -z "$own_namespace" ]] || kubectl delete namespace "$own_namespace" --wait=false >/dev/null 2>&1 || true
   [[ -z "$own_kubeconfig" ]] || rm -f "$own_kubeconfig"
   exit "$status"
 }
@@ -60,6 +63,11 @@ if [[ -z "${TENANT_KUBECONFIG:-}" ]]; then
   nvkectl get kubeconfig "$CLUSTER" --output-file "$TENANT_KUBECONFIG" >/dev/null
 fi
 export TENANT_KUBECONFIG KUBECONFIG="$TENANT_KUBECONFIG"
+# Change nothing if the release or namespace this run would own already exists.
+helm status nvsentinel --namespace nvsentinel >/dev/null 2>&1 &&
+  die "a release named nvsentinel exists; uninstall it first (README.md, Clean up)"
+kubectl get namespace nvsentinel-sample >/dev/null 2>&1 &&
+  die "namespace nvsentinel-sample exists; delete it first (README.md, Clean up)"
 
 step "two Mokka nodes in pool ${POOL}"
 CLUSTER="$CLUSTER" POOL="$POOL" POOL_PREFIX="$POOL_PREFIX" NODE_COUNT=2 LABEL_KEY="$LABEL_KEY" GPU_PROFILE="$GPU_PROFILE" \
@@ -83,8 +91,6 @@ kubectl -n cert-manager wait --for=condition=Available deploy --all --timeout="$
 pass "cert-manager ${CERT_MANAGER_VERSION} is available"
 
 step "NVSentinel ${NVSENTINEL_VERSION}"
-helm status nvsentinel --namespace nvsentinel >/dev/null 2>&1 &&
-  die "a release named nvsentinel exists; uninstall it first (README.md, Clean up)"
 # helm waits for the datastore, which comes up in stages (Percona operator, replica
 # set, certificates, the collection-setup Job), and for the pods that use it. A quick
 # second try covers the API server serving the chart's Percona CRDs a moment after
@@ -103,11 +109,9 @@ fi
 
 step "a GPU workload for the drainer to move"
 # In its own namespace, the only one the override lets NVSentinel drain.
+kubectl create namespace nvsentinel-sample >/dev/null
+own_namespace=nvsentinel-sample
 kubectl apply -f - >/dev/null <<WORKLOAD
-apiVersion: v1
-kind: Namespace
-metadata: {name: nvsentinel-sample}
----
 apiVersion: apps/v1
 kind: Deployment
 metadata: {name: nvsentinel-sample, namespace: nvsentinel-sample}
@@ -156,7 +160,6 @@ if wait_for 600 uncordoned; then
 else
   fail "${target} is still cordoned"
 fi
-kubectl delete namespace nvsentinel-sample --ignore-not-found --wait=false >/dev/null
 
 printf '\n'
 if ((failures)); then

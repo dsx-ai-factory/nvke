@@ -9,7 +9,7 @@ The run:
 1. Runs [`../demo.sh`](../README.md) for a pool of two Mokka nodes.
 2. Turns on GPU Operator's standalone DCGM, which the GPU Health Monitor polls.
 3. Installs cert-manager, which issues NVSentinel's MongoDB certificates.
-4. Installs NVSentinel with Mokka's guide values, pinned to a commit: MongoDB through the Percona operator, the thermal-margin watch acting rather than dry-run, and the circuit breaker off for a two-node pool. [`nvsentinel-values.yaml`](../../../controller/test/e2e/testdata/nvsentinel-values.yaml) keeps MongoDB's data in an `emptyDir`, so the cluster needs no StorageClass, and lets NVSentinel drain only the sample workload's namespace, so nothing else on a shared cluster is evicted. The script stops if a release named `nvsentinel` already exists.
+4. Installs NVSentinel with Mokka's guide values, pinned to a commit: MongoDB through the Percona operator, the thermal-margin watch acting rather than dry-run, and the circuit breaker off for a two-node pool. [`nvsentinel-values.yaml`](../../../controller/test/e2e/testdata/nvsentinel-values.yaml) keeps MongoDB's data in an `emptyDir`, so the cluster needs no StorageClass, and lets NVSentinel drain only the sample workload's namespace, so nothing else on a shared cluster is evicted. The script stops before changing anything if a release named `nvsentinel` or a namespace named `nvsentinel-sample` already exists.
 5. Runs a Deployment that requests one GPU on the pool, in its own `nvsentinel-sample` namespace.
 6. Heats one GPU on the workload's node, then resets it.
 
@@ -64,6 +64,7 @@ Point `kubectl` and Helm at the workload cluster first, as in [`demo.sh`'s clean
 nvkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file workload.kubeconfig
 export KUBECONFIG=$PWD/workload.kubeconfig
 helm uninstall nvsentinel --namespace nvsentinel
+kubectl delete namespace nvsentinel-sample --ignore-not-found
 kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download/v1.19.1/cert-manager.yaml
 helm uninstall nvml-mock-sentinel --namespace mokka
 nvkectl delete nodepool mokka-sentinel --cluster <WORKLOAD_CLUSTER>
