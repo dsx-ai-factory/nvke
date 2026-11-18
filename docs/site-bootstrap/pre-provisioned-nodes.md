@@ -99,7 +99,7 @@ echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.
 # CAPI SPIFFE exec-auth overlay mounts an image volume with a subPath,
 # which containerd supports from 2.2.0. On containerd 1.7 those pods
 # fail with 'failed to mkdir ""'. The NVKE reference packages pin
-# containerd 2.3.0 for Kubernetes 1.36.3
+# containerd 2.3.7 for Kubernetes 1.36.3
 # (os-image/packages/kubeadm-distro/lock/amd64/v1.36.3.lock).
 containerd --version
 
