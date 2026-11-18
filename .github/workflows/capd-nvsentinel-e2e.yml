@@ -17,7 +17,6 @@ on:
     paths:
       - controller/test/e2e/nvsentinel*.go
       - controller/test/e2e/mokka*.go
-      - controller/test/e2e/internal/kube/exec.go
       - controller/test/e2e/testdata/nvsentinel-values.yaml
       - controller/test/e2e/testdata/mokka-gpu-operator-values.yaml
       - .github/workflows/capd-nvsentinel-e2e.yml

@@ -439,6 +439,8 @@ for helm_bin in helm-real helm; do
     break
   fi
 done
+# The NVSentinel check drives Mokka with kubectl exec.
+docker cp "$(command -v kubectl)" "${runner_name}:/usr/local/bin/kubectl"
 oidc_issuer_host=""
 if [[ "${LOCAL_NKE_E2E_BUILD_TAGS:-}" =~ (^|[[:space:],])oidc_acceptance($|[[:space:],]) ]]; then
   oidc_issuer_host="$(docker inspect --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "${runner_name}")"
