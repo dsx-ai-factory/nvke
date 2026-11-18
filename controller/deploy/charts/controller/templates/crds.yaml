@@ -1,0 +1,30 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+files/crds/ holds the CRDs controller-gen generates from controller/k8s-apis/v1 (make -C
+controller/k8s-apis manifests). Failing here, rather than rendering nothing, keeps a chart
+without its CRDs from installing.
+
+They are templated rather than placed in Helm's crds/ directory, which Helm installs once and
+never upgrades, so a schema change reaches the cluster with the release that ships it.
+helm.sh/resource-policy: keep leaves them, and the custom resources they hold, when the release
+is uninstalled. The Argo CD annotations apply the CRDs before the workloads that use them and
+keep a prune from deleting them.
+
+releaseCRDs.install is for a cluster where something else applies them first.
+*/ -}}
+{{- if .Values.releaseCRDs.install }}
+{{- $crds := .Files.Glob "files/crds/internal.nvke.nvidia.com_*.yaml" }}
+{{- if not $crds }}
+{{- fail "files/crds/ holds no CRDs; run make -C controller/k8s-apis manifests" }}
+{{- end }}
+{{- range $path, $_ := $crds }}
+{{- $crd := fromYaml ($.Files.Get $path) }}
+{{- /* Built per CRD: merge writes into its first argument. */}}
+{{- $retention := dict "helm.sh/resource-policy" "keep" "argocd.argoproj.io/sync-wave" "-2" "argocd.argoproj.io/sync-options" "Prune=false" }}
+{{- $_ := set $crd.metadata "annotations" (merge $retention (default dict $crd.metadata.annotations)) }}
+---
+{{ toYaml $crd }}
+{{- end }}
+{{- end }}

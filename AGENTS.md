@@ -110,7 +110,7 @@ checkout, and do not stub a dependency to make the build pass.
 | `controller/api/*.gen.go` | oapi-codegen output | **No — regenerate** |
 | `cluster-api-provider-provisioned/api/v1alpha1/zz_generated.deepcopy.go` | controller-gen output | **No — regenerate** |
 | `controller/k8s-apis/v1/zz_generated.deepcopy.go` | controller-gen output | **No — regenerate** |
-| `controller/deploy/charts/nvke-crds/bases/*.yaml` | controller-gen output from `controller/k8s-apis/v1` | **No — regenerate** |
+| `controller/deploy/charts/controller/files/crds/*.yaml` | controller-gen output from `controller/k8s-apis/v1` | **No — regenerate** |
 | `cluster-api-provider-provisioned/config/crd/bases/*.yaml` | controller-gen output | **No — regenerate** |
 | `cluster-api-provider-provisioned/config/rbac/role.yaml` | controller-gen output | **No — regenerate** |
 | `management-engine/config/crd/bases/*.yaml` | `management-engine` controller-gen output | **No — regenerate** |

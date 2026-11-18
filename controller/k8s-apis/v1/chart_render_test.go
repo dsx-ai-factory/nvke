@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/yaml"
 )
 
-const chartsDir = "../../deploy/charts"
+const controllerChartDir = "../../deploy/charts/controller"
 
 // crdDocuments returns every CustomResourceDefinition in a multi-document YAML
 // stream, keyed by name. Anything else in the stream is ignored.
@@ -36,29 +36,13 @@ func crdDocuments(t *testing.T, stream string) map[string]map[string]any {
 	return crds
 }
 
-// assembleControllerChart copies the controller chart into dir with the nvke-crds
-// chart as its dependency, the way a built chart carries it, without running
-// helm dependency build. Any dependency archive a local build left behind is
-// dropped so it cannot shadow the sources.
-func assembleControllerChart(t *testing.T, dir string) {
-	t.Helper()
-	require.NoError(t, os.CopyFS(dir, os.DirFS(filepath.Join(chartsDir, "controller"))))
-	require.NoError(t, os.RemoveAll(filepath.Join(dir, "charts")))
-	require.NoError(t, os.CopyFS(filepath.Join(dir, "charts", "nvke-crds"), os.DirFS(filepath.Join(chartsDir, "nvke-crds"))))
-}
-
-// TestNVKECRDsRendering holds the nvke-crds chart to the files this module
-// generates into the chart's bases directory: it renders every one of them,
-// schema intact, with the retention annotations that keep an uninstall or an
-// Argo prune from deleting the custom resources, and the controller chart pulls
-// it in unless releaseCRDs.install says another installer owns the schemas.
-func TestNVKECRDsRendering(t *testing.T) {
+// TestControllerChartCRDRendering checks that the controller chart renders the generated CRDs.
+func TestControllerChartCRDRendering(t *testing.T) {
 	helm, err := exec.LookPath("helm")
 	if err != nil {
 		t.Skip("helm required for render checks")
 	}
-	crdsChart := filepath.Join(chartsDir, "nvke-crds")
-	paths, err := filepath.Glob(filepath.Join(crdsChart, "bases", "*.yaml"))
+	paths, err := filepath.Glob(filepath.Join(controllerChartDir, "files", "crds", "*.yaml"))
 	require.NoError(t, err)
 	canonical := map[string]map[string]any{}
 	for _, path := range paths {
@@ -78,24 +62,18 @@ func TestNVKECRDsRendering(t *testing.T) {
 		allNames = append(allNames, name)
 	}
 	sort.Strings(allNames)
-	require.Equal(t, wantNames, allNames, "nvke-crds/bases holds the wrong definitions")
-
-	controllerChart := filepath.Join(t.TempDir(), "controller")
-	assembleControllerChart(t, controllerChart)
+	require.Equal(t, wantNames, allNames, "files/crds holds the wrong definitions")
 
 	for _, test := range []struct {
-		name  string
-		chart string
-		set   []string
-		want  []string
+		name string
+		set  []string
+		want []string
 	}{
-		{"standalone", crdsChart, nil, wantNames},
-		{"disabled", crdsChart, []string{"--set", "enabled=false"}, []string{}},
-		{"controller chart installs them by default", controllerChart, nil, wantNames},
-		{"controller chart leaves them to another installer", controllerChart, []string{"--set", "releaseCRDs.install=false"}, []string{}},
+		{"installed by default", nil, wantNames},
+		{"left to another installer", []string{"--set", "releaseCRDs.install=false"}, []string{}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			args := append([]string{"template", "schema-check", test.chart}, test.set...)
+			args := append([]string{"template", "schema-check", controllerChartDir}, test.set...)
 			output, err := exec.CommandContext(t.Context(), helm, args...).CombinedOutput()
 			require.NoError(t, err, "helm template:\n%s", output)
 			rendered := crdDocuments(t, string(output))
@@ -108,7 +86,13 @@ func TestNVKECRDsRendering(t *testing.T) {
 				metadata, _ := crd["metadata"].(map[string]any)
 				annotations, _ := metadata["annotations"].(map[string]any)
 				require.Equal(t, "keep", annotations["helm.sh/resource-policy"], "retention on %s", name)
+				require.Equal(t, "-2", annotations["argocd.argoproj.io/sync-wave"], "retention on %s", name)
 				require.Equal(t, "Prune=false", annotations["argocd.argoproj.io/sync-options"], "retention on %s", name)
+				// The retention set is built once per CRD. Reusing one map across the loop would
+				// still pass the three checks above, so hold the annotations to the generated
+				// ones plus exactly those three.
+				generated, _ := want["metadata"].(map[string]any)["annotations"].(map[string]any)
+				require.Len(t, annotations, len(generated)+3, "annotations of %s are the generated ones plus the retention set", name)
 			}
 			sort.Strings(names)
 			require.Equal(t, test.want, names)

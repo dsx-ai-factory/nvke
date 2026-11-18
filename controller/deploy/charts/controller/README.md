@@ -6,12 +6,22 @@ A Helm chart to deploy the NVKE controller service
 
 ## Release CRDs
 
-The chart includes MachineImage, ClusterRelease and NodePoolRelease through the
-[nvke-crds chart](../nvke-crds/README.md). `releaseCRDs.install=true` is the
-default: this controller release owns and upgrades those definitions.
+The chart installs MachineImage, ClusterRelease and NodePoolRelease, the release
+APIs the NVKE controller reads to resolve releases, in the group
+`internal.nvke.nvidia.com`. `releaseCRDs.install=true` is the default: this
+controller release owns and upgrades those definitions.
 
-When another release already owns the definitions, disable this chart's
-dependency in your site values:
+The definitions are files under [`files/crds`](files/crds), generated from the Go
+types in [`controller/k8s-apis/v1`](../../../k8s-apis/v1) (`make -C
+controller/k8s-apis manifests`). They are templated Helm resources rather than
+Helm `crds/` files, so a schema change in a new chart version reaches the cluster
+on upgrade. They carry `helm.sh/resource-policy: keep`, so Helm leaves them and
+the release objects they hold in place when the release is uninstalled, and Argo
+CD annotations that apply them before the workloads and keep a prune from
+deleting them.
+
+When something else already owns the definitions, turn the install off in your
+site values:
 
 ```yaml
 releaseCRDs:
@@ -19,12 +29,8 @@ releaseCRDs:
 ```
 
 The controller then uses the installed APIs. Use compatible schema versions and
-wait for CRD establishment before applying release resources. Exactly one release
-should own the definitions.
-
-For Helm operations on source checkouts, first run `make chart-deps` from the
-repository root. This stages the pinned local dependency even when its
-installation is disabled. Published chart packages include the dependency.
+wait for CRD establishment before applying release resources. Exactly one
+installer should own the definitions.
 
 ## Additional tenant RBAC
 
