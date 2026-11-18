@@ -16,14 +16,10 @@ Use the site's published Gateway URL for the tenant API and its approved interna
 endpoint for the operator API. Both refer to Cluster Service. Add the authentication
 options required by your deployment to each curl command.
 
-Run the commands in Bash and set these variables for your environment. Use base URLs without a trailing
-slash or `/v1`. The `${VAR:?}` checks stop a command if a required value is
-unset or empty.
-
 | Variable | Value |
 | --- | --- |
-| `TENANT_API_URL` | Published tenant-facing Cluster Service base URL. |
-| `OPERATOR_API_URL` | Approved internal operator-facing Cluster Service base URL. |
+| `TENANT_API_URL` | Published tenant-facing Cluster Service base URL, without a trailing slash or `/v1`. |
+| `OPERATOR_API_URL` | Approved internal operator-facing Cluster Service base URL, without a trailing slash or `/v1`. |
 | `TENANT_NAMESPACE` | Namespace holding the tenant's Cluster Service resources. |
 | `CLUSTER_NAME` | Existing cluster to update. |
 
