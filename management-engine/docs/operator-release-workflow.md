@@ -63,18 +63,27 @@ including additional bootstrap files and commands.
 
 ## Publish the release
 
+Write the request to `release.json` and inspect it:
+
+```sh
+jq -n \
+  --arg name "${RELEASE_NAME:?}" \
+  --arg image "${MACHINE_IMAGE_NAME:?}" \
+  --arg version "${KUBERNETES_VERSION:?}" \
+  --rawfile userData "${USER_DATA_TEMPLATE:?}" \
+  '{metadata: {name: $name}, spec: {
+    kubernetes: {version: $version},
+    machineImageRef: {name: $image},
+    machineInit: {userDataTemplate: $userData}
+  }}' > release.json
+cat release.json
+```
+
+Publish the reviewed request:
+
 ```sh
 curl -i -H 'Content-Type: application/json' \
-  --data-binary "$(jq -n \
-    --arg name "${RELEASE_NAME:?}" \
-    --arg image "${MACHINE_IMAGE_NAME:?}" \
-    --arg version "${KUBERNETES_VERSION:?}" \
-    --rawfile userData "${USER_DATA_TEMPLATE:?}" \
-    '{metadata: {name: $name}, spec: {
-      kubernetes: {version: $version},
-      machineImageRef: {name: $image},
-      machineInit: {userDataTemplate: $userData}
-    }}')" \
+  --data-binary @release.json \
   "${OPERATOR_API_URL:?}/v1/cluster-releases"
 ```
 
