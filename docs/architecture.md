@@ -44,7 +44,7 @@ CRD types, and test and development tooling.
 | `cli/` | `nvkectl` | The command line client |
 | `controller/api/` | none | The OpenAPI spec and the generated server and client types |
 | `controller/deploy/charts/` | none | The controller and postgresql Helm charts, embedded so `nvkectl` installs the charts of its own commit |
-| `controller/k8s-apis/` | none | The Kubernetes API types of the MachineImage, ClusterRelease and NodePoolRelease CRDs, which the controller and `nvkectl` import and from which the `nvke-crds` chart's CRDs are generated |
+| `controller/k8s-apis/` | none | The Kubernetes API types of the MachineImage, ClusterRelease and NodePoolRelease CRDs, which the controller and `nvkectl` import and from which the controller chart's CRDs are generated |
 | `auth/` | none | The NVKE API authentication library, `auth/authn`, used by the controller |
 | `controller/nico-sim/` | `nico-sim`, `nico-simctl` | Forge-compatible VM and Docker-container simulator used by tests and development |
 | `controller/test/e2e/` | none | The end to end suite |

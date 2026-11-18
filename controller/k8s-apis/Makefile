@@ -13,8 +13,8 @@ ifeq (,$(GOBIN))
 GOBIN = $(shell go env GOPATH)/bin
 endif
 
-# The CRDs generated from v1 are the canonical files of the nvke-crds chart.
-CRD_DIR ?= $(REPO_ROOT)/controller/deploy/charts/nvke-crds/bases
+# The CRDs generated from v1 are the files the NVKE controller chart renders.
+CRD_DIR ?= $(REPO_ROOT)/controller/deploy/charts/controller/files/crds
 CONTROLLER_GEN ?= $(LOCALBIN)/controller-gen
 # CONTROLLER_TOOLS_VERSION comes from make/tool-versions.mk, which owns it for
 # every module that runs controller-gen.
@@ -38,9 +38,9 @@ test: ## Run unit tests.
 	@$(COVERAGE_MKDIR)
 	go test $(GO_TEST_FLAGS) $(GO_COVER_FLAGS) ./...
 
-test-chart-crds: ## Render the nvke-crds chart and compare it with the generated CRDs (requires helm).
+test-chart-crds: ## Render the controller chart and compare its CRDs with the generated ones (requires helm).
 	@command -v helm >/dev/null || { echo "helm is required: the render test skips without it"; exit 1; }
-	go test $(GO_TEST_FLAGS) ./v1 -run TestNVKECRDsRendering -count=1
+	go test $(GO_TEST_FLAGS) ./v1 -run TestControllerChartCRDRendering -count=1
 
 lint: ## Run golangci-lint.
 	@$(GOLANGCI_LINT_RUN) run --timeout 10m ./...
@@ -54,7 +54,7 @@ controller-gen: ## Install the pinned controller-gen binary.
 generate: controller-gen ## Generate DeepCopy implementations.
 	"$(CONTROLLER_GEN)" object:headerFile="hack/boilerplate.go.txt" paths="./v1/..."
 
-manifests: controller-gen ## Generate the CRDs into the shared nvke-crds chart.
+manifests: controller-gen ## Generate the CRDs into the controller chart's files/crds.
 	"$(CONTROLLER_GEN)" \
 		crd:crdVersions=v1,headerFile="hack/boilerplate.yaml.txt" \
 		paths="./v1/..." \

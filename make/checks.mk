@@ -88,36 +88,25 @@ next-tag-test: ## Test the release version rules in release/hack/next-tag.sh and
 	@python3 -B ./release/hack/test_next_tag.py
 	@python3 -B ./release/hack/test_describe_version.py
 
-RELEASE_CRD_CHART := controller/deploy/charts/nvke-crds
-CHART_CRDS_FILE := dist/release-crds.yaml
+# The generator writes here whatever CHART is set to, so the path is not derived
+# from the overridable CHART.
+RELEASE_CRD_DIR := controller/deploy/charts/controller/files/crds
 
-.PHONY: chart-deps chart-crds chart-crds-check chart-crds-render-check
-chart-deps: ## Build the controller chart's pinned local dependency.
-	@$(call require_tool,helm,$(HELM_VERSION))
-	helm dependency build $(CHART) --skip-refresh
-
-chart-crds: ## Render the controller's three release schemas into ignored build output.
-	@$(call require_tool,helm,$(HELM_VERSION))
-	@mkdir -p $(dir $(CHART_CRDS_FILE))
-	helm template nvke-crds $(RELEASE_CRD_CHART) > $(CHART_CRDS_FILE)
-
+.PHONY: chart-crds-check chart-crds-render-check
 chart-crds-check: ## Verify each component's committed CRDs against its own generator.
 	@# The NVKE controller (controller/k8s-apis) and management-engine each generate
 	@# and install their own CRDs, and the two sets may differ, so each generator
 	@# is checked against its own committed files.
 	@$(MAKE) --no-print-directory -C controller/k8s-apis generate manifests
 	@$(MAKE) --no-print-directory -C management-engine manifests-state
-	git diff --exit-code -- $(RELEASE_CRD_CHART)/bases controller/k8s-apis/v1/zz_generated.deepcopy.go management-engine/config/crd/bases management-engine/apis/v1/zz_generated.deepcopy.go
-	@test -z "$$(git ls-files --others --exclude-standard -- $(RELEASE_CRD_CHART)/bases management-engine/config/crd/bases)" || { echo "Commit generated schemas"; exit 1; }
+	git diff --exit-code -- $(RELEASE_CRD_DIR) controller/k8s-apis/v1/zz_generated.deepcopy.go management-engine/config/crd/bases management-engine/apis/v1/zz_generated.deepcopy.go
+	@test -z "$$(git ls-files --others --exclude-standard -- $(RELEASE_CRD_DIR) management-engine/config/crd/bases)" || { echo "Commit generated schemas"; exit 1; }
 	@$(call require_tool,kubectl,$(KUBECTL_VERSION))
 	kubectl kustomize management-engine/config/crd > /dev/null
 
-chart-crds-render-check: ## Verify independent and embedded-consumer CRD rendering.
+chart-crds-render-check: ## Verify the controller chart renders the generated CRDs.
 	@$(call require_tool,helm,$(HELM_VERSION))
-	helm lint $(RELEASE_CRD_CHART)
 	$(MAKE) --no-print-directory -C controller/k8s-apis test-chart-crds
-
-lint-chart chart-rbac-check chart-package-check chart-identity-check chart-controller-config-check credential-alerts-check: chart-deps
 
 # helm lint and helm template both pass on a manifest Kubernetes would reject, so
 # kubeconform parses what was rendered. A chart that renders nothing also passes

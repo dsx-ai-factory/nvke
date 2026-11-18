@@ -187,7 +187,6 @@ jobs:
           APP_VERSION: ${{ steps.meta.outputs.app_version }}
         run: |
           set -euo pipefail
-          helm dependency build "${CHART}" --skip-refresh
           helm package "${CHART}" \
             --version "${VERSION}" \
             --app-version "${APP_VERSION}" \

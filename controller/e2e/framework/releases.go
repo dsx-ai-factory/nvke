@@ -25,7 +25,7 @@ func releaseCRDPaths(t testing.TB) []string {
 
 	paths := make([]string, 0, 3)
 	for _, name := range []string{"machineimages", "clusterreleases", "nodepoolreleases"} {
-		path := filepath.Join(RepoRoot(t), "deploy", "charts", "nvke-crds", "bases", "internal.nvke.nvidia.com_"+name+".yaml")
+		path := filepath.Join(RepoRoot(t), "deploy", "charts", "controller", "files", "crds", "internal.nvke.nvidia.com_"+name+".yaml")
 		_, err := os.Stat(path)
 		require.NoError(t, err, "expected canonical release CRD at %s", path)
 		paths = append(paths, path)

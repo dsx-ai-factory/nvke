@@ -1,0 +1,3 @@
+# A built or stale charts/ directory is never part of this chart: it declares no
+# dependencies, so Helm would otherwise load and render whatever it holds.
+charts/
