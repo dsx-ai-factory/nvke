@@ -69,9 +69,9 @@ Check that the release name is available:
 curl -i "${OPERATOR_API_URL:?}/v1/cluster-releases/${RELEASE_NAME:?}"
 ```
 
-Continue with publication only after HTTP 404. If the response is HTTP 200,
-compare the existing release with the intended inputs: reuse it if they match,
-or choose a new name if they differ. Resolve other errors before continuing.
+If the response is HTTP 200, compare the existing release with the intended
+inputs: reuse it if they match, or choose a new name if they differ. Resolve other
+errors before continuing.
 
 Write the request to `release.json` and inspect it:
 
