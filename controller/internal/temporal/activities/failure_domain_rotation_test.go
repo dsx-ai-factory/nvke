@@ -74,7 +74,6 @@ func TestRotateFailureDomain(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		disabled    bool
 		worker      bool
 		domains     []string
 		node        db.Node
@@ -89,9 +88,10 @@ func TestRotateFailureDomain(t *testing.T) {
 		wantMachine string
 	}{
 		{
-			name:        "disabled leaves the node alone",
-			disabled:    true,
-			node:        db.Node{FailureDomain: "fd-a", FailureDomainUnavailableSince: &pastGrace},
+			name: "a node with a delete in flight is left alone",
+			node: db.Node{FailureDomain: "fd-a", FailureDomainUnavailableSince: &pastGrace, Conditions: db.NodeConditions{
+				DeleteRequested: db.NewCondition(true, "Deleting"),
+			}},
 			unavailable: true,
 			wantDomain:  "fd-a",
 			wantSince:   true,
@@ -229,9 +229,7 @@ func TestRotateFailureDomain(t *testing.T) {
 			k8sClient := failureDomainTestClient(t, domains, machine)
 
 			a := &Activities{db: store, k8sClient: k8sClient, cfg: config.Config{
-				ManagementNamespace:                          fdTestNamespace,
-				ControlPlaneFailureDomainFallbackEnabled:     !tt.disabled,
-				ControlPlaneFailureDomainFallbackGracePeriod: 10 * time.Minute,
+				ManagementNamespace: fdTestNamespace,
 			}}
 			logger := log.NewStructuredLogger(slog.New(slog.DiscardHandler))
 

@@ -99,8 +99,9 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.CertificateObservationMaxAge = c.CredentialMonitoring.ObservationMaxAge.Duration
 	cfg.CertificateWarningDays = c.CredentialMonitoring.WarningDays
 
-	cfg.ControlPlaneFailureDomainFallbackEnabled = c.ControlPlaneFailureDomainFallback.Enabled
-	cfg.ControlPlaneFailureDomainFallbackGracePeriod = c.ControlPlaneFailureDomainFallback.GracePeriod.Duration
+	if c.ControlPlaneFailureDomainFallback.GracePeriod != nil {
+		cfg.ControlPlaneFailureDomainFallbackGracePeriod = c.ControlPlaneFailureDomainFallback.GracePeriod.Duration
+	}
 
 	cfg.KubeadmImageRepository = c.KubeadmImageRepository
 	cfg.CNIImageRegistry = c.CNIImageRegistry

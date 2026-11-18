@@ -102,7 +102,6 @@ credentialMonitoring:
   observationMaxAge: 3h
   warningDays: 45
 controlPlaneFailureDomainFallback:
-  enabled: true
   gracePeriod: 15m
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
@@ -197,7 +196,6 @@ apiAuth:
 	assert.Equal(t, time.Hour, cfg.CredentialMonitoring.InspectionInterval.Duration)
 	assert.Equal(t, 3*time.Hour, cfg.CredentialMonitoring.ObservationMaxAge.Duration)
 	assert.Equal(t, 45, cfg.CredentialMonitoring.WarningDays)
-	assert.True(t, cfg.ControlPlaneFailureDomainFallback.Enabled)
 	assert.Equal(t, 15*time.Minute, cfg.ControlPlaneFailureDomainFallback.GracePeriod.Duration)
 	assert.Equal(t, "dsxImds", cfg.NodeAgent.SpireAttestationMethod)
 	assert.Equal(t, "acme", cfg.NodeAgent.DSXImds.OperatorTenant)
@@ -1148,38 +1146,41 @@ teleport:
 	})
 }
 
-// Both cases exercise metav1.Duration's own UnmarshalJSON, not custom code in
-// this package: a bare number is not the JSON string it requires, and an
-// unparsable string fails time.ParseDuration. Asserting on them here is a
-// contract check, so a metav1.Duration upgrade that loosens either one shows up
-// here rather than surfacing as a silently-accepted config value.
 func TestValidateControlPlaneFailureDomainFallbackGracePeriod(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name    string
 		section string
+		want    time.Duration
 		wantErr bool
 	}{
-		{name: "absent section is disabled", section: ""},
-		{name: "disabled ignores zero grace period", section: "controlPlaneFailureDomainFallback:\n  enabled: false\n  gracePeriod: 0s\n"},
-		{name: "enabled with positive grace period", section: "controlPlaneFailureDomainFallback:\n  enabled: true\n  gracePeriod: 10m\n"},
-		{name: "enabled with zero grace period", section: "controlPlaneFailureDomainFallback:\n  enabled: true\n  gracePeriod: 0s\n", wantErr: true},
-		{name: "enabled with negative grace period", section: "controlPlaneFailureDomainFallback:\n  enabled: true\n  gracePeriod: -1m\n", wantErr: true},
+		{name: "absent section leaves the controller default", section: ""},
+		{name: "positive grace period", section: "controlPlaneFailureDomainFallback:\n  gracePeriod: 3m\n", want: 3 * time.Minute},
+		{name: "zero grace period", section: "controlPlaneFailureDomainFallback:\n  gracePeriod: 0s\n", wantErr: true},
+		{name: "negative grace period", section: "controlPlaneFailureDomainFallback:\n  gracePeriod: -1m\n", wantErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			_, err := controllerconfig.Load(writeConfig(t, minimalConfig+tc.section))
+			file, err := controllerconfig.Load(writeConfig(t, minimalConfig+tc.section))
 			if tc.wantErr {
 				require.ErrorContains(t, err, "controlPlaneFailureDomainFallback: gracePeriod must be greater than 0")
 				return
 			}
 			require.NoError(t, err)
+			var cfg config.Config
+			file.ApplyTo(&cfg)
+			assert.Equal(t, tc.want, cfg.ControlPlaneFailureDomainFallbackGracePeriod)
 		})
 	}
 }
 
+// Both cases exercise metav1.Duration's own UnmarshalJSON, not custom code in
+// this package: a bare number is not the JSON string it requires, and an
+// unparsable string fails time.ParseDuration. Asserting on them here is a
+// contract check, so a metav1.Duration upgrade that loosens either one shows up
+// here rather than surfacing as a silently-accepted config value.
 func TestDurationRejectsBareNumber(t *testing.T) {
 	t.Parallel()
 

@@ -42,7 +42,6 @@ credentialMonitoring:
   observationMaxAge: 3h
   warningDays: 45
 controlPlaneFailureDomainFallback:
-  enabled: false
   gracePeriod: 10m
 kubeVip:
   localASN: 65100

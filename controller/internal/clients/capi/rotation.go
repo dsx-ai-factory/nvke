@@ -31,9 +31,3 @@ func (*Client) TryAdvanceStuckMachine(ctx context.Context, deps shared.MachineAd
 func (*Client) DescribeStuckMachine(_ context.Context, _ shared.MachineAdvanceDeps, _ db.NodePool, _ *clusterv1.Machine) (string, error) {
 	return "", nil
 }
-
-// FailureDomainUnavailable always returns false: a template-backed provider's
-// placement failures have no contract to read.
-func (*Client) FailureDomainUnavailable(_ context.Context, _ shared.MachineAdvanceDeps, _ *clusterv1.Machine) (bool, error) {
-	return false, nil
-}

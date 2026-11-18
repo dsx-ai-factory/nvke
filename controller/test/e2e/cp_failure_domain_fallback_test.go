@@ -27,7 +27,6 @@ import (
 )
 
 const (
-	failureDomainFallbackEnabledKey     = "controlPlaneFailureDomainFallback.enabled"
 	failureDomainFallbackGracePeriodKey = "controlPlaneFailureDomainFallback.gracePeriod"
 	// failureDomainLabelKey is the NICo Machine label nico-sim publishes domains under.
 	failureDomainLabelKey = "failure_domain"
@@ -63,10 +62,9 @@ var _ = Describe("control-plane failure domain fallback", Ordered, Label("nico-c
 			Skip("the fallback needs a cluster created with a full failure domain")
 		}
 
-		By("Enabling the control-plane failure domain fallback with a one-minute grace period")
+		By("Shortening the control-plane failure domain fallback grace period to one minute")
 		var err error
 		previousSettings, settingsWritten, err = nvke.SetControllerSettings(ctx, test.k8sClient, map[string]any{
-			failureDomainFallbackEnabledKey:     true,
 			failureDomainFallbackGracePeriodKey: "1m",
 		})
 		Expect(err).NotTo(HaveOccurred())
@@ -148,6 +146,102 @@ var _ = Describe("control-plane failure domain fallback", Ordered, Label("nico-c
 		}).WithContext(ctx).WithTimeout(2 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
 	}, NodeTimeout(45*time.Minute))
 
+	It("moves a scale-up control-plane node out of a full failure domain without deleting it", func(ctx context.Context) {
+		Expect(test.cluster).NotTo(BeNil(), "the previous spec must have provisioned the cluster")
+		existing := expectSucceed(controlPlaneMachines(ctx, test.k8sClient, test.cluster.Name))
+		Expect(existing).To(HaveLen(1))
+		openDomain := machineFailureDomain(&existing[0], "status")
+		Expect(openDomain).NotTo(BeEmpty(), "the first control-plane Machine must report its failure domain")
+		full := slices.DeleteFunc(slices.Clone(fallbackFailureDomains), func(d string) bool { return d == openDomain })
+
+		By(fmt.Sprintf("Marking every failure domain except %s out of capacity", openDomain))
+		Expect(setNicoSimFailureDomains(ctx, test.k8sClient, nicoSimFailureDomains{
+			LabelKey:    failureDomainLabelKey,
+			Domains:     fallbackFailureDomains,
+			Unavailable: full,
+		})).To(Succeed())
+
+		const desired = 3
+		By(fmt.Sprintf("Scaling the control plane to %d", desired))
+		expectSucceed(test.nvke.UpdateControlPlaneDesiredCount(ctx, test.cluster.ID, desired))
+
+		seen := map[types.UID]string{existing[0].GetUID(): existing[0].GetName()}
+		recordSeen := func(ctx context.Context) ([]unstructured.Unstructured, error) {
+			machines, err := controlPlaneMachines(ctx, test.k8sClient, test.cluster.Name)
+			if err != nil {
+				return nil, err
+			}
+			present := map[types.UID]bool{}
+			for _, m := range machines {
+				seen[m.GetUID()] = m.GetName()
+				present[m.GetUID()] = true
+			}
+			for uid, name := range seen {
+				if !present[uid] {
+					return nil, StopTrying(fmt.Sprintf("control-plane Machine %q was deleted; a node in a full failure domain must be moved, not replaced", name))
+				}
+			}
+			return machines, nil
+		}
+
+		By("Waiting for a scale-up Machine to be refused for capacity in a full failure domain")
+		var stuck *unstructured.Unstructured
+		Eventually(func(ctx context.Context) error {
+			machines, err := recordSeen(ctx)
+			if err != nil {
+				return err
+			}
+			for i := range machines {
+				m := &machines[i]
+				if !slices.Contains(full, machineFailureDomain(m, "spec")) {
+					continue
+				}
+				if expectFailureDomainUnavailable(ctx, test.k8sClient, m) == nil {
+					stuck = m
+					return nil
+				}
+			}
+			return fmt.Errorf("no control-plane Machine of cluster %s reports FailureDomainUnavailable in %v yet", test.cluster.Name, full)
+		}).WithContext(ctx).WithTimeout(15 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+		stuckDomain := machineFailureDomain(stuck, "spec")
+
+		By(fmt.Sprintf("Waiting for Machine %s to be moved off %s in place", stuck.GetName(), stuckDomain))
+		Eventually(func(ctx context.Context) error {
+			if _, err := recordSeen(ctx); err != nil {
+				return err
+			}
+			machine, err := getMachine(ctx, test.k8sClient, stuck.GetName())
+			if err != nil {
+				return err
+			}
+			if machine.GetUID() != stuck.GetUID() {
+				return StopTrying(fmt.Sprintf("control-plane Machine %q was replaced rather than moved", stuck.GetName()))
+			}
+			if requested := machineFailureDomain(machine, "spec"); requested == stuckDomain {
+				return fmt.Errorf("control-plane Machine %q still requests failure domain %q", machine.GetName(), requested)
+			}
+			return nil
+		}).WithContext(ctx).WithTimeout(15 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+		By(fmt.Sprintf("Waiting for %d control-plane nodes to be ready with no Machine deleted", desired))
+		Eventually(func(ctx context.Context) error {
+			if _, err := recordSeen(ctx); err != nil {
+				return err
+			}
+			return test.nvke.AssertControlPlaneNodesReady(ctx, test.cluster.ID, desired)
+		}).WithContext(ctx).WithTimeout(test.timeouts.Provision).WithPolling(5 * time.Second).Should(Succeed())
+
+		By("Verifying every control-plane Machine runs in the failure domain it requests, which has capacity")
+		machines := expectSucceed(recordSeen(ctx))
+		Expect(machines).To(HaveLen(desired))
+		Expect(seen).To(HaveLen(desired), "the scale-up must create exactly the missing Machines")
+		for i := range machines {
+			requested, observed := machineFailureDomain(&machines[i], "spec"), machineFailureDomain(&machines[i], "status")
+			Expect(observed).To(Equal(requested), "control-plane Machine %q", machines[i].GetName())
+			Expect(full).NotTo(ContainElement(observed), "control-plane Machine %q", machines[i].GetName())
+		}
+	}, NodeTimeout(60*time.Minute))
+
 	AfterAll(func(ctx context.Context) {
 		defer func() {
 			if settingsWritten {
@@ -203,6 +297,17 @@ var (
 )
 
 func fallbackControlPlaneMachine(ctx context.Context, k8sClient client.Client, clusterName string) (*unstructured.Unstructured, error) {
+	machines, err := controlPlaneMachines(ctx, k8sClient, clusterName)
+	if err != nil {
+		return nil, err
+	}
+	if len(machines) != 1 {
+		return nil, fmt.Errorf("cluster %s has %d control-plane Machines; want 1", clusterName, len(machines))
+	}
+	return &machines[0], nil
+}
+
+func controlPlaneMachines(ctx context.Context, k8sClient client.Client, clusterName string) ([]unstructured.Unstructured, error) {
 	machines := &unstructured.UnstructuredList{}
 	machines.SetGroupVersionKind(capiMachineGVK.GroupVersion().WithKind("MachineList"))
 	if err := k8sClient.List(ctx, machines, client.InNamespace(mgmtns.Namespace()),
@@ -210,10 +315,7 @@ func fallbackControlPlaneMachine(ctx context.Context, k8sClient client.Client, c
 		client.HasLabels{"cluster.x-k8s.io/control-plane"}); err != nil {
 		return nil, fmt.Errorf("listing CAPI control-plane Machines: %w", err)
 	}
-	if len(machines.Items) != 1 {
-		return nil, fmt.Errorf("cluster %s has %d control-plane Machines; want 1", clusterName, len(machines.Items))
-	}
-	return &machines.Items[0], nil
+	return machines.Items, nil
 }
 
 func getMachine(ctx context.Context, k8sClient client.Client, name string) (*unstructured.Unstructured, error) {

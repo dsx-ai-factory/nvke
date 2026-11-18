@@ -107,9 +107,9 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	}
 
 	// Only the steps that choose a failure domain wait for discovery: scale-up,
-	// stuck-pending replacement, rollout, rebalance and scale-down. Remediation,
-	// the Kubernetes upgrade, joins and recorded deletes do not read placement, so
-	// a discovery failure must not hold them up.
+	// rollout, rebalance and scale-down. Remediation, the Kubernetes upgrade, joins
+	// and recorded deletes do not read placement, so a discovery failure must not
+	// hold them up.
 	allocator, placementKnown := r.discoverPlacement(ctx, cluster, controlPlane)
 
 	if placementKnown {
@@ -118,23 +118,15 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider()); err != nil {
 			return fmt.Errorf("reconciling control plane scale-up: %w", err)
 		}
-
-		// Records delete intent only; the teardown is started at the bottom of a later
-		// pass. When remediation records a delete, end this pass: controlPlane still
-		// holds the pre-remediation snapshot, so the rollout and scale-down steps below
-		// would not see the new intent and could queue a second delete without
-		// accounting for it. The node write re-enqueues the cluster, and the next
-		// reconcile reads a fresh snapshot where the delete is in flight -- rollout and
-		// scale-down then defer to it and reconcileRequestedDeletes promotes it.
-		replaced, err := r.reconcileStuckPendingNodes(ctx, cluster, controlPlane, provider.MachineMaterialization())
-		if err != nil {
-			return fmt.Errorf("reconciling stuck pending control plane nodes: %w", err)
-		}
-		if replaced {
-			return nil
-		}
 	}
 
+	// Records delete intent only; the teardown is started at the bottom of a later
+	// pass. When remediation records a delete, end this pass: controlPlane still
+	// holds the pre-remediation snapshot, so the rollout and scale-down steps below
+	// would not see the new intent and could queue a second delete without
+	// accounting for it. The node write re-enqueues the cluster, and the next
+	// reconcile reads a fresh snapshot where the delete is in flight -- rollout and
+	// scale-down then defer to it and reconcileRequestedDeletes promotes it.
 	remediated, err := r.remediateMachines(ctx, cluster, controlPlane)
 	if err != nil {
 		return err
