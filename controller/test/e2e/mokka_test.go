@@ -195,14 +195,14 @@ func validateMokkaGPU(test *tenantTest) {
 
 // helmOnTenant runs helm against the test's tenant as its admin.
 func helmOnTenant(ctx context.Context, test *tenantTest, args ...string) error {
-	return runOnTenant(ctx, test, "helm", args...)
+	return runOnTenant(ctx, test, helmRun, "helm", args...)
 }
 
 // runOnTenant runs a kubeconfig-driven tool, such as helm or kubectl, against the
-// test's tenant as its admin, with a freshly minted kubeconfig and helm's cache
-// and config kept out of the runner's home. It cleans up after itself rather
-// than through GinkgoT, so a DeferCleanup callback can call it.
-func runOnTenant(ctx context.Context, test *tenantTest, tool string, args ...string) error {
+// test's tenant as its admin for up to timeout, with a freshly minted kubeconfig
+// and helm's cache and config kept out of the runner's home. It cleans up after
+// itself rather than through GinkgoT, so a DeferCleanup callback can call it.
+func runOnTenant(ctx context.Context, test *tenantTest, timeout time.Duration, tool string, args ...string) error {
 	dir, err := os.MkdirTemp("", "e2e-tenant-")
 	if err != nil {
 		return fmt.Errorf("creating a scratch directory: %w", err)
@@ -217,7 +217,7 @@ func runOnTenant(ctx context.Context, test *tenantTest, tool string, args ...str
 		return fmt.Errorf("writing the tenant kubeconfig: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, helmRun)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	command := exec.CommandContext(ctx, tool, args...)
 	command.Env = append(os.Environ(),

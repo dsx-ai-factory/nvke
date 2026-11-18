@@ -15,7 +15,6 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -37,15 +36,17 @@ const (
 	// nvsentinelGuideValues are Mokka's NVSentinel guide values, which
 	// testdata/nvsentinel-values.yaml is layered over.
 	nvsentinelGuideValues = "https://raw.githubusercontent.com/NVIDIA/k8s-test-infra/797b96a8a57f1285cf18a15d9cbf67cbbb782c14/docs/guides/nv-sentinel/nvsentinel-values.yaml"
-	// nvsentinelWait bounds the datastore, which comes up in stages: the Percona
-	// operator, the replica set, its certificates and a collection-setup Job.
+	// nvsentinelWait bounds helm's wait for the datastore, which comes up in stages:
+	// the Percona operator, the replica set, its certificates and a collection-setup Job.
 	nvsentinelWait = 15 * time.Minute
 	// faultWait bounds each step of the fault: the cordon, the drain, the uncordon.
 	faultWait = 10 * time.Minute
 	// hotGPUTemp is above every Mokka profile's slowdown threshold (h100 87 C,
 	// gb300 90 C). At the threshold the margin is 0, which the watch accepts.
 	hotGPUTemp = "142"
-	sampleApp  = "nvsentinel-sample"
+	// sampleApp names the sample workload and its namespace, the only one the
+	// override in testdata/nvsentinel-values.yaml lets NVSentinel drain.
+	sampleApp = "nvsentinel-sample"
 )
 
 //go:embed testdata/nvsentinel-values.yaml
@@ -77,23 +78,6 @@ func validateNVSentinel(test *tenantTest) {
 			c = expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
 		}
 	}
-	ready := func(ctx context.Context, namespace string, timeout time.Duration) {
-		GinkgoHelper()
-		Eventually(func(ctx context.Context) error {
-			var pods corev1.PodList
-			if err := c.List(ctx, &pods, client.InNamespace(namespace)); err != nil {
-				return err
-			}
-			if len(pods.Items) == 0 {
-				return fmt.Errorf("no pods in %s yet", namespace)
-			}
-			var jobs batchv1.JobList
-			if err := c.List(ctx, &jobs, client.InNamespace(namespace)); err != nil {
-				return err
-			}
-			return joinProblems(namespace+" pods", podProblems(pods.Items, jobs.Items))
-		}).WithContext(ctx).WithTimeout(timeout).WithPolling(sitePoll).Should(Succeed())
-	}
 
 	It("turns on GPU Operator's standalone DCGM, which NVSentinel polls", func(ctx SpecContext) {
 		connect(ctx)
@@ -105,30 +89,31 @@ func validateNVSentinel(test *tenantTest) {
 		}).WithContext(ctx).WithTimeout(mokkaWait).WithPolling(sitePoll).Should(Succeed())
 	}, NodeTimeout(helmRun+mokkaWait+time.Minute))
 
-	It("installs cert-manager and NVSentinel, whose pods become Ready", func(ctx SpecContext) {
-		connect(ctx)
-		Expect(helmOnTenant(ctx, test, "upgrade", "--install", "cert-manager", certManagerChart, "--version", certManagerVersion,
-			"--namespace", certManagerNamespace, "--create-namespace", "--set", "crds.enabled=true",
+	// helm --wait --wait-for-jobs holds each install until its workloads are ready and its Jobs complete.
+	It("installs cert-manager and NVSentinel, whose workloads become ready", func(ctx SpecContext) {
+		Expect(runOnTenant(ctx, test, mokkaWait+time.Minute, "helm", "upgrade", "--install", "cert-manager", certManagerChart,
+			"--version", certManagerVersion, "--namespace", certManagerNamespace, "--create-namespace", "--set", "crds.enabled=true",
+			"--wait", "--wait-for-jobs", "--timeout", mokkaWait.String(),
 		)).To(Succeed())
-		ready(ctx, certManagerNamespace, mokkaWait)
 
 		values := filepath.Join(GinkgoT().TempDir(), "values.yaml")
 		Expect(os.WriteFile(values, nvsentinelValues, 0o600)).To(Succeed())
 		// Helm creates the chart's Percona CRDs first, but the API server can serve them a
 		// moment late, failing the install before it creates anything.
 		Eventually(func(ctx context.Context) error {
-			return helmOnTenant(ctx, test, "upgrade", "--install", "nvsentinel", nvsentinelChart, "--version", nvsentinelVersion,
-				"--namespace", nvsentinelNamespace, "--create-namespace", "--values", nvsentinelGuideValues, "--values", values,
+			return runOnTenant(ctx, test, nvsentinelWait+time.Minute, "helm", "upgrade", "--install", "nvsentinel", nvsentinelChart,
+				"--version", nvsentinelVersion, "--namespace", nvsentinelNamespace, "--create-namespace",
+				"--values", nvsentinelGuideValues, "--values", values, "--wait", "--wait-for-jobs", "--timeout", nvsentinelWait.String(),
 			)
 		}).WithContext(ctx).WithTimeout(helmRun).WithPolling(sitePoll).Should(Succeed())
-		ready(ctx, nvsentinelNamespace, nvsentinelWait)
-	}, NodeTimeout(3*helmRun+mokkaWait+nvsentinelWait+time.Minute))
+	}, NodeTimeout(mokkaWait+helmRun+nvsentinelWait+3*time.Minute))
 
 	It("cordons and drains a node whose GPU overheats, and uncordons it once the GPU cools", func(ctx SpecContext) {
 		connect(ctx)
-		workload := nvsentinelWorkload()
-		Expect(c.Create(ctx, workload)).To(Succeed())
-		deleteOnExit(ctx, c, workload)
+		namespace := &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: sampleApp}}
+		Expect(c.Create(ctx, namespace)).To(Succeed())
+		deleteOnExit(ctx, c, namespace)
+		Expect(c.Create(ctx, nvsentinelWorkload())).To(Succeed())
 		var target string
 		Eventually(func(ctx context.Context) (string, error) {
 			var err error
@@ -142,7 +127,7 @@ func validateNVSentinel(test *tenantTest) {
 		Expect(i).NotTo(BeNumerically("<", 0), "no Mokka pod on %s", target)
 		// Mokka's control CLI runs in the pod's default container.
 		mockCtl := func(ctx context.Context, args ...string) error {
-			return runOnTenant(ctx, test, "kubectl", append([]string{"exec", "--namespace", mokkaNamespace, pods.Items[i].Name, "--", "nvml-mock-ctl"}, args...)...)
+			return runOnTenant(ctx, test, helmRun, "kubectl", append([]string{"exec", "--namespace", mokkaNamespace, pods.Items[i].Name, "--", "nvml-mock-ctl"}, args...)...)
 		}
 		// Cool the GPU however the spec ends, so a kept or reused cluster has no node quarantined.
 		DeferCleanup(func() {
@@ -176,7 +161,7 @@ func validateNVSentinel(test *tenantTest) {
 func nvsentinelWorkload() *appsv1.Deployment {
 	labels := map[string]string{"app": sampleApp}
 	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: sampleApp, Namespace: corev1.NamespaceDefault},
+		ObjectMeta: metav1.ObjectMeta{Name: sampleApp, Namespace: sampleApp},
 		Spec: appsv1.DeploymentSpec{
 			Replicas: ptr.To[int32](1),
 			Selector: &metav1.LabelSelector{MatchLabels: labels},
@@ -198,7 +183,7 @@ func nvsentinelWorkload() *appsv1.Deployment {
 // sampleNode is the node the sample workload runs on, or "" while it runs nowhere.
 func sampleNode(ctx context.Context, c client.Client) (string, error) {
 	var pods corev1.PodList
-	if err := c.List(ctx, &pods, client.InNamespace(corev1.NamespaceDefault), client.MatchingLabels{"app": sampleApp}); err != nil {
+	if err := c.List(ctx, &pods, client.InNamespace(sampleApp), client.MatchingLabels{"app": sampleApp}); err != nil {
 		return "", fmt.Errorf("listing %s pods: %w", sampleApp, err)
 	}
 	for _, pod := range pods.Items {

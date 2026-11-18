@@ -23,7 +23,6 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
-	batchv1 "k8s.io/api/batch/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	networkingv1 "k8s.io/api/networking/v1"
@@ -695,7 +694,6 @@ func TestGetAdminClientReadsPublishedKubeconfigAndRegistersVerifierSchemes(t *te
 	}
 	for _, gvk := range []schema.GroupVersionKind{
 		appsv1.SchemeGroupVersion.WithKind("ReplicaSet"),
-		batchv1.SchemeGroupVersion.WithKind("JobList"),
 		coordinationv1.SchemeGroupVersion.WithKind("Lease"),
 		corev1.SchemeGroupVersion.WithKind("Pod"),
 		networkingv1.SchemeGroupVersion.WithKind("NetworkPolicy"),
