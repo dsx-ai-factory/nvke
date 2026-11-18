@@ -74,7 +74,8 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 		return siteValidateSettings{}, err
 	}
 
-	namespaces := siteNamespaces(cmp.Or(getenv(controller.EnvNamespace), controller.ServiceNamespace))
+	controllerNamespace := cmp.Or(getenv(controller.EnvNamespace), controller.ServiceNamespace)
+	namespaces := siteNamespaces(controllerNamespace)
 	if raw := strings.TrimSpace(getenv(siteNamespacesEnv)); raw != "" {
 		namespaces = nil
 		for name := range strings.SplitSeq(raw, ",") {
@@ -111,7 +112,7 @@ func siteValidateFromEnv(getenv func(string) string, namespaceFile string) (site
 	}
 	var scope siteScope
 	if scoped {
-		scope = newSiteScope(namespaces, expect)
+		scope = newSiteScope(namespaces, expect, controllerNamespace)
 	}
 	if _, err := parseRequireEnv(keepOnFailureEnv, getenv(keepOnFailureEnv)); err != nil {
 		return siteValidateSettings{}, err
@@ -149,8 +150,11 @@ func scopedToNamespaces(raw string) (bool, error) {
 // reusing the lists a site already gives rather than a second one to keep in
 // step. The checks a broken neighbor can still break nvke through, nodes,
 // the API server and admission webhooks among them, stay cluster-wide.
-func newSiteScope(namespaces []siteNamespace, expect siteExpectations) siteScope {
-	scope := siteScope{}
+// kube-system and the controller's namespace are always in it: a list that
+// replaces the default one and leaves them out would otherwise move the CNI,
+// CoreDNS and the controller itself outside what fails a check.
+func newSiteScope(namespaces []siteNamespace, expect siteExpectations, controllerNamespace string) siteScope {
+	scope := siteScope{kubeSystemNamespace: true, controllerNamespace: true}
 	for _, ns := range namespaces {
 		scope[ns.name] = true
 	}

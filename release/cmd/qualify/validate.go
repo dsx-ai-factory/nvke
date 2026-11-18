@@ -148,6 +148,10 @@ func keptSite(runDir string) (keptRecord, map[string]string, error) {
 }
 
 func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
+	if set := runSwitchesSet(os.Environ()); len(set) > 0 {
+		return fmt.Errorf("%s set in the environment: the image sets these, and a run that changes one can check nothing and still pass; unset them",
+			strings.Join(set, ", "))
+	}
 	if os.Getenv("TELEPORT_PROXY") == "" && os.Getenv("FORGE_TELEPORT_PROXY") != "" {
 		if err := os.Setenv("TELEPORT_PROXY", os.Getenv("FORGE_TELEPORT_PROXY")); err != nil {
 			return err
@@ -289,19 +293,44 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 	close(suiteStarted)
 	runErr := run.Run()
 
+	passedChecks := 0
 	if report, err := os.ReadFile(filepath.Join(o.out, "artifacts", validateJUnit)); err == nil {
-		summary, serr := summarizeJUnit(report)
+		summary, n, serr := summarizeJUnit(report)
 		if serr != nil {
 			fmt.Fprintf(out, "reading %s: %v\n", validateJUnit, serr)
 		} else {
 			fmt.Fprint(out, summary)
+			passedChecks = n
 		}
 	}
 	fmt.Fprintf(out, "reports in %s\n", filepath.Join(o.out, "artifacts"))
 	if runErr != nil {
 		return fmt.Errorf("validation: %w", runErr)
 	}
+	// Ginkgo exits 0 when every selected spec skips, or when --only selects
+	// none, which would read as a site that passed.
+	if !o.dryRun && passedChecks == 0 {
+		return errors.New("validation: no check passed, so the run says nothing about the site; see the skips above")
+	}
 	return nil
+}
+
+// runSwitches are the image's ENV that decide whether a run checks anything.
+// A validation profile cannot set them either.
+var runSwitches = []string{"NVKE_SITE_VALIDATE", "NVKE_E2E_REQUIRE_EXPECTED_VERSION", "NKE_E2E_AUTH_DISABLE"}
+
+// runSwitchesSet is the runSwitches env sets, even to nothing: docker passes
+// an empty value through, which turns the switch off.
+func runSwitchesSet(env []string) []string {
+	var set []string
+	for _, kv := range env {
+		name, _, _ := strings.Cut(kv, "=")
+		if slices.Contains(runSwitches, name) {
+			set = append(set, name)
+		}
+	}
+	slices.Sort(set)
+	return set
 }
 
 // waitForDocker waits out a Docker daemon waking from idle, which fails its
@@ -794,16 +823,16 @@ type junitCase struct {
 }
 
 // notFailing marks the report entries a check records for what it found but
-// does not fail on: what a scoped check found outside its scope, and what a
-// check could not test through the connection.
+// does not fail on, such as what a scoped check found outside its scope.
 const notFailing = "not failing the check"
 
 // summarizeJUnit counts the specs, names the failed and skipped ones, and
-// lists what the checks found but did not fail on.
-func summarizeJUnit(report []byte) (string, error) {
+// lists what the checks found but did not fail on. It returns the summary and
+// how many specs passed.
+func summarizeJUnit(report []byte) (string, int, error) {
 	var r junitReport
 	if err := xml.Unmarshal(report, &r); err != nil {
-		return "", err
+		return "", 0, err
 	}
 	var passed int
 	var failed, skipped, outside []string
@@ -848,7 +877,7 @@ func summarizeJUnit(report []byte) (string, error) {
 	for _, o := range outside {
 		fmt.Fprintf(&b, "  %s\n", o)
 	}
-	return b.String(), nil
+	return b.String(), passed, nil
 }
 
 func withMessage(name, message string) string {

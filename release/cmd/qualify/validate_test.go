@@ -4,6 +4,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -190,6 +191,18 @@ func TestPassedEnv(t *testing.T) {
 	}
 }
 
+func TestRunSwitchesSet(t *testing.T) {
+	got := runSwitchesSet([]string{"NVKE_SITE_VALIDATE=", "NKE_E2E_AUTH_DISABLE=true", "NVKE_TENANT_VALIDATE=true", "NVKE_SITE_VALIDATE_X=1"})
+	if !slices.Equal(got, []string{"NKE_E2E_AUTH_DISABLE", "NVKE_SITE_VALIDATE"}) {
+		t.Errorf("got %v; an empty value still turns a switch off, and adding a tenant is allowed", got)
+	}
+	t.Setenv("NVKE_E2E_REQUIRE_EXPECTED_VERSION", "false")
+	err := runValidate(t.Context(), io.Discard, validateOptions{kubeconfig: "k"})
+	if err == nil || !strings.Contains(err.Error(), "NVKE_E2E_REQUIRE_EXPECTED_VERSION set in the environment") {
+		t.Errorf("err = %v, want the run refused before it starts", err)
+	}
+}
+
 func TestDockerArgs(t *testing.T) {
 	o := validateOptions{out: "/out", image: "nvke-validate:x", controllerVersion: "v1", kubernetesVersion: "1.36.3", profile: "/p.yaml", dryRun: true}
 	args := strings.Join(dockerArgs(o, "linux/arm64", "/out/container.kubeconfig", "site-validate", []string{"NVKE_SITE_SCOPE"}, "darwin"), " ")
@@ -223,9 +236,12 @@ func TestSummarizeJUnit(t *testing.T) {
 <testcase name="[It] site validation runs Argo CD"><skipped message="NVKE_SITE_COMPONENTS does not list argocd"></skipped></testcase>
 <testcase name="[AfterSuite]"><failure message="cleanup"></failure></testcase>
 </testsuite></testsuites>`
-	got, err := summarizeJUnit([]byte(report))
+	got, passed, err := summarizeJUnit([]byte(report))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if passed != 2 {
+		t.Errorf("passed = %d, want 2", passed)
 	}
 	for _, want := range []string{
 		"2 passed, 1 failed, 1 skipped",

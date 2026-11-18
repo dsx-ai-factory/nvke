@@ -945,7 +945,7 @@ func policyReady(policy unstructured.Unstructured) bool {
 // issuerSelected applies the policy's issuerRef selector to a cert-manager.io
 // Issuer: a field it leaves out matches anything.
 func issuerSelected(policy unstructured.Unstructured, issuer string) bool {
-	for field, value := range map[string]string{"name": issuer, "kind": "Issuer", "group": "cert-manager.io"} {
+	for field, value := range siteIssuerRef(issuer) {
 		pattern, found, _ := unstructured.NestedString(policy.Object, "spec", "selector", "issuerRef", field)
 		if found && !wildcardMatches(pattern, value) {
 			return false
@@ -1779,6 +1779,10 @@ func siteCertificate(namespace, name string, labels map[string]string) (*unstruc
 		"metadata":   map[string]any{"name": name, "namespace": namespace},
 		"spec":       map[string]any{"selfSigned": map[string]any{}},
 	}}
+	issuerRef := map[string]any{}
+	for field, value := range siteIssuerRef(name) {
+		issuerRef[field] = value
+	}
 	certificate := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "cert-manager.io/v1",
 		"kind":       "Certificate",
@@ -1788,11 +1792,19 @@ func siteCertificate(namespace, name string, labels map[string]string) (*unstruc
 			"commonName": name,
 			"dnsNames":   []any{name + "." + namespace + ".svc"},
 			"duration":   "1h",
-			"issuerRef":  map[string]any{"name": name, "kind": "Issuer"},
+			"issuerRef":  issuerRef,
 		},
 	}}
 	for _, object := range []*unstructured.Unstructured{issuer, certificate} {
 		object.SetLabels(labels)
 	}
 	return issuer, certificate
+}
+
+// siteIssuerRef is the Certificate's issuerRef, and what issuerSelected
+// matches a policy's selector against. The group is written out so that the
+// request carries the values the selector was matched against, whether or
+// not approver-policy reads an empty group as cert-manager.io.
+func siteIssuerRef(issuer string) map[string]string {
+	return map[string]string{"name": issuer, "kind": "Issuer", "group": "cert-manager.io"}
 }

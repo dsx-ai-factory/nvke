@@ -563,6 +563,20 @@ func TestUnit_SiteSelectingPolicies(t *testing.T) {
 	require.ErrorContains(t, err, "forbidden")
 }
 
+func TestUnit_SiteCertificateMatchesItsSelection(t *testing.T) {
+	_, certificate := siteCertificate("default", "nvke-validate-abc123", nil)
+	ref, found, err := unstructured.NestedStringMap(certificate.Object, "spec", "issuerRef")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, siteIssuerRef("nvke-validate-abc123"), ref, "the request carries what the pre-check matched")
+	require.Equal(t, "cert-manager.io", ref["group"], "a policy naming the group selects the request")
+
+	selecting := unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{"selector": map[string]any{
+		"issuerRef": map[string]any{"group": "cert-manager.io", "kind": "Issuer", "name": "nvke-validate-*"},
+	}}}}
+	require.True(t, issuerSelected(selecting, "nvke-validate-abc123"))
+}
+
 func TestUnit_SiteRefusedBeforeAPIServer(t *testing.T) {
 	alert := &net.OpError{Op: "remote error", Err: errors.New("tls: certificate required")}
 	require.True(t, refusedBeforeAPIServer(&url.Error{Op: "Get", URL: "https://proxy/api", Err: alert}))
