@@ -451,8 +451,8 @@ A profile cannot set the switches that turn a run on (`NVKE_SITE_VALIDATE`,
 `NVKE_TENANT_VALIDATE`, `NVKE_E2E_REQUIRE_EXPECTED_VERSION`, which the image
 sets) or the variables that name one tenant (`NVKE_TENANT_CLUSTER`,
 `NVKE_TENANT_TOKEN_SECRET`, `NVKE_TENANT_KUBERNETES_VERSION`). An unknown key
-fails the run, as does a profile named but missing, a key given an empty
-value or list, or a second YAML document. It holds no credentials: none of the
+fails the run, as does a profile named but missing or setting nothing, a key
+given an empty value or list, or a second YAML document. It holds no credentials: none of the
 variables it can set is one, and it cannot turn authentication off
 (`NKE_E2E_AUTH_DISABLE`).
 
@@ -535,6 +535,9 @@ able to `tsh ssh` to the jump host as the record's login: a `tsh login` to
 the Teleport cluster the jump host is enrolled in, or `TELEPORT_PROXY` and
 `TELEPORT_IDENTITY_FILE`. Where `TELEPORT_PROXY` is unset,
 `FORGE_TELEPORT_PROXY` sets it. See [reaching the jump host](#reaching-the-jump-host).
+The node must present the host key the record holds, and must finish the SSH
+handshake within a minute. A record from a run that recorded no host key is
+refused; keep the site again with a run that does.
 
 #### A site behind Teleport
 
@@ -568,7 +571,7 @@ on Linux.
 | Flag | What it is | Where it comes from |
 | --- | --- | --- |
 | `--profile` | The site's [validation profile](#validation-profile): a YAML file of `NVKE_SITE_*` and controller settings saying how the site is laid out. Without one the checks expect a site built from `deploy/nico`. | The site's own configuration. This repository ships none. |
-| `--controller-version` | The version the controller must report, such as `v0.23.1`. | The controller's image tag: `kubectl get deploy -A -l app.kubernetes.io/name=nvke-controller -o jsonpath='{.items[0].spec.template.spec.containers[0].image}'` |
+| `--controller-version` | The version the controller must report at `/api/version`, compared exactly. A release built at its tag reports the tag, such as `v0.23.1`; another build reports its `git describe`, such as `v0.23.1-0-g347baabc`, which its image tag does not show. | The release you deployed. To see what the controller reports: `kubectl get --raw /api/v1/namespaces/<namespace>/services/nvke-controller:8080/proxy/api/version`, with the controller's namespace, `nvke-controller` by default |
 | `--kubernetes-version` | The version the site was built to run, such as `v1.34.2`. | The site's build record, not the API server: check 9 compares the API server and every kubelet with it. |
 | `--full` | Also run the `creates` checks: 26–31, and 37 on a tenant. | |
 | `--only <expr>` | A Ginkgo label expression the run is narrowed to, such as `readiness`. | |
@@ -844,6 +847,11 @@ found by its `app.kubernetes.io/name` label, and `fill` hands its name to the
 suite; a release that sets `nameOverride` changes that label too. The
 controller's image tag gives `ver`:
 `kubectl -n "${ctrl_ns}" get deploy "${ctrl}" -o jsonpath='{.spec.template.spec.containers[0].image}'`.
+The version check compares `ver` exactly with what the controller reports,
+`kubectl get --raw "/api/v1/namespaces/${ctrl_ns}/services/${ctrl}:8080/proxy/api/version"`.
+A release built at its tag reports the tag. A controller that reports more,
+such as `v0.23.1-0-g347baabc`, fails the check against its image tag, so put
+what it should report in the Job's `NVKE_CONTROLLER_EXPECTED_VERSION`.
 `k8s` is the version the site was built to run, from its build record rather
 than the cluster: check 9 compares the API server and every kubelet with it,
 so a version read from the API server would pass a site running the wrong one.
@@ -879,6 +887,13 @@ kubectl create namespace nvke-validate --dry-run=client -o yaml | kubectl apply 
 kubectl -n nvke-validate create configmap nvke-validate-profile \
   --from-file=profile.yaml=<site profile>
 ```
+
+The Job's `env` always sets both versions, `NVKE_CONTROLLER_NAMESPACE`,
+`NVKE_CONTROLLER_SERVICE`, `NKE_E2E_TOKEN_NAMESPACE` and
+`NKE_E2E_TOKEN_SERVICE_ACCOUNT`, blank where `fill` had nothing for them, and
+the environment wins over a profile, so a profile's values of those do not
+apply in the Job. Set them through `fill`, or delete their entries from the
+Job.
 
 Three of the variables need more RBAC than `validate-site.yaml` grants by
 default: listing `argocd` or `cnpg` in `NVKE_SITE_COMPONENTS` needs the

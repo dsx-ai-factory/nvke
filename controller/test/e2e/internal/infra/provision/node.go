@@ -246,6 +246,18 @@ type Record struct {
 	JumpLogin  string `json:"jumpLogin,omitempty"`
 	Key        string `json:"key"`
 	Kubeconfig string `json:"kubeconfig,omitempty"`
+	// HostKey is the node's SSH host key in authorized_keys form, which a
+	// later connection holds the node to.
+	HostKey string `json:"hostKey,omitempty"`
+}
+
+// HostKey is the host key conn's handshake verified, in authorized_keys
+// form, or empty where conn does not say.
+func HostKey(conn Conn) string {
+	if c, ok := conn.(interface{ HostKey() string }); ok {
+		return c.HostKey()
+	}
+	return ""
 }
 
 // RecordPath is where SaveRecord writes node's record under keyDir.

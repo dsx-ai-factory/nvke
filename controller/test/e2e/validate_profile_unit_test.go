@@ -40,17 +40,6 @@ NVKE_SITE_APISERVER_FLAGS: "audit-log-path=/var/log/audit.log;tls-cipher-suites=
 		"NVKE_SITE_KUBERNETES_VERSION": "1.30",
 		"NVKE_SITE_APISERVER_FLAGS":    "audit-log-path=/var/log/audit.log;tls-cipher-suites=a,b",
 	}, values, "a value is taken as written, so 1.30 is not read as the number 1.3")
-
-	for name, body := range map[string]string{
-		"comments only": "# nothing set\n",
-		"empty":         "",
-	} {
-		t.Run(name, func(t *testing.T) {
-			values, err := loadValidateProfile(writeProfile(t, body))
-			require.NoError(t, err)
-			require.Empty(t, values)
-		})
-	}
 }
 
 func TestUnit_ValidateProfileRejects(t *testing.T) {
@@ -70,6 +59,9 @@ func TestUnit_ValidateProfileRejects(t *testing.T) {
 		"a blank list entry":       "NVKE_SITE_NAMESPACES: [a, \"\"]\n",
 		"a list at the top":        "- NVKE_SITE_NAMESPACES\n",
 		"a second document":        "NVKE_SITE_NAMESPACES: a\n---\nNVKE_SITE_VALIDATE: false\n",
+		"comments only":            "# nothing set\n",
+		"empty":                    "",
+		"an empty mapping":         "{}\n",
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := loadValidateProfile(writeProfile(t, body))

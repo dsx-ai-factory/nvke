@@ -822,7 +822,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(2 * time.Second).Should(Succeed())
 			GinkgoLogr.Info("certificate request", "request", decision.request, "approved", decision.approved, "reason", decision.reason)
 			if !decision.approved {
-				AddReportEntry("certificate request denied", fmt.Sprintf("%s/%s denied (%s): approver-policy decided, as %s=%s declares", namespace, decision.request, decision.reason, settings.expect.env(siteCertManagerApprovalEnv), certManagerApprovalPolicy))
+				AddReportEntry("certificate request denied, not failing the check", fmt.Sprintf("%s/%s denied (%s): approver-policy decided, as %s=%s declares", namespace, decision.request, decision.reason, settings.expect.env(siteCertManagerApprovalEnv), certManagerApprovalPolicy))
 				return
 			}
 		}

@@ -88,6 +88,10 @@ type Node struct {
 	// kept node's record names them, so it can be reached after the run.
 	JumpHost  string
 	JumpLogin string
+
+	// HostKey is the node's SSH host key in authorized_keys form, as the
+	// provider's session verified it, so a kept node's record can pin it.
+	HostKey string
 }
 
 // Session is a command, copy and forward channel to the node. It is what

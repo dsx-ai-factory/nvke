@@ -4,13 +4,18 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"golang.org/x/crypto/ssh"
 	"sigs.k8s.io/yaml"
 )
 
@@ -33,13 +38,27 @@ func writeKeptRun(t *testing.T, record string) string {
 	return run
 }
 
+func newHostKey(t *testing.T) (ssh.PublicKey, string) {
+	t.Helper()
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return signer.PublicKey(), strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey())))
+}
+
 func TestKeptSite(t *testing.T) {
-	run := writeKeptRun(t, `{"name":"site-a","address":"10.0.0.7","user":"ubuntu","jumpHost":"jump","jumpLogin":"root","key":"/k/site-a.key","kubeconfig":"/k/site-a.kubeconfig"}`)
+	_, hostKey := newHostKey(t)
+	run := writeKeptRun(t, `{"name":"site-a","address":"10.0.0.7","user":"ubuntu","jumpHost":"jump","jumpLogin":"root","key":"/k/site-a.key","kubeconfig":"/k/site-a.kubeconfig","hostKey":"`+hostKey+`"}`)
 	r, versions, err := keptSite(run)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Name != "site-a" || r.Address != "10.0.0.7" || r.JumpHost != "jump" || r.JumpLogin != "root" {
+	if r.Name != "site-a" || r.Address != "10.0.0.7" || r.JumpHost != "jump" || r.JumpLogin != "root" || r.HostKey != hostKey {
 		t.Errorf("read %+v", r)
 	}
 	if versions["SITE_NVKE_CONTROLLER_VERSION"] != "b93b9fd4aa0a" || versions["KUBERNETES_VERSION"] != "1.36.3" {
@@ -54,6 +73,8 @@ func TestKeptSiteRejects(t *testing.T) {
 		"no jump host":    `{"name":"site-a","address":"10.0.0.7","user":"u","key":"k","kubeconfig":"c"}`,
 		"no kubeconfig":   `{"name":"site-a","address":"10.0.0.7","user":"u","jumpHost":"j","key":"k"}`,
 		"not json at all": `site-a`,
+		"a bad host key":  `{"name":"site-a","address":"10.0.0.7","user":"u","jumpHost":"j","key":"k","kubeconfig":"c","hostKey":"ssh-ed25519 nope"}`,
+		"no host key":     `{"name":"site-a","address":"10.0.0.7","user":"u","jumpHost":"j","key":"k","kubeconfig":"c"}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, _, err := keptSite(writeKeptRun(t, record)); err == nil {
@@ -234,17 +255,22 @@ func TestSummarizeJUnit(t *testing.T) {
 </properties></testcase>
 <testcase name="[It] site validation has no pod failing"><failure message="pods: ns/p CrashLoopBackOff&#xA;more"></failure></testcase>
 <testcase name="[It] site validation runs Argo CD"><skipped message="NVKE_SITE_COMPONENTS does not list argocd"></skipped></testcase>
-<testcase name="[AfterSuite]"><failure message="cleanup"></failure></testcase>
+<testcase name="[It] site validation issues a certificate"><properties>
+  <property name="certificate request denied, not failing the check" value="&#34;ns/r denied (policy)&#34;"></property>
+</properties></testcase>
+<testcase name="[AfterSuite]"><failure message="cleanup&#xA;more"></failure></testcase>
 </testsuite></testsuites>`
 	got, passed, err := summarizeJUnit([]byte(report))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if passed != 2 {
-		t.Errorf("passed = %d, want 2", passed)
+	if passed != 3 {
+		t.Errorf("passed = %d, want 3", passed)
 	}
 	for _, want := range []string{
-		"2 passed, 1 failed, 1 skipped",
+		"3 passed, 1 failed, 1 skipped",
+		"FAILED  [AfterSuite]: cleanup, which is the suite's, not a check's\n",
+		"certificate request denied, not failing the check:\n    ns/r denied (policy)",
 		"FAILED  [It] site validation has no pod failing: pods: ns/p CrashLoopBackOff\n",
 		"skipped [It] site validation runs Argo CD: NVKE_SITE_COMPONENTS does not list argocd",
 		"workloads outside NVKE_SITE_SCOPE, not failing the check:\n    Deployment other-team/broken: 0 of 1 available\n    Deployment other-team/b",
@@ -254,7 +280,45 @@ func TestSummarizeJUnit(t *testing.T) {
 			t.Errorf("summary lacks %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "cleanup") {
-		t.Error("an [AfterSuite] is not a spec")
+}
+
+func TestContextOnlyWithKubeconfig(t *testing.T) {
+	for _, o := range []validateOptions{
+		{runDir: "r", kubeContext: "c"},
+		{teleportCluster: "t", kubeContext: "c"},
+	} {
+		err := runValidate(t.Context(), io.Discard, o)
+		if err == nil || !strings.Contains(err.Error(), "--context names a --kubeconfig context") {
+			t.Errorf("%+v: err = %v, want --context refused", o, err)
+		}
+	}
+}
+
+func TestCheckHostKey(t *testing.T) {
+	node, recorded := newHostKey(t)
+	other, _ := newHostKey(t)
+	if err := checkHostKey(recorded, node); err != nil {
+		t.Errorf("the recorded key: %v", err)
+	}
+	if err := checkHostKey(recorded, other); err == nil || !strings.Contains(err.Error(), "not the") {
+		t.Errorf("another key: err = %v, want it refused", err)
+	}
+}
+
+// A relay that never answers fails the handshake once its timeout passes,
+// rather than hanging the run.
+func TestSSHHandshakeTimeout(t *testing.T) {
+	defer func(d time.Duration) { sshHandshakeTimeout = d }(sshHandshakeTimeout)
+	sshHandshakeTimeout = 200 * time.Millisecond
+	client, silent := net.Pipe()
+	defer silent.Close()
+
+	start := time.Now()
+	_, _, _, err := sshHandshake(client, "10.0.0.1:22", &ssh.ClientConfig{HostKeyCallback: ssh.InsecureIgnoreHostKey()}, func() { _ = client.Close() })
+	if err == nil || err.Error() != "no handshake in 200ms" {
+		t.Fatalf("err = %v, want the handshake timed out", err)
+	}
+	if elapsed := time.Since(start); elapsed > 10*time.Second {
+		t.Errorf("took %s", elapsed)
 	}
 }

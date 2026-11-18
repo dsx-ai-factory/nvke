@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/url"
 	"os"
@@ -107,6 +108,7 @@ type keptRecord struct {
 	JumpLogin  string `json:"jumpLogin"`
 	Key        string `json:"key"`
 	Kubeconfig string `json:"kubeconfig"`
+	HostKey    string `json:"hostKey"`
 }
 
 // keptSite reads the site node a qualify local run kept, and the versions
@@ -135,6 +137,12 @@ func keptSite(runDir string) (keptRecord, map[string]string, error) {
 	case r.JumpHost == "":
 		return keptRecord{}, nil, fmt.Errorf("%s names no jump host", records[0])
 	}
+	if r.HostKey == "" {
+		return keptRecord{}, nil, fmt.Errorf("%s names no host key to hold the node to; it comes from a run that recorded none, so keep the site again", records[0])
+	}
+	if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(r.HostKey)); err != nil {
+		return keptRecord{}, nil, fmt.Errorf("%s: hostKey: %w", records[0], err)
+	}
 	env, err := readEnvFile(filepath.Join(runDir, "steps.env"))
 	if err != nil {
 		return keptRecord{}, nil, err
@@ -151,6 +159,9 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 	if set := runSwitchesSet(os.Environ()); len(set) > 0 {
 		return fmt.Errorf("%s set in the environment: the image sets these, and a run that changes one can check nothing and still pass; unset them",
 			strings.Join(set, ", "))
+	}
+	if o.kubeContext != "" && o.kubeconfig == "" {
+		return errors.New("--context names a --kubeconfig context; --run-dir and --teleport-cluster use the kubeconfig they make")
 	}
 	if os.Getenv("TELEPORT_PROXY") == "" && os.Getenv("FORGE_TELEPORT_PROXY") != "" {
 		if err := os.Setenv("TELEPORT_PROXY", os.Getenv("FORGE_TELEPORT_PROXY")); err != nil {
@@ -218,6 +229,11 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Join(o.out, "artifacts"), 0o700); err != nil {
+		return err
+	}
+	// A reused --out keeps the last run's report, which would be summarized
+	// as this run's if this one wrote none.
+	if err := os.Remove(filepath.Join(o.out, "artifacts", validateJUnit)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	fmt.Fprintf(out, "run directory: %s\n", o.out)
@@ -479,6 +495,9 @@ func relayArgs(kept keptRecord) []string {
 	return []string{"ssh", jump, relayCommand(kept.Address)}
 }
 
+// sshHandshakeTimeout bounds the SSH handshake with the node.
+var sshHandshakeTimeout = time.Minute
+
 // forwardThroughJumpHost forwards the kept site's API server port to the
 // host's loopback, reaching the node as the suite does: an SSH session with
 // the run's key, carried by tsh through the jump host. It runs no ssh
@@ -522,17 +541,13 @@ func forwardThroughJumpHost(ctx context.Context, kept keptRecord, port int, logP
 	}()
 
 	nodeAddress := net.JoinHostPort(kept.Address, "22")
-	conn, chans, reqs, err := ssh.NewClientConn(&pipeConn{Reader: stdout, WriteCloser: stdin}, nodeAddress, &ssh.ClientConfig{
+	conn, chans, reqs, err := sshHandshake(&pipeConn{Reader: stdout, WriteCloser: stdin}, nodeAddress, &ssh.ClientConfig{
 		User: kept.User,
 		Auth: []ssh.AuthMethod{ssh.PublicKeys(signer)},
-		// The node is reached only through the jump host and logs in only
-		// this run's key, so its first key is taken, as the suite takes it.
 		HostKeyCallback: func(_ string, _ net.Addr, key ssh.PublicKey) error {
-			fmt.Fprintf(log, "node host key %s\n", ssh.FingerprintSHA256(key))
-			return nil
+			return checkHostKey(kept.HostKey, key)
 		},
-		Timeout: time.Minute,
-	})
+	}, func() { _ = syscall.Kill(-relay.Process.Pid, syscall.SIGKILL) })
 	if err != nil {
 		return fmt.Errorf("ssh to %s@%s through its jump host: %w; see %s", kept.User, kept.Address, err, logPath)
 	}
@@ -569,6 +584,34 @@ func forwardThroughJumpHost(ctx context.Context, kept keptRecord, port int, logP
 			}()
 		}
 	}()
+	return nil
+}
+
+// sshHandshake runs the SSH handshake over conn, and calls stop to end conn
+// once sshHandshakeTimeout passes without one. A relay's pipes have no
+// deadlines, and a tsh waiting on an MFA prompt, or a relay to an address
+// that never answers, would otherwise hang the run.
+func sshHandshake(conn net.Conn, address string, cfg *ssh.ClientConfig, stop func()) (ssh.Conn, <-chan ssh.NewChannel, <-chan *ssh.Request, error) {
+	timer := time.AfterFunc(sshHandshakeTimeout, stop)
+	c, chans, reqs, err := ssh.NewClientConn(conn, address, cfg)
+	if !timer.Stop() {
+		if err == nil {
+			c.Close()
+		}
+		return nil, nil, nil, fmt.Errorf("no handshake in %s", sshHandshakeTimeout)
+	}
+	return c, chans, reqs, err
+}
+
+// checkHostKey holds the node to the host key the run that kept it recorded.
+func checkHostKey(recorded string, key ssh.PublicKey) error {
+	want, _, _, _, err := ssh.ParseAuthorizedKey([]byte(recorded))
+	if err != nil {
+		return err
+	}
+	if !bytes.Equal(key.Marshal(), want.Marshal()) {
+		return fmt.Errorf("the node's host key is %s, not the %s its site record holds", ssh.FingerprintSHA256(key), ssh.FingerprintSHA256(want))
+	}
 	return nil
 }
 
@@ -826,28 +869,34 @@ type junitCase struct {
 // does not fail on, such as what a scoped check found outside its scope.
 const notFailing = "not failing the check"
 
-// summarizeJUnit counts the specs, names the failed and skipped ones, and
-// lists what the checks found but did not fail on. It returns the summary and
-// how many specs passed.
+// summarizeJUnit counts the specs, names the failed and skipped ones and any
+// failed suite node, such as an [AfterSuite], and lists what the checks found
+// but did not fail on. It returns the summary and how many specs passed.
 func summarizeJUnit(report []byte) (string, int, error) {
 	var r junitReport
 	if err := xml.Unmarshal(report, &r); err != nil {
 		return "", 0, err
 	}
 	var passed int
-	var failed, skipped, outside []string
+	var failed, suiteFailed, skipped, outside []string
 	for _, suite := range r.Suites {
 		for _, c := range suite.Cases {
+			m := c.Failure
+			if m == nil {
+				m = c.Error
+			}
+			var first string
+			if m != nil {
+				first, _, _ = strings.Cut(m.Message, "\n")
+			}
 			if !strings.HasPrefix(c.Name, "[It]") {
+				if m != nil {
+					suiteFailed = append(suiteFailed, withMessage(c.Name, first))
+				}
 				continue
 			}
 			switch {
-			case c.Failure != nil || c.Error != nil:
-				m := c.Failure
-				if m == nil {
-					m = c.Error
-				}
-				first, _, _ := strings.Cut(m.Message, "\n")
+			case m != nil:
 				failed = append(failed, withMessage(c.Name, first))
 			case c.Skipped != nil:
 				skipped = append(skipped, withMessage(c.Name, c.Skipped.Message))
@@ -868,6 +917,9 @@ func summarizeJUnit(report []byte) (string, int, error) {
 	}
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n%d passed, %d failed, %d skipped\n", passed, len(failed), len(skipped))
+	for _, f := range suiteFailed {
+		fmt.Fprintf(&b, "  FAILED  %s, which is the suite's, not a check's\n", f)
+	}
 	for _, f := range failed {
 		fmt.Fprintf(&b, "  FAILED  %s\n", f)
 	}

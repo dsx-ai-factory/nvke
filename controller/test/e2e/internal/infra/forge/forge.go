@@ -338,6 +338,7 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 	return infra.Node{
 		Name: req.Name, IP: address, User: p.nodeUser(), Arch: instanceType.Arch(),
 		JumpHost: p.opts.JumpHost, JumpLogin: p.opts.JumpLogin,
+		HostKey: provision.HostKey(conn),
 	}, &provision.Session{Conn: conn, Release: release}, nil
 }
 
