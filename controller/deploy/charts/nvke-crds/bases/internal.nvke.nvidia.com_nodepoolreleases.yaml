@@ -66,16 +66,6 @@ spec:
                       Deprecated allows resources already depending on the Release to keep
                       using it, but rejects new cluster or node pool creation referencing it.
                     type: boolean
-                  hidden:
-                    default: false
-                    description: Hidden omits an offering from catalog lists and channel
-                      choices. Explicit references remain available.
-                    type: boolean
-                  supportedUntil:
-                    description: SupportedUntil is the time at which support for this
-                      release ends.
-                    format: date-time
-                    type: string
                 type: object
               machineImageRef:
                 description: |-
@@ -101,43 +91,6 @@ spec:
                   It lives on the Release rather than the MachineImage so one image can back
                   several Releases whose initialization differs.
                 properties:
-                  infra:
-                    description: Infra supplies concrete bootstrap additions for the
-                      generic infra provider.
-                    properties:
-                      bootstrapFiles:
-                        items:
-                          description: BootstrapFile describes a cloud-init write_files
-                            entry supported by the generic infra API.
-                          properties:
-                            content:
-                              maxLength: 10240
-                              minLength: 1
-                              type: string
-                            owner:
-                              maxLength: 256
-                              minLength: 1
-                              type: string
-                            path:
-                              maxLength: 512
-                              minLength: 1
-                              type: string
-                            permissions:
-                              maxLength: 16
-                              minLength: 1
-                              type: string
-                          required:
-                          - content
-                          - path
-                          type: object
-                        type: array
-                        x-kubernetes-list-type: atomic
-                      preKubeadmCommands:
-                        items:
-                          type: string
-                        type: array
-                        x-kubernetes-list-type: atomic
-                    type: object
                   userDataTemplate:
                     description: |-
                       UserDataTemplate is rendered with machine-specific values, such as the
@@ -163,33 +116,10 @@ spec:
                 x-kubernetes-validations:
                 - message: machineInit is immutable
                   rule: self == oldSelf
-              profile:
-                description: Profile identifies the tenant-facing profile family.
-                maxLength: 253
-                minLength: 1
-                pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                type: string
-                x-kubernetes-validations:
-                - message: profile is immutable
-                  rule: self == oldSelf
-              tag:
-                description: Tag identifies a revision within Profile.
-                maxLength: 128
-                minLength: 1
-                pattern: ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$
-                type: string
-                x-kubernetes-validations:
-                - message: tag is immutable
-                  rule: self == oldSelf
             required:
             - machineImageRef
             - machineInit
             type: object
-            x-kubernetes-validations:
-            - message: profile presence is immutable
-              rule: has(self.profile) == has(oldSelf.profile)
-            - message: tag presence is immutable
-              rule: has(self.tag) == has(oldSelf.tag)
         required:
         - spec
         type: object

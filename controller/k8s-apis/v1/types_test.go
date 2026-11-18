@@ -58,17 +58,12 @@ func TestClusterReleaseDeepCopyIsIndependent(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "release", Annotations: map[string]string{"key": "value"}},
 		Spec: ClusterReleaseSpec{
 			MachineImageRef: MachineImageReference{Name: "image"},
-			MachineInit: MachineInit{
-				UserDataTemplate: "#cloud-config\n",
-				Infra:            &InfraBootstrap{PreKubeadmCommands: []string{"true"}},
-			},
+			MachineInit:     MachineInit{UserDataTemplate: "#cloud-config\n"},
 		},
 	}
 
 	clone := original.DeepCopy()
 	clone.Annotations["key"] = "changed"
-	clone.Spec.MachineInit.Infra.PreKubeadmCommands[0] = "false"
 
 	assert.Equal(t, "value", original.Annotations["key"])
-	assert.Equal(t, []string{"true"}, original.Spec.MachineInit.Infra.PreKubeadmCommands)
 }

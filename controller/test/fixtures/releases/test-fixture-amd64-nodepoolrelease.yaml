@@ -38,4 +38,3 @@ spec:
         - touch /run/cloud-init.done
   lifecycle:
     deprecated: false
-    hidden: false
