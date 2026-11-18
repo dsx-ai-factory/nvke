@@ -56,6 +56,17 @@ func TestNewMetadataClient_ValidatesURL(t *testing.T) {
 	}
 }
 
+func TestNewMetadataClient_BypassesEnvironmentProxies(t *testing.T) {
+	t.Parallel()
+
+	client, err := NewMetadataClient("http://169.254.169.254", time.Second)
+	require.NoError(t, err)
+
+	transport, ok := client.client.Transport.(*http.Transport)
+	require.True(t, ok, "metadata client transport is %T", client.client.Transport)
+	assert.Nil(t, transport.Proxy)
+}
+
 func TestMetadataClient_FetchSendsTheMetadataContract(t *testing.T) {
 	t.Parallel()
 

@@ -46,11 +46,21 @@ func NewMetadataClient(baseURL string, timeout time.Duration) (*MetadataClient, 
 	if timeout <= 0 {
 		return nil, fmt.Errorf("dsx metadata service timeout must be positive, got %s", timeout)
 	}
+	transport, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		return nil, errors.New("default http transport has an unexpected type")
+	}
+	transport = transport.Clone()
+	// The metadata service is only reachable from the VM's own pod network, so
+	// a node-wide HTTP_PROXY must not carry this request.
+	transport.Proxy = nil
+
 	parsed.Path = metadataIdentityPath
 	return &MetadataClient{
 		endpoint: parsed.String(),
 		client: &http.Client{
-			Timeout: timeout,
+			Timeout:   timeout,
+			Transport: transport,
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return http.ErrUseLastResponse
 			},
