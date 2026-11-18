@@ -116,6 +116,10 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 		SystemReservedMemory:  nodePool.SystemReservedMemory,
 		KubeReservedMemory:    nodePool.KubeReservedMemory,
 	}
+	initConfig.ExtraArgs, err = a.controlPlaneExtraArgs(ctx, cluster, node)
+	if err != nil {
+		return err
+	}
 	if authn := a.clusterAuthentication(cluster); authn.Needed() {
 		initConfig.AuthenticationConfig, err = kubeadmconfig.BuildClusterAuthenticationConfig(ctx, a.k8sClient, authn)
 		if err != nil {
@@ -180,6 +184,24 @@ func (a *Activities) kubeadmInit(ctx context.Context, input KubeadmInitInput) er
 	}
 
 	return a.waitForKubeadmInitReady(ctx, node, input.InstallCNIAfterInit)
+}
+
+// controlPlaneExtraArgs returns the operator's control-plane arguments from the
+// snapshot the init node is pinned to, or from the cluster's current snapshot
+// when the node isn't pinned.
+func (a *Activities) controlPlaneExtraArgs(ctx context.Context, cluster db.Cluster, node db.Node) (kubeadmconfig.ExtraArgs, error) {
+	spec := cluster.ControlPlaneConfig.ControlPlaneConfigSpec
+	if node.ControlPlaneConfigurationID != uuid.Nil {
+		var err error
+		if spec, err = a.controlPlaneConfigSnapshot(ctx, node); err != nil {
+			return kubeadmconfig.ExtraArgs{}, err
+		}
+	}
+	return kubeadmconfig.ExtraArgs{
+		APIServer:         spec.APIServerExtraArgs,
+		ControllerManager: spec.ControllerManagerExtraArgs,
+		Scheduler:         spec.SchedulerExtraArgs,
+	}, nil
 }
 
 func (a *Activities) waitForKubeadmInitReady(ctx context.Context, node db.Node, installCNIAfterInit bool) error {

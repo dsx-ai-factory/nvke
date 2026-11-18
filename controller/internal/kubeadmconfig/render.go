@@ -128,6 +128,9 @@ const (
 	// `Name=bool` pairs.
 	featureGatesFlag = "feature-gates"
 
+	profilingFlag   = "profiling"
+	bindAddressFlag = "bind-address"
+
 	// defaultPodPidsLimit caps PIDs per pod, which the kubelet otherwise leaves
 	// unbounded so a single runaway process can exhaust the node's PID space
 	// (CIS 4.2.13). Threads count against this cgroup limit, not just processes,
@@ -391,8 +394,8 @@ func joinKubeletConfiguration(kubernetesVersion string) kubeletconfigv1beta1.Kub
 func controlPlaneComponent() kubeadmv1beta3.ControlPlaneComponent {
 	return kubeadmv1beta3.ControlPlaneComponent{
 		ExtraArgs: map[string]string{
-			"profiling":    defaultProfilingDisabled,
-			"bind-address": defaultControlPlaneBindAddress,
+			profilingFlag:   defaultProfilingDisabled,
+			bindAddressFlag: defaultControlPlaneBindAddress,
 		},
 	}
 }

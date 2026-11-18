@@ -163,6 +163,50 @@ func TestInitConfigRender_Golden(t *testing.T) {
 				apiServerAuthConfigFixture("auth_config_simple.yaml"),
 			},
 		},
+		{
+			name:       "init config with extra args, v1beta3 with ImageVolume",
+			wantConfig: "init_extra_args_v1beta3.yaml",
+			config: func() *InitConfig {
+				cfg := validInitConfig()
+				cfg.KubernetesVersion = "v1.30.14"
+				cfg.ExtraArgs = testExtraArgs()
+				return cfg
+			},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+			},
+		},
+		{
+			name:       "init config with extra args, v1beta4 with ImageVolume",
+			wantConfig: "init_extra_args_v1beta4_imagevolume.yaml",
+			config: func() *InitConfig {
+				cfg := validInitConfig()
+				cfg.KubernetesVersion = imageVolumeVersion
+				cfg.ExtraArgs = testExtraArgs()
+				return cfg
+			},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+				apiServerAuthConfigFixture("auth_config_anonymous_only.yaml"),
+			},
+		},
+		{
+			name:       "init config with extra args, v1beta4 without ImageVolume",
+			wantConfig: "init_extra_args_v1beta4.yaml",
+			config: func() *InitConfig {
+				cfg := validInitConfig()
+				cfg.KubernetesVersion = noImageVolumeVersion
+				cfg.ExtraArgs = testExtraArgs()
+				return cfg
+			},
+			wantFiles: []fileFromFixture{
+				apiServerTerminationGracePatchFixture(),
+				apiServerAuditPolicyFixture(),
+				apiServerAuthConfigFixture("auth_config_anonymous_only.yaml"),
+			},
+		},
 	}
 
 	for _, tt := range tests {

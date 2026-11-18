@@ -66,6 +66,9 @@ type InitConfig struct {
 	// --secondary-node-eviction-rate entirely. Defaults to "50" (upstream
 	// default).
 	LargeClusterSizeThreshold string
+	// ExtraArgs holds the operator's flags for each control-plane component,
+	// merged after the flags NVKE sets.
+	ExtraArgs ExtraArgs
 }
 
 // Render generates the bootstrap artifacts for kubeadm init.
@@ -101,7 +104,17 @@ func (config *InitConfig) Render() (*BootstrapArtifacts, error) {
 		return nil, fmt.Errorf("building init configuration: %w", err)
 	}
 
-	initDocument, clusterDocument := initKubeadmDocuments(initConfig, clusterConfiguration(&cfg), cfg.KubernetesVersion)
+	clusterConfig := clusterConfiguration(&cfg)
+	// The create handler has already run ValidateExtraArgs, so this only fails
+	// if the renderer changed underneath stored arguments: a later NVKE release
+	// that starts setting a flag a cluster's arguments already set fails here.
+	// Init runs only at creation, so that can't happen yet. Anything that
+	// re-renders stored arguments later has to decide what to do about it.
+	if err := applyExtraArgs(&clusterConfig, cfg.KubernetesVersion, cfg.ExtraArgs); err != nil {
+		return nil, fmt.Errorf("applying control-plane extraArgs: %w", err)
+	}
+
+	initDocument, clusterDocument := initKubeadmDocuments(initConfig, clusterConfig, cfg.KubernetesVersion)
 	configYAML, err := renderYAMLDocuments(
 		initDocument,
 		clusterDocument,
@@ -237,8 +250,8 @@ func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguratio
 				"audit-log-maxsize":                       defaultAuditLogMaxSize,
 				"kubelet-certificate-authority":           defaultKubeletCertificateAuth,
 				etcdCompactionIntervalFlagName:            defaultEtcdCompactionInterval,
-				"profiling":                               defaultProfilingDisabled,
-				"bind-address":                            defaultBindAddress,
+				profilingFlag:                             defaultProfilingDisabled,
+				bindAddressFlag:                           defaultBindAddress,
 				"service-account-extend-token-expiration": defaultServiceAccountExtendTokenExpiration,
 				"tls-cipher-suites":                       defaultTLSCipherSuites,
 				"shutdown-delay-duration":                 defaultAPIServerShutdownDelay,
@@ -270,8 +283,8 @@ func clusterConfiguration(config *InitConfig) kubeadmv1beta3.ClusterConfiguratio
 	// missing-file error far from the cause. Only set below the GA floor: the
 	// flag is removed a couple of releases after GA and kube-apiserver refuses
 	// to start when passed a gate it no longer knows.
-	if needsImageVolumeFeatureGate(config.KubernetesVersion) {
-		apiServer.ExtraArgs[featureGatesFlag] = imageVolumeFeatureGate + "=true"
+	if gates := nvkeFeatureGates(componentAPIServer, config.KubernetesVersion); len(gates) > 0 {
+		apiServer.ExtraArgs[featureGatesFlag] = formatFeatureGates(gates)
 	}
 
 	if config.EnableEncryption {
