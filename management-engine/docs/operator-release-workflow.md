@@ -1,9 +1,20 @@
 # Operator release workflow
 
 Operators publish releases that tenants select through the Cluster Service APIs.
-This runbook publishes a release, makes it available through a channel and applies
-it to an existing cluster. For container images and Helm charts, see
-[package publication](artifact-publication.md).
+This runbook covers testing a release on one cluster and then making it available
+through a shared channel:
+
+1. Publish the release in the catalog.
+2. Create a separate test channel and select it on a test cluster.
+3. Verify the test cluster's rollout.
+4. Promote the tested release to a shared channel and monitor adopting clusters.
+
+Publishing adds a catalog record. Updating a shared channel makes that release
+available to clusters following it, according to their version selection and
+eligibility rules. Testing uses a separate channel so that only the test cluster
+is affected. The API selects releases through channels.
+
+For container images and Helm charts, see [package publication](artifact-publication.md).
 
 ## Before starting
 
@@ -21,7 +32,7 @@ options required by your deployment to each curl command.
 | `TENANT_API_URL` | Published tenant-facing Cluster Service base URL, without a trailing slash or `/v1`. |
 | `OPERATOR_API_URL` | Approved internal operator-facing Cluster Service base URL, without a trailing slash or `/v1`. |
 | `TENANT_NAMESPACE` | Namespace holding the tenant's Cluster Service resources. |
-| `CLUSTER_NAME` | Existing cluster to update. |
+| `CLUSTER_NAME` | Existing test cluster to use for validation. |
 
 Confirm the active Kubernetes context points to the cluster holding Cluster Service state:
 
@@ -36,7 +47,7 @@ out of Git and captured results.
 
 ## Select the release inputs
 
-Choose an existing machine image and channel from the catalog:
+Choose an existing machine image and identify the shared channel from the catalog:
 
 ```sh
 curl -i "${OPERATOR_API_URL:?}/v1/machine-images"
@@ -53,7 +64,8 @@ through the channel; minimum upgrade age controls when a new release is eligible
 | `MACHINE_IMAGE_NAME` | Existing machine image from the catalog. |
 | `KUBERNETES_VERSION` | Exact Kubernetes version carried by the image. |
 | `USER_DATA_TEMPLATE` | Path to the approved cloud-init template from the release artifacts. |
-| `CHANNEL_NAME` | Existing channel to update. |
+| `TEST_CHANNEL_NAME` | New channel reserved for this test cluster. |
+| `SHARED_CHANNEL_NAME` | Existing channel to promote the tested release to. |
 | `VERSION_SELECTOR` | Version selector offered through the channel. |
 | `MINIMUM_UPGRADE_AGE` | Eligibility delay, such as `24h`. |
 
@@ -100,49 +112,34 @@ curl -i -H 'Content-Type: application/json' \
 Expect HTTP 201 and the created release. Immutable image or initialization changes
 require a new release name.
 
-## Update the channel
+## Make the release available for testing
 
-Fetch the existing channel and display its response headers and JSON:
-
-```sh
-curl -D - -o channel.json \
-  "${OPERATOR_API_URL:?}/v1/cluster-release-channels/${CHANNEL_NAME:?}"
-cat channel.json
-```
-
-Copy the response's `ETag` value into `CHANNEL_ETAG`, keeping the double quotes.
-The API requires it in `If-Match` so the update cannot overwrite a newer change.
-
-Replace that selector's candidate list with the new release, preserving other
-selectors and settings. Keep only writable metadata from the GET response:
+Use a new channel that only the test cluster will follow. Create it with the
+candidate release and no minimum age delay:
 
 ```sh
-jq --arg selector "${VERSION_SELECTOR:?}" \
-  --arg release "${RELEASE_NAME:?}" \
-  --arg age "${MINIMUM_UPGRADE_AGE:?}" \
-  '{metadata: (.metadata | {name, uid}), spec}
-   | .spec.releases[$selector] = [{name: $release, minimumUpgradeAge: $age}]' \
-  channel.json > channel-update.json
-cat channel-update.json
+jq -n --arg name "${TEST_CHANNEL_NAME:?}" \
+  --arg selector "${VERSION_SELECTOR:?}" --arg release "${RELEASE_NAME:?}" \
+  '{metadata: {name: $name}, spec: {releases: {
+    ($selector): [{name: $release, minimumUpgradeAge: "0s"}]
+  }}}' > test-channel.json
+cat test-channel.json
 ```
 
-Submit the reviewed update:
+Create the reviewed channel:
 
 ```sh
-curl -i -X PUT \
-  -H "If-Match: ${CHANNEL_ETAG:?}" -H 'Content-Type: application/json' \
-  --data-binary @channel-update.json \
-  "${OPERATOR_API_URL:?}/v1/cluster-release-channels/${CHANNEL_NAME:?}"
+curl -i -H 'Content-Type: application/json' \
+  --data-binary @test-channel.json \
+  "${OPERATOR_API_URL:?}/v1/cluster-release-channels"
 ```
 
-Expect HTTP 200. A stale ETag returns HTTP 412: read the resource and review the
-change again. Updates accept `metadata.name`, optional `metadata.uid` and `spec`;
-timestamps and status are read-only.
+Expect HTTP 201. Keep this channel separate from the shared channel until testing
+is complete.
 
-## Select the release for a cluster
+## Select the release on the test cluster
 
-Changing a channel can affect clusters already following it. To select a channel
-and version for an existing cluster, fetch its current state:
+Fetch the test cluster before changing its channel selection:
 
 ```sh
 curl -D - -o cluster.json "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
@@ -153,7 +150,7 @@ Copy the response's `ETag` value into `CLUSTER_ETAG`, keeping the double quotes.
 Write the updated selection to `cluster-update.json`:
 
 ```sh
-jq --arg channel "${CHANNEL_NAME:?}" --arg version "${VERSION_SELECTOR:?}" \
+jq --arg channel "${TEST_CHANNEL_NAME:?}" --arg version "${VERSION_SELECTOR:?}" \
   '{metadata: (.metadata | {name, uid}), spec}
    | .spec.release.channel = {name: $channel, version: $version}' \
   cluster.json > cluster-update.json
@@ -188,7 +185,7 @@ jq --arg pool "${NODE_POOL_NAME:?}" --arg profile "${NODE_PROFILE:?}" \
 cat cluster-update.json
 ```
 
-## Verify the rollout
+## Verify the test rollout
 
 ```sh
 curl -i "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
@@ -201,6 +198,53 @@ Reported progress and worker counts should agree with the running cluster.
 Use the deployment's [Kubernetes API access procedure](../../docs/tenant-clusters/kubernetes-api-access.md)
 to inspect workload nodes. API success or `Synced=True` alone does not prove the
 rollout completed.
+
+## Promote to a shared channel
+
+After the test rollout passes the required checks, update the shared channel.
+This makes the release available to every cluster following the affected version
+selection; those clusters do not need individual edits.
+
+Fetch the shared channel and display its response headers and JSON:
+
+```sh
+curl -D - -o channel.json \
+  "${OPERATOR_API_URL:?}/v1/cluster-release-channels/${SHARED_CHANNEL_NAME:?}"
+cat channel.json
+```
+
+Copy the response's `ETag` value into `CHANNEL_ETAG`, keeping the double quotes.
+The API requires it in `If-Match` so the update cannot overwrite a newer change.
+
+Replace that selector's candidate list with the new release, preserving other
+selectors and settings. Keep only writable metadata from the GET response:
+
+```sh
+jq --arg selector "${VERSION_SELECTOR:?}" \
+  --arg release "${RELEASE_NAME:?}" \
+  --arg age "${MINIMUM_UPGRADE_AGE:?}" \
+  '{metadata: (.metadata | {name, uid}), spec}
+   | .spec.releases[$selector] = [{name: $release, minimumUpgradeAge: $age}]' \
+  channel.json > channel-update.json
+cat channel-update.json
+```
+
+Submit the reviewed update:
+
+```sh
+curl -i -X PUT \
+  -H "If-Match: ${CHANNEL_ETAG:?}" -H 'Content-Type: application/json' \
+  --data-binary @channel-update.json \
+  "${OPERATOR_API_URL:?}/v1/cluster-release-channels/${SHARED_CHANNEL_NAME:?}"
+```
+
+Expect HTTP 200. A stale ETag returns HTTP 412: read the resource and review the
+change again. Updates accept `metadata.name`, optional `metadata.uid` and `spec`;
+timestamps and status are read-only.
+
+Monitor adopting clusters using the [rollout checks](#verify-the-test-rollout).
+Adoption depends on each cluster's selection and the release's eligibility; a
+channel update does not mean every cluster upgrades immediately.
 
 ## Diagnose failures and retire old releases
 
