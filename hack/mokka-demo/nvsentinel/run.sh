@@ -65,7 +65,8 @@ fi
 export TENANT_KUBECONFIG KUBECONFIG="$TENANT_KUBECONFIG"
 # Change nothing if the release or namespace this run would own already exists, or
 # if either can't be checked.
-existing="$(helm list --namespace nvsentinel --filter '^nvsentinel$' --deployed --failed --pending --short)" ||
+existing="$(helm list --namespace nvsentinel --filter '^nvsentinel$' \
+  --deployed --failed --pending --superseded --uninstalling --uninstalled --short)" ||
   die "could not list Helm releases in namespace nvsentinel"
 [[ -z "$existing" ]] || die "a release named nvsentinel exists; uninstall it first (README.md, Clean up)"
 existing="$(kubectl get namespace --field-selector metadata.name=nvsentinel-sample --output name)" ||
