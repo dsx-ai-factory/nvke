@@ -2,8 +2,9 @@ diff --git a/pxe/common_files/disk_imaging.sh b/pxe/common_files/disk_imaging.sh
 index cbd2aae9..11111111 100755
 --- a/pxe/common_files/disk_imaging.sh
 +++ b/pxe/common_files/disk_imaging.sh
-@@ -371,0 +372,15 @@ function get_root_dev() {
+@@ -371,0 +372,16 @@ function get_root_dev() {
 +function release_existing_disk_state() {
++	# A log line only, so it runs without pipefail and its status is not checked.
 +	echo "Releasing existing storage state on $image_disk" | tee "$log_output"
 +
 +	# This environment runs from its initramfs. It does not need volume groups
@@ -18,7 +19,7 @@ index cbd2aae9..11111111 100755
 +	(set -o pipefail; udevadm settle 2>&1 | tee "$log_output") || return 1
 +}
 +
-@@ -1093,0 +1109 @@ function main() {
+@@ -1093,0 +1110 @@ function main() {
 +	release_existing_disk_state || return 1
 diff --git a/pxe/common_files/disk_imaging_test.sh b/pxe/common_files/disk_imaging_test.sh
 index 8236f438..22222222 100644
@@ -27,7 +28,7 @@ index 8236f438..22222222 100644
 @@ -30,0 +31,2 @@ mock_blkid_stderr=
 +storage_calls_file="$temp_dir/storage-calls"
 +: >"$storage_calls_file"
-@@ -86,0 +89,65 @@ lsblk() {
+@@ -86,0 +89,67 @@ lsblk() {
 +vgchange() {
 +	printf 'vgchange %s\n' "$*" >>"$storage_calls_file"
 +	return "${mock_vgchange_status:-0}"
@@ -35,6 +36,8 @@ index 8236f438..22222222 100644
 +
 +udevadm() {
 +	printf 'udevadm %s\n' "$*" >>"$storage_calls_file"
++	# Tells the first settle from the last by counting the calls so far, so this
++	# depends on the cleanup's call order.
 +	if [ "$(grep -c '^udevadm ' "$storage_calls_file")" -eq 1 ]; then
 +		return "${mock_first_settle_status:-0}"
 +	fi
