@@ -1,52 +1,40 @@
 # Operator release workflow
 
-An operator publishes images, releases, profiles, classes and channels through the
-operator API. Tenants select those offerings through the tenant API; the manager
-persists their resolved choices and reconciles them through the NVKE controller.
-An accepted API request is not evidence that provisioning has completed.
+Operators publish releases that tenants select through the Cluster Service APIs.
+This runbook covers the catalog, release selection and cluster verification.
+For container images and Helm charts, see [package publication](artifact-publication.md).
 
-## Before starting
+## Prepare the installation and inputs
 
-Use a development environment agreed with its owner. Record the chart version,
-manager/API image digests, datastore context and tenant namespace. Use matching
-schemas and binaries; the current source tree can be ahead of the installed chart.
-Older packages use the internal kind `NodePoolRelease` where current source uses
-`NodeProfile`, and may report `resolvedRelease` instead of `currentRelease`.
-Both expose worker offerings at `/v1/node-profiles`.
+The examples use one cluster and default Helm names. Replace `management-dev`,
+`nvke-service-smoke` and resource names with the agreed context, tenant and test resources.
 
-The installation needs the [Helm prerequisites](helm-installation.md), working
-registry credentials, a running manager with a renewing Lease, and compatible
-NVKE controller and infrastructure-provider versions. The tenant namespace must
-exist and contain the infrastructure-template ConfigMap named by the manager.
-Confirm the provider accepts the image's boot/PXE contract before requesting machines.
+Before starting, confirm:
 
-Agree these inputs with the environment and release owners:
+- Manager, state and both APIs are installed with compatible, pinned packages.
+  See [Helm installation](helm-installation.md) for values, credentials and RBAC.
+- The manager is ready and renewing its leader-election Lease. The NVKE controller
+  is reachable, and infrastructure providers support the image and boot scripts.
+- The tenant namespace contains the manager's infrastructure-template ConfigMap.
+  The request uses approved network settings and available capacity.
+- The API workloads have their [operator](../config/dev/operator-api-rbac.yaml)
+  and [tenant](../config/dev/tenant-api-rbac.yaml) datastore permissions. Callers
+  use the agreed authentication setup; keep the operator API internal.
+  Your Kubernetes identity also needs port-forwarding permission.
 
-| Input | Required content |
+Prepare public JSON inputs using the schema from the installed version:
+
+| File | Content |
 | --- | --- |
-| `machine-image.json` | Public metadata/spec for an immutable image and its boot contract. |
+| `machine-image.json` | Machine image and boot settings. |
 | `cluster-release.json` | Kubernetes version, image reference and initialization. |
-| `node-profile.json` | Worker image/initialization and a unique profile/tag pair. |
-| `control-plane-class.json` | Supported instance types, replicas and rollout policy. |
-| `release-channel.json` | Version selectors mapped to compatible releases and minimum upgrade ages. |
-| `cluster-smoke.json` | A small tenant request using those offerings and approved network/capacity inputs. |
+| `node-profile.json` | Worker image, initialization and unique profile/tag pair. |
+| `control-plane-class.json` | Instance types, replicas and rollout settings. |
+| `release-channel.json` | Version selectors, release references and minimum upgrade ages. |
+| `cluster-smoke.json` | A small cluster request selecting the approved offerings. |
 
-Use the public JSON shape, `metadata` plus `spec`, rather than a complete Kubernetes
-manifest. Refer to the [resource types](../apis/v1) and the API contract from the
-installed revision. Give test resources distinct names. Release inputs must name
-real site artifacts; the [samples](../config/samples) are examples, not site defaults.
-
-The operator needs catalog-write permission; the tenant needs access to its own
-namespace and read-only catalog views. Kubernetes permission to port-forward is
-separate. Configure caller authentication through the accepted installation
-contract. The operator API remains internal. Keep local access options in
-`operator-access.curl` and `tenant-access.curl`; do not commit credential-bearing
-files or include tokens in captured evidence. The commands below assume those
-files have been prepared for the approved test identities.
-
-For example, this channel publishes an already-reviewed `smoke-release` under an
-illustrative version selector. Use the actual release version and agreed upgrade
-age in the test inputs:
+Create inputs contain `metadata.name` and `spec`; see the [resource types](../apis/v1)
+and [samples](../config/samples). This channel selects an existing `smoke-release`:
 
 ```json
 {
@@ -59,11 +47,13 @@ age in the test inputs:
 }
 ```
 
-## Reach the internal APIs
+Keep client credentials and options in local `operator-access.curl` and
+`tenant-access.curl` files using the [curl configuration format](https://curl.se/docs/manpage.html#-K).
+Protect these files and exclude them from Git and test evidence.
 
-The following commands use the default release and Service names. Replace
-`management-dev` with the explicit datastore/runtime context for the installation.
-Run each port-forward in its own terminal and keep it open:
+## Connect to the internal APIs
+
+Run each port-forward in a separate terminal:
 
 ```sh
 kubectl --context=management-dev -n cluster-service-system port-forward --address=127.0.0.1 service/cluster-service-operator-api 18081:8080
@@ -74,19 +64,16 @@ kubectl --context=management-dev -n cluster-service-system port-forward --addres
 ```
 
 ```sh
-curl --fail-with-body --config operator-access.curl http://127.0.0.1:18081/readyz
-curl --fail-with-body --config tenant-access.curl http://127.0.0.1:18080/readyz
+curl --fail-with-body -i --config operator-access.curl http://127.0.0.1:18081/readyz
+curl --fail-with-body -i --config tenant-access.curl http://127.0.0.1:18080/readyz
 ```
 
-Readiness checks datastore discovery, not every permission or backend operation.
-Port-forward testing also does not validate Gateway routing, DNS or TLS. A trusted
-internal test without caller authentication is partial evidence; authenticated
-qualification must use the agreed real identities.
+Expect HTTP 200. This checks API access and datastore discovery. Verify external
+routing, DNS and TLS separately.
 
-## Publish and inspect the catalog
+## Publish a release
 
-Publish reviewed inputs in dependency order. If an object already exists, read it
-and compare its content instead of retrying the POST or replacing it blindly.
+Publish in dependency order. For an existing name, GET and compare the object first.
 
 ```sh
 curl --fail-with-body --config operator-access.curl -H 'Content-Type: application/json' --data-binary @machine-image.json http://127.0.0.1:18081/v1/machine-images
@@ -96,7 +83,7 @@ curl --fail-with-body --config operator-access.curl -H 'Content-Type: applicatio
 curl --fail-with-body --config operator-access.curl -H 'Content-Type: application/json' --data-binary @release-channel.json http://127.0.0.1:18081/v1/cluster-release-channels
 ```
 
-Expect successful create responses, then verify what the tenant can select:
+Expect HTTP 201 and the created object for each POST. Check tenant discovery:
 
 ```sh
 curl --fail-with-body --config tenant-access.curl http://127.0.0.1:18080/v1/control-plane-classes
@@ -104,28 +91,34 @@ curl --fail-with-body --config tenant-access.curl http://127.0.0.1:18080/v1/clus
 curl --fail-with-body --config tenant-access.curl http://127.0.0.1:18080/v1/node-profiles
 ```
 
-Offerings can be filtered by lifecycle and dependency availability. A missing
-tenant view does not by itself mean the operator's POST failed.
+Expect HTTP 200. Hidden entries or unavailable dependencies can filter the tenant
+view. Use new names for immutable image or release content.
 
-To change an existing channel, GET the current object and ETag first. Prepare
-`reviewed-channel.json` with the approved replacement `spec.releases`; preserve
-the returned metadata and other spec fields:
+## Update a channel
+
+GET the channel and ETag (its version). Put the approved replacement `spec.releases`
+in `reviewed-channel.json`. Preserve other spec fields and writable metadata:
 
 ```sh
 curl --fail-with-body --config operator-access.curl -D channel.headers -o channel.json http://127.0.0.1:18081/v1/cluster-release-channels/smoke-channel
-jq '.spec.releases = input.spec.releases' channel.json reviewed-channel.json > updated-channel.json
+jq '{metadata: (.metadata | {name, uid}), spec} | .spec.releases = input.spec.releases' channel.json reviewed-channel.json > updated-channel.json
 etag=$(awk 'tolower($1) == "etag:" {sub("\r$", ""); print $2}' channel.headers)
+printf '%s\n' "$etag"
+```
+
+Stop if GET failed or no ETag was returned. Review `updated-channel.json`, then submit:
+
+```sh
 curl --fail-with-body --config operator-access.curl -X PUT -H "If-Match: $etag" -H 'Content-Type: application/json' --data-binary @updated-channel.json http://127.0.0.1:18081/v1/cluster-release-channels/smoke-channel
 ```
 
-Use the actual channel name in both URLs. A stale ETag requires a fresh read and
-review of concurrent changes. Publish new immutable images/releases/profile
-identities rather than changing their immutable content.
+Expect HTTP 200. For a stale ETag (HTTP 412), read and review again. PUT accepts
+`metadata.name`, optional `metadata.uid` and `spec`; omit timestamps and status.
+Channel changes remain subject to minimum upgrade ages and existing selections.
 
-## Request a cluster and verify reconciliation
+## Apply the selection and verify the cluster
 
-Only submit the agreed request after template, catalog and provider prerequisites
-are ready. The sample name below is `cluster-service-smoke`:
+Submit the approved request, then inspect API and stored status:
 
 ```sh
 curl --fail-with-body --config tenant-access.curl -H 'Content-Type: application/json' --data-binary @cluster-smoke.json http://127.0.0.1:18080/v1/clusters
@@ -134,44 +127,50 @@ kubectl --context=management-dev -n nvke-service-smoke get nvkeclusters.service.
 kubectl --context=management-dev -n cluster-service-system logs deployment/cluster-service-controller-manager --since=10m
 ```
 
-Verify the stored request and current-generation conditions, resolved release
-identity, backend resource/workflow correlation and actual cluster/worker state.
-Observe progress through completion; API success, `Synced=True`, or a single Ready
-condition alone is insufficient evidence of ready machines. Compare reported
-worker counts with the backend and actual workers.
+Expect HTTP 201 for POST and 200 for GET. Follow the request until:
 
-For a release change, read the cluster and ETag, review a full updated public
-request, then PUT it to the named cluster endpoint with `If-Match`, as for the
-channel update. Moving a channel forward does not bypass minimum upgrade ages or
-guarantee an existing cluster adopts it immediately.
+- Status reflects the latest requested generation and intended release.
+- The matching cluster/workflow exists in the NVKE controller without errors.
+- Actual cluster and worker readiness agree with reported progress and counts.
 
-## Failures, recovery and cleanup
+An accepted request or `Synced=True` alone does not prove provisioning completed.
+For an existing cluster, GET it and its ETag, prepare the approved spec with only
+writable metadata, and PUT to its named endpoint using `If-Match`, as above.
+Keep the existing cluster name and UID.
 
-| Observation | Next check |
+## Diagnose failures and clean up
+
+| Symptom | Check |
 | --- | --- |
-| Chart source fails to load | Application source URL/version and Argo repository access. |
-| `ImagePullBackOff` | Namespace-local image-pull Secret delivery and the Pod's reference. |
-| API returns 401/403 | Test identity, audience and authorization contract; do not disable checks to pass the test. |
-| API readiness fails or datastore operations are forbidden | Datastore connection and the workload's own RBAC. |
-| Request persists but reconciliation fails | Current-generation condition reason/message, tenant template location, catalog dependencies and backend/provider logs. |
-| Release cannot update or delete | ETag conflicts, immutable fields, references and lifecycle protections in the installed version. |
+| Chart pull fails | Argo source URL/version and repository credentials. |
+| `ImagePullBackOff` | Namespace-local pull Secret and the Pod's reference. |
+| HTTP 401/403 | Caller identity, audience and permissions. |
+| API unavailable or datastore forbidden | Datastore connection and workload RBAC. |
+| Request stored, provisioning incomplete | Condition messages, template location, catalog references and backend/provider logs. |
+| Update/delete rejected | ETag, immutable fields and references to the resource. |
 
-Agree one failure case using isolated test input, such as an invalid profile
-selection, and record the actionable API/condition error plus unchanged existing
-workers. Do not remove shared credentials to manufacture a failure.
+Exercise one agreed failure on isolated input, such as an invalid profile. Record
+the error and verify existing workers remain unchanged. Correct the input or
+publish a compatible new release; a channel edit is not a guaranteed downgrade.
+For installation problems, follow [upgrade and state-retention guidance](helm-installation.md#crd-ownership-upgrades-and-retention).
 
-Recover by correcting the input or publishing a compatible new release. A channel
-edit is not a guaranteed downgrade mechanism. For packaging failures use the
-[installation upgrade and retention guidance](helm-installation.md); coordinate
-provider/workload recovery with the owning operator.
+To remove the test cluster, obtain a fresh ETag, then DELETE:
 
-Delete only agreed test resources through the API, using a fresh GET/ETag and
-`If-Match` for DELETE. Wait for backend cleanup before removing dependent catalog
-records. Keep shared CRDs, registry credentials, templates and namespaces.
+```sh
+curl --fail-with-body --config tenant-access.curl -D cluster.headers -o cluster.json http://127.0.0.1:18080/v1/clusters/cluster-service-smoke
+etag=$(awk 'tolower($1) == "etag:" {sub("\r$", ""); print $2}' cluster.headers)
+```
 
-Record the package/image references, test identity and tenant scope (no tokens),
-resource UIDs/generations, API responses, backend correlation, failure outcome and
-cleanup result. A human operator must repeat this procedure against the validated
-environment before it is considered verified.
+Stop if GET failed or no ETag was returned, then run:
+
+```sh
+curl --fail-with-body -i --config tenant-access.curl -X DELETE -H "If-Match: $etag" http://127.0.0.1:18080/v1/clusters/cluster-service-smoke
+```
+
+Expect HTTP 202. Wait for backend cleanup before removing test-owned catalog
+entries; retain shared schemas, credentials and namespaces.
+
+Record package and image references, identity and namespace, request UID and
+generation, API results, backend outcome, failure check and cleanup.
 
 Created with AI assistance
