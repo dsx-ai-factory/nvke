@@ -37,13 +37,13 @@ func TestUnit_ServiceScheduleCAPIInfraNodesStartsProvisionWorkflows(t *testing.T
 			opts.WorkflowIDConflictPolicy == enums.WORKFLOW_ID_CONFLICT_POLICY_USE_EXISTING &&
 			opts.WorkflowIDReusePolicy == enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY
 	}), mock.Anything, mock.MatchedBy(func(input workflows.ProvisionNodeInput) bool {
-		return input.NodeID == firstNodeID && input.RebootNodeWaitForUptimeTimeout == 7*time.Minute
+		return input.NodeID == firstNodeID
 	})).Return(mockWorkflowRun{id: "first"}, nil).Once()
 	temporalClient.On("ExecuteWorkflow", mock.Anything, mock.MatchedBy(func(opts client.StartWorkflowOptions) bool {
 		return opts.TaskQueue == "test-task-queue" &&
 			opts.ID == constants.ProvisionNodeWorkflowPrefix+secondNodeID.String()
 	}), mock.Anything, mock.MatchedBy(func(input workflows.ProvisionNodeInput) bool {
-		return input.NodeID == secondNodeID && input.RebootNodeWaitForUptimeTimeout == 7*time.Minute
+		return input.NodeID == secondNodeID
 	})).Return(mockWorkflowRun{id: "second"}, nil).Once()
 
 	service := NewService(config.Config{

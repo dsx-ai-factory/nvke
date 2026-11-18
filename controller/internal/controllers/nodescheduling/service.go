@@ -76,8 +76,7 @@ func (s *Service) startProvisionNodeWorkflow(ctx context.Context, pendingNode db
 		NodeName:     pendingNode.Name,
 	})
 	run, err := s.controllerTemporalClient.ExecuteWorkflow(ctx, workflowOpts, workflows.ProvisionNode, workflows.ProvisionNodeInput{
-		NodeID:                         pendingNode.ID,
-		RebootNodeWaitForUptimeTimeout: s.cfg.NodeRebootMaxTimeout,
+		NodeID: pendingNode.ID,
 		// Control-plane nodes defer join to the control-plane controller, which
 		// serializes joins one node at a time.
 		SkipJoin: pendingNode.ControlPlane,
