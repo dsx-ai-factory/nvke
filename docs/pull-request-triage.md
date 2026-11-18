@@ -25,9 +25,11 @@ Every pull request is routed by its paths, whoever wrote it:
 requested reviewers own the review.
 
 [`community-label.yml`](../.github/workflows/community-label.yml) also labels
-a pull request `community` when its author is outside the dsx-ai-factory org.
-The label only makes those pull requests easy to find; it changes nothing about
-how they are reviewed or merged.
+a pull request `community` when its author is not a dsx-ai-factory org member,
+not a repository collaborator, and has no write access. Bots are skipped. A
+member whose org membership is private and who has no write access can still
+be labelled. The label only makes these pull requests easy to find; it changes
+nothing about how they are reviewed or merged.
 
 ## Before CI runs
 
