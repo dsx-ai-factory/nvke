@@ -169,20 +169,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 		},
 		options: nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 	}),
-	// NVSentinel cordons and drains a node whose simulated GPU overheats. Only its
-	// own scheduled lane selects the "nvsentinel" label: the datastore and fault
-	// cycle take too long for the pull-request and full CAPD runs.
-	Entry("CAPD NVSentinel", Ordered, ContinueOnFailure, Label("nvsentinel"), testSpec{
-		buildSpec: capdSpec,
-		shape: clusterShape{
-			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
-			workerPools: []nvke.NodePoolSpec{
-				{Name: "mokka-h100", NodeNamePrefix: "mh", DesiredNodeCount: 2, NodeLabels: map[string]string{mokkaLabelKey: "h100"}},
-			},
-		},
-		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{provisioningOnly: true, mokkaGPU: true, nvsentinel: true},
-	}),
+	// In nvsentinel_test.go, which its own lane's path filter watches.
+	capdNVSentinelEntry,
 	// Opt-in via the "cp-controller" label: it exercises cluster-level
 	// control-plane-controller provisioning (no control-plane node pool) and its
 	// update, rolling-update and delete specs.

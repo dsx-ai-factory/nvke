@@ -15,6 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -24,6 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 // NVSentinel (https://github.com/NVIDIA/nvsentinel) on Mokka's simulated GPUs.
@@ -48,6 +50,21 @@ const (
 
 //go:embed testdata/nvsentinel-values.yaml
 var nvsentinelValues []byte
+
+// capdNVSentinelEntry is the "NVKE with backend" entry for NVSentinel. Only its
+// own scheduled lane selects the "nvsentinel" label: the datastore and fault
+// cycle take too long for the pull-request and full CAPD runs.
+var capdNVSentinelEntry = Entry("CAPD NVSentinel", Ordered, ContinueOnFailure, Label("nvsentinel"), testSpec{
+	buildSpec: capdSpec,
+	shape: clusterShape{
+		controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+		workerPools: []nvke.NodePoolSpec{
+			{Name: "mokka-h100", NodeNamePrefix: "mh", DesiredNodeCount: 2, NodeLabels: map[string]string{mokkaLabelKey: "h100"}},
+		},
+	},
+	options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+	validate: validations{provisioningOnly: true, mokkaGPU: true, nvsentinel: true},
+})
 
 // validateNVSentinel installs NVSentinel on the nodes validateMokkaGPU gave
 // simulated GPUs, overheats one GPU, and asserts NVSentinel cordons its node,
@@ -74,7 +91,11 @@ func validateNVSentinel(test *tenantTest) {
 			if err := c.List(ctx, &pods, client.InNamespace(namespace)); err != nil {
 				return err
 			}
-			return joinProblems(namespace, podsNotReady(pods.Items))
+			var jobs batchv1.JobList
+			if err := c.List(ctx, &jobs, client.InNamespace(namespace)); err != nil {
+				return err
+			}
+			return joinProblems(namespace, append(podsNotReady(pods.Items), jobsIncomplete(jobs.Items)...))
 		}).WithContext(ctx).WithTimeout(timeout).WithPolling(sitePoll).Should(Succeed())
 	}
 
@@ -124,6 +145,17 @@ func validateNVSentinel(test *tenantTest) {
 		i := slices.IndexFunc(pods.Items, func(pod corev1.Pod) bool { return pod.Spec.NodeName == target })
 		Expect(i).NotTo(BeNumerically("<", 0), "no Mokka pod on %s", target)
 		mock := &pods.Items[i]
+		// Cool the GPU however the spec ends, so a kept or reused cluster has no node quarantined.
+		DeferCleanup(func() {
+			if CurrentSpecReport().Failed() && keepOnFailure() {
+				return
+			}
+			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), siteCleanup)
+			defer cancel()
+			if _, err := kube.Exec(cleanupCtx, restConfig, clientset, mock, "nvml-mock-ctl", "reset", "--gpu", "0"); err != nil {
+				GinkgoLogr.Error(err, "cleanup", "node", target)
+			}
+		})
 		cordoned := func(ctx context.Context) (bool, error) {
 			var node corev1.Node
 			err := c.Get(ctx, client.ObjectKey{Name: target}, &node)
@@ -179,7 +211,8 @@ func sampleNode(ctx context.Context, c client.Client) (string, error) {
 }
 
 // podsNotReady lists the pods that have neither finished nor become Ready. A
-// namespace with no pods yet is not ready either.
+// namespace with no pods yet is not ready either. A failed Job attempt is left
+// to jobsIncomplete.
 func podsNotReady(pods []corev1.Pod) []string {
 	if len(pods) == 0 {
 		return []string{"no pods yet"}
@@ -190,6 +223,18 @@ func podsNotReady(pods []corev1.Pod) []string {
 		finished := pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
 		if !finished && !podReady(pod) {
 			problems = append(problems, pod.Name+" is not Ready")
+		}
+	}
+	return problems
+}
+
+// jobsIncomplete lists the Jobs that have not completed, such as a datastore
+// setup Job whose every attempt failed.
+func jobsIncomplete(jobs []batchv1.Job) []string {
+	var problems []string
+	for i := range jobs {
+		if !jobComplete(jobs[i]) {
+			problems = append(problems, jobs[i].Name+" has not completed")
 		}
 	}
 	return problems

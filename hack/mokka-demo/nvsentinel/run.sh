@@ -43,9 +43,19 @@ wait_for() {
   done
 }
 
+# On any exit, cool the GPU this run heats, then remove the kubeconfig it fetched.
+mock=""
+own_kubeconfig=""
+cleanup() {
+  local status=$?
+  [[ -z "$mock" ]] || kubectl -n mokka exec "$mock" -- nvml-mock-ctl reset --gpu "$TARGET_GPU" >/dev/null 2>&1 || true
+  [[ -z "$own_kubeconfig" ]] || rm -f "$own_kubeconfig"
+  exit "$status"
+}
+trap cleanup EXIT
 if [[ -z "${TENANT_KUBECONFIG:-}" ]]; then
   TENANT_KUBECONFIG="$(mktemp)"
-  trap 'rm -f "$TENANT_KUBECONFIG"' EXIT
+  own_kubeconfig="$TENANT_KUBECONFIG"
   nvkectl get kubeconfig "$CLUSTER" --output-file "$TENANT_KUBECONFIG" >/dev/null
 fi
 export TENANT_KUBECONFIG KUBECONFIG="$TENANT_KUBECONFIG"
@@ -84,8 +94,10 @@ install_nvsentinel || install_nvsentinel
 kubectl -n nvsentinel wait --for=condition=complete job -l app.kubernetes.io/name=create-mongodb-database --timeout=15m >/dev/null ||
   fail "the MongoDB collection-setup Job did not complete"
 all_ready() {
-  ! kubectl -n nvsentinel get pods --field-selector=status.phase!=Succeeded \
-    -o jsonpath='{range .items[*]}{.metadata.name} {.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}' | grep -qv ' True$'
+  local pods
+  pods="$(kubectl -n nvsentinel get pods --field-selector=status.phase!=Succeeded \
+    -o jsonpath='{range .items[*]}{.metadata.name} {.status.conditions[?(@.type=="Ready")].status}{"\n"}{end}')" || return 1
+  [[ -n "$pods" ]] && ! grep -qv ' True$' <<<"$pods"
 }
 if wait_for 900 all_ready; then
   pass "NVSentinel pods are Ready"
@@ -110,15 +122,16 @@ spec:
           image: registry.k8s.io/pause:3.10
           resources: {limits: {nvidia.com/gpu: 1}}
 WORKLOAD
-kubectl rollout status deploy/nvsentinel-sample --timeout=5m >/dev/null
-workload_node() { kubectl get pods -l app=nvsentinel-sample --field-selector=status.phase=Running -o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null; }
+kubectl -n default rollout status deploy/nvsentinel-sample --timeout=5m >/dev/null
+workload_node() { kubectl -n default get pods -l app=nvsentinel-sample --field-selector=status.phase=Running -o jsonpath='{.items[0].spec.nodeName}' 2>/dev/null; }
 target="$(workload_node)"
 [[ -n "$target" ]] || die "the sample workload is not running"
 pass "sample workload runs on ${target}"
 mock="$(kubectl -n mokka get pods -o name --field-selector "spec.nodeName=${target}" | head -1)"
 
-cordoned() { [[ "$(kubectl get node "$target" -o jsonpath='{.spec.unschedulable}')" == true ]]; }
-uncordoned() { ! cordoned; }
+# Both fail when the node can't be read, so an API error never counts as recovery.
+cordoned() { local u; u="$(kubectl get node "$target" -o jsonpath='{.spec.unschedulable}')" && [[ "$u" == true ]]; }
+uncordoned() { local u; u="$(kubectl get node "$target" -o jsonpath='{.spec.unschedulable}')" && [[ "$u" != true ]]; }
 moved() { local n; n="$(workload_node)"; [[ -n "$n" && "$n" != "$target" ]]; }
 
 step "fault: GPU ${TARGET_GPU} on ${target} at ${HOT_TEMP_C} C"
@@ -142,7 +155,7 @@ if wait_for 600 uncordoned; then
 else
   fail "${target} is still cordoned"
 fi
-kubectl delete deploy nvsentinel-sample --ignore-not-found >/dev/null
+kubectl -n default delete deploy nvsentinel-sample --ignore-not-found >/dev/null
 
 printf '\n'
 if ((failures)); then
