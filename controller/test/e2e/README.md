@@ -256,7 +256,7 @@ and [tenant](#tenant-checks) variable tables describe each one.
 | 28 | A NetworkPolicy enforced | `creates` | Unless a NetworkPolicy in the probe namespace already selects the check's pods | As on a site, in `NVKE_TENANT_NAMESPACE` |
 | 29 | A StatefulSet pod resolved and reached by its headless Service name | `creates` | Always | Always |
 | 30 | A PersistentVolumeClaim bound and written from a pod | `creates` | From `NVKE_SITE_PVC_STORAGE_CLASS`, else the default StorageClass; skips without either | From `NVKE_TENANT_PVC_STORAGE_CLASS`, else the tenant's default StorageClass; skips without either |
-| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates` | Always. With `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, the request must be approved or denied instead; a denial passes, and the report says so. Where no Ready `CertificateRequestPolicy` selects the check's Issuer in the probe namespace, approver-policy would never decide, so the check creates nothing and skips, saying why | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager`, and as on a site with `NVKE_TENANT_CERT_MANAGER_APPROVAL` |
+| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates` | Always. With `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, the request must be approved or denied instead; a denial passes, and the report says so. Where no Ready `CertificateRequestPolicy` selects the check's Issuer in the probe namespace, approver-policy would never decide, so the check creates nothing and skips, saying why. That test does not cover the RBAC binding that lets cert-manager `use` a policy: a policy that selects the Issuer but is not bound leaves the request undecided, and the check fails, naming the policies that selected it | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager`, and as on a site with `NVKE_TENANT_CERT_MANAGER_APPROVAL` |
 
 A tenant also runs these, which compare it with the controller's record of it:
 
@@ -465,7 +465,8 @@ By default checks 2, 3 and 4 read the whole cluster, so on a site that also
 runs other teams' workloads, one of theirs failing fails the run. Set
 `NVKE_SITE_SCOPE: namespaces` in that site's profile to hold those checks, and
 the Argo CD and CloudNativePG ones, to the namespaces nvke installs into or
-depends on: `NVKE_SITE_NAMESPACES` and the declared components' namespaces.
+depends on: `NVKE_SITE_NAMESPACES` and the declared components' namespaces,
+plus `kube-system` and the controller's namespace, which are always in scope.
 List there any namespace nvke relies on but does not install, such as the
 CNI's or the one its database clusters run in, or it goes unchecked. Problems
 outside the scope go in the report as `... outside NVKE_SITE_SCOPE` entries.
@@ -584,6 +585,9 @@ check presents where the controller authenticates
 [Running it on a site](#running-it-on-a-site) shows how to tell whether it
 does. `--controller-version`, `--kubernetes-version` and `--profile` set
 their own variables, so the environment's values of those are not passed.
+The run refuses to start where `NVKE_SITE_VALIDATE`,
+`NVKE_E2E_REQUIRE_EXPECTED_VERSION` or `NKE_E2E_AUTH_DISABLE` is set, even to
+nothing: the image sets them, and changing one can turn every check off.
 
 #### Credentials
 
@@ -617,7 +621,8 @@ names of the variables passed, not their values), a copy of the profile and,
 for `--run-dir` and `--teleport-cluster`, `connect.log`. The run ends with
 the counts, every failure, the reason for each skip, and what a check
 reported without failing, such as a scoped check's findings outside its
-scope. It exits non-zero when a check fails. An interrupt reaches the
+scope. It exits non-zero when a check fails, and when no check passed, as
+where every one skipped or `--only` selected none. An interrupt reaches the
 suite, which deletes what it made on the site before it exits.
 
 ### Tenant checks

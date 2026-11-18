@@ -102,14 +102,23 @@ func TestUnit_SiteValidateScope(t *testing.T) {
 	}
 
 	settings, err := siteValidateFromEnv(envMap(map[string]string{
-		siteScopeEnv:      "namespaces",
-		siteNamespacesEnv: "kube-system,nke",
-		siteComponentsEnv: "argocd,cnpg=databases",
+		siteScopeEnv:            "namespaces",
+		siteNamespacesEnv:       "kube-system,nke",
+		siteComponentsEnv:       "argocd,cnpg=databases",
+		controller.EnvNamespace: "nke",
 	}), absent)
 	require.NoError(t, err)
 	require.Equal(t, siteScope{"kube-system": true, "nke": true, "argocd": true, "databases": true}, settings.checks.scope,
 		"the required namespaces and each declared component's own")
 	require.Contains(t, settings.describe(), siteScopeEnv+"=namespaces: argocd, databases, kube-system, nke")
+
+	settings, err = siteValidateFromEnv(envMap(map[string]string{
+		siteScopeEnv:      "namespaces",
+		siteNamespacesEnv: "team-a",
+	}), absent)
+	require.NoError(t, err)
+	require.Equal(t, siteScope{"team-a": true, "kube-system": true, controller.ServiceNamespace: true}, settings.checks.scope,
+		"a list without kube-system or the controller's namespace still scopes them in")
 }
 
 func TestUnit_SiteSplitScope(t *testing.T) {
