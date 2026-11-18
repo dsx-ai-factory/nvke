@@ -63,11 +63,14 @@ if [[ -z "${TENANT_KUBECONFIG:-}" ]]; then
   nvkectl get kubeconfig "$CLUSTER" --output-file "$TENANT_KUBECONFIG" >/dev/null
 fi
 export TENANT_KUBECONFIG KUBECONFIG="$TENANT_KUBECONFIG"
-# Change nothing if the release or namespace this run would own already exists.
-helm status nvsentinel --namespace nvsentinel >/dev/null 2>&1 &&
-  die "a release named nvsentinel exists; uninstall it first (README.md, Clean up)"
-kubectl get namespace nvsentinel-sample >/dev/null 2>&1 &&
-  die "namespace nvsentinel-sample exists; delete it first (README.md, Clean up)"
+# Change nothing if the release or namespace this run would own already exists, or
+# if either can't be checked.
+existing="$(helm list --namespace nvsentinel --filter '^nvsentinel$' --deployed --failed --pending --short)" ||
+  die "could not list Helm releases in namespace nvsentinel"
+[[ -z "$existing" ]] || die "a release named nvsentinel exists; uninstall it first (README.md, Clean up)"
+existing="$(kubectl get namespace --field-selector metadata.name=nvsentinel-sample --output name)" ||
+  die "could not list namespaces"
+[[ -z "$existing" ]] || die "namespace nvsentinel-sample exists; delete it first (README.md, Clean up)"
 
 step "two Mokka nodes in pool ${POOL}"
 CLUSTER="$CLUSTER" POOL="$POOL" POOL_PREFIX="$POOL_PREFIX" NODE_COUNT=2 LABEL_KEY="$LABEL_KEY" GPU_PROFILE="$GPU_PROFILE" \
