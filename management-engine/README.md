@@ -36,8 +36,8 @@ Kustomize manifests and Go markers are the canonical sources. `make manifests`
 refreshes state definitions; `make chart` uses Kubebuilder and the packaging
 extensions in `hack/chart/` to regenerate the chart.
 See [Helm installation](docs/helm-installation.md) for chart values and topology examples.
-See the [operator release workflow](docs/operator-release-workflow.md) for catalog
-publication, cluster requests and deployment verification.
+See the [operator release workflow](docs/operator-release-workflow.md) for release
+publication, selection and rollout verification.
 `make test` includes `test-controller`; the separate command runs that suite alone.
 
 ### Tilt provider

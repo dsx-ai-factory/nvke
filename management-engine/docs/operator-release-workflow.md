@@ -1,176 +1,236 @@
 # Operator release workflow
 
 Operators publish releases that tenants select through the Cluster Service APIs.
-This runbook covers the catalog, release selection and cluster verification.
-For container images and Helm charts, see [package publication](artifact-publication.md).
+This runbook publishes a release, makes it available through a channel and applies
+it to an existing cluster. For container images and Helm charts, see
+[package publication](artifact-publication.md).
 
-## Prepare the installation and inputs
+## Before starting
 
-The examples use one cluster and default Helm names. Replace `management-dev`,
-`nvke-service-smoke` and resource names with the agreed context, tenant and test resources.
+Confirm the [installation prerequisites](helm-installation.md): compatible pinned
+packages, working API and manager identities, a ready manager and a reachable
+NVKE controller. The image, initialization and infrastructure-provider versions
+must support the intended Kubernetes version and cluster operation.
 
-Before starting, confirm:
+Use the site's published Gateway URL for the tenant API and its approved internal
+endpoint for the operator API. Both URLs below refer to Cluster Service. Keep
+authentication options in protected local [curl configuration files](https://curl.se/docs/manpage.html#-K).
 
-- Manager, state and both APIs are installed with compatible, pinned packages.
-  See [Helm installation](helm-installation.md) for values, credentials and RBAC.
-- The manager is ready and renewing its leader-election Lease. The NVKE controller
-  is reachable, and infrastructure providers support the image and boot scripts.
-- The tenant namespace contains the manager's infrastructure-template ConfigMap.
-  The request uses approved network settings and available capacity.
-- The API workloads have their [operator](../config/dev/operator-api-rbac.yaml)
-  and [tenant](../config/dev/tenant-api-rbac.yaml) datastore permissions. Callers
-  use the agreed authentication setup; keep the operator API internal.
-  Your Kubernetes identity also needs port-forwarding permission.
-
-Prepare public JSON inputs using the schema from the installed version:
-
-| File | Content |
-| --- | --- |
-| `machine-image.json` | Machine image and boot settings. |
-| `cluster-release.json` | Kubernetes version, image reference and initialization. |
-| `node-profile.json` | Worker image, initialization and unique profile/tag pair. |
-| `control-plane-class.json` | Instance types, replicas and rollout settings. |
-| `release-channel.json` | Version selectors, release references and minimum upgrade ages. |
-| `cluster-smoke.json` | A small cluster request selecting the approved offerings. |
-
-Create inputs contain `metadata.name` and `spec`; see the [resource types](../apis/v1)
-and [samples](../config/samples). This channel selects an existing `smoke-release`:
-
-```json
-{
-  "metadata": {"name": "smoke-channel"},
-  "spec": {
-    "releases": {
-      "1.36": [{"name": "smoke-release", "minimumUpgradeAge": "0s"}]
-    }
-  }
-}
-```
-
-Keep client credentials and options in local `operator-access.curl` and
-`tenant-access.curl` files using the [curl configuration format](https://curl.se/docs/manpage.html#-K).
-Protect these files and exclude them from Git and test evidence.
-
-## Connect to the internal APIs
-
-Run each port-forward in a separate terminal:
+Run the examples in Bash, replacing angle-bracket values. Use base URLs without a
+trailing slash or `/v1`. Confirm the active Kubernetes context points to the cluster
+holding Cluster Service state:
 
 ```sh
-kubectl --context=management-dev -n cluster-service-system port-forward --address=127.0.0.1 service/cluster-service-operator-api 18081:8080
+set -euo pipefail
+TENANT_API_URL='<cluster-service-tenant-api-base-url>'
+OPERATOR_API_URL='<cluster-service-operator-api-base-url>'
+TENANT_CURL_CONFIG='<path-to-tenant-curl-config>'
+OPERATOR_CURL_CONFIG='<path-to-operator-curl-config>'
+TENANT_NAMESPACE='<namespace-holding-the-tenant-resources>'
+CLUSTER_NAME='<existing-cluster-name>'
+kubectl config current-context
 ```
 
+The operator needs catalog-write access; the tenant needs access to its cluster.
+The API workloads need their canonical [operator](../config/dev/operator-api-rbac.yaml)
+and [tenant](../config/dev/tenant-api-rbac.yaml) datastore permissions. Keep credentials
+out of Git and captured results.
+
+## Select the release inputs
+
+Choose an existing machine image and channel from the catalog:
+
 ```sh
-kubectl --context=management-dev -n cluster-service-system port-forward --address=127.0.0.1 service/cluster-service-tenant-api 18080:8080
+curl --fail-with-body --config "$OPERATOR_CURL_CONFIG" \
+  "$OPERATOR_API_URL/v1/machine-images"
+curl --fail-with-body --config "$OPERATOR_CURL_CONFIG" \
+  "$OPERATOR_API_URL/v1/cluster-release-channels"
 ```
 
+Set the new release's name, image, Kubernetes version and approved cloud-init
+template from the release artifacts. The selector identifies the version offered
+through the channel; minimum upgrade age controls when a new release is eligible.
+
 ```sh
-curl --fail-with-body -i --config operator-access.curl http://127.0.0.1:18081/readyz
-curl --fail-with-body -i --config tenant-access.curl http://127.0.0.1:18080/readyz
+RELEASE_NAME='<new-release-name>'
+MACHINE_IMAGE_NAME='<published-machine-image-name>'
+KUBERNETES_VERSION='<exact-kubernetes-version>'
+USER_DATA_TEMPLATE='<path-to-approved-cloud-init-template>'
+CHANNEL_NAME='<release-channel-name>'
+VERSION_SELECTOR='<channel-version-selector>'
+MINIMUM_UPGRADE_AGE='<duration>'
 ```
 
-Expect HTTP 200. This checks API access and datastore discovery. Verify external
-routing, DNS and TLS separately.
+Use the schema from the installed version. The [release definition](../apis/v1/clusterrelease_types.go)
+and [initialization fields](../apis/v1/common_types.go) describe optional settings,
+including additional bootstrap files and commands.
 
-## Publish a release
+## Publish the release
 
-Publish in dependency order. For an existing name, GET and compare the object first.
+Build the request directly from those inputs, then inspect it:
 
 ```sh
-curl --fail-with-body --config operator-access.curl -H 'Content-Type: application/json' --data-binary @machine-image.json http://127.0.0.1:18081/v1/machine-images
-curl --fail-with-body --config operator-access.curl -H 'Content-Type: application/json' --data-binary @cluster-release.json http://127.0.0.1:18081/v1/cluster-releases
-curl --fail-with-body --config operator-access.curl -H 'Content-Type: application/json' --data-binary @node-profile.json http://127.0.0.1:18081/v1/node-profiles
-curl --fail-with-body --config operator-access.curl -H 'Content-Type: application/json' --data-binary @control-plane-class.json http://127.0.0.1:18081/v1/control-plane-classes
-curl --fail-with-body --config operator-access.curl -H 'Content-Type: application/json' --data-binary @release-channel.json http://127.0.0.1:18081/v1/cluster-release-channels
+release_body=$(jq -n \
+  --arg name "$RELEASE_NAME" \
+  --arg image "$MACHINE_IMAGE_NAME" \
+  --arg version "$KUBERNETES_VERSION" \
+  --rawfile userData "$USER_DATA_TEMPLATE" \
+  '{metadata: {name: $name}, spec: {
+    kubernetes: {version: $version},
+    machineImageRef: {name: $image},
+    machineInit: {userDataTemplate: $userData}
+  }}')
+printf '%s\n' "$release_body" | jq .
 ```
 
-Expect HTTP 201 and the created object for each POST. Check tenant discovery:
+After review, publish it:
 
 ```sh
-curl --fail-with-body --config tenant-access.curl http://127.0.0.1:18080/v1/control-plane-classes
-curl --fail-with-body --config tenant-access.curl http://127.0.0.1:18080/v1/cluster-release-channels
-curl --fail-with-body --config tenant-access.curl http://127.0.0.1:18080/v1/node-profiles
+curl --fail-with-body -i --config "$OPERATOR_CURL_CONFIG" \
+  -H 'Content-Type: application/json' \
+  --data-binary "$release_body" \
+  "$OPERATOR_API_URL/v1/cluster-releases"
 ```
 
-Expect HTTP 200. Hidden entries or unavailable dependencies can filter the tenant
-view. Use new names for immutable image or release content.
+Expect HTTP 201 and the created release. If the name already exists, GET and compare
+it first. Immutable image or initialization changes require a new release name.
 
-## Update a channel
+## Update the channel
 
-GET the channel and ETag (its version). Put the approved replacement `spec.releases`
-in `reviewed-channel.json`. Preserve other spec fields and writable metadata:
+GET the existing channel and its ETag, which identifies the version being edited:
 
 ```sh
-curl --fail-with-body --config operator-access.curl -D channel.headers -o channel.json http://127.0.0.1:18081/v1/cluster-release-channels/smoke-channel
-jq '{metadata: (.metadata | {name, uid}), spec} | .spec.releases = input.spec.releases' channel.json reviewed-channel.json > updated-channel.json
+curl --fail-with-body --config "$OPERATOR_CURL_CONFIG" \
+  -D channel.headers -o channel.json \
+  "$OPERATOR_API_URL/v1/cluster-release-channels/$CHANNEL_NAME"
 etag=$(awk 'tolower($1) == "etag:" {sub("\r$", ""); print $2}' channel.headers)
-printf '%s\n' "$etag"
+test -n "$etag"
 ```
 
-Stop if GET failed or no ETag was returned. Review `updated-channel.json`, then submit:
+Replace that selector's candidate list with the new release, preserving other
+selectors and settings. Keep only writable metadata from the GET response:
 
 ```sh
-curl --fail-with-body --config operator-access.curl -X PUT -H "If-Match: $etag" -H 'Content-Type: application/json' --data-binary @updated-channel.json http://127.0.0.1:18081/v1/cluster-release-channels/smoke-channel
+channel_body=$(jq \
+  --arg selector "$VERSION_SELECTOR" \
+  --arg release "$RELEASE_NAME" \
+  --arg age "$MINIMUM_UPGRADE_AGE" \
+  '{metadata: (.metadata | {name, uid}), spec}
+   | .spec.releases[$selector] = [{name: $release, minimumUpgradeAge: $age}]' \
+  channel.json)
+printf '%s\n' "$channel_body" | jq .
 ```
 
-Expect HTTP 200. For a stale ETag (HTTP 412), read and review again. PUT accepts
-`metadata.name`, optional `metadata.uid` and `spec`; omit timestamps and status.
-Channel changes remain subject to minimum upgrade ages and existing selections.
-
-## Apply the selection and verify the cluster
-
-Submit the approved request, then inspect API and stored status:
+After review, submit the update:
 
 ```sh
-curl --fail-with-body --config tenant-access.curl -H 'Content-Type: application/json' --data-binary @cluster-smoke.json http://127.0.0.1:18080/v1/clusters
-curl --fail-with-body --config tenant-access.curl http://127.0.0.1:18080/v1/clusters/cluster-service-smoke
-kubectl --context=management-dev -n nvke-service-smoke get nvkeclusters.service.nvke.nvidia.com cluster-service-smoke -o json
-kubectl --context=management-dev -n cluster-service-system logs deployment/cluster-service-controller-manager --since=10m
+curl --fail-with-body -i --config "$OPERATOR_CURL_CONFIG" \
+  -X PUT -H "If-Match: $etag" -H 'Content-Type: application/json' \
+  --data-binary "$channel_body" \
+  "$OPERATOR_API_URL/v1/cluster-release-channels/$CHANNEL_NAME"
 ```
 
-Expect HTTP 201 for POST and 200 for GET. Follow the request until:
+Expect HTTP 200. A stale ETag returns HTTP 412: read the resource and review the
+change again. Updates accept `metadata.name`, optional `metadata.uid` and `spec`;
+timestamps and status are read-only.
 
-- Status reflects the latest requested generation and intended release.
-- The matching cluster/workflow exists in the NVKE controller without errors.
-- Actual cluster and worker readiness agree with reported progress and counts.
+## Select the release for a cluster
 
-An accepted request or `Synced=True` alone does not prove provisioning completed.
-For an existing cluster, GET it and its ETag, prepare the approved spec with only
-writable metadata, and PUT to its named endpoint using `If-Match`, as above.
-Keep the existing cluster name and UID.
+Changing a channel can affect clusters already following it. To select the channel
+and version explicitly for an existing cluster, GET its current state and ETag:
 
-## Diagnose failures and clean up
+```sh
+curl --fail-with-body --config "$TENANT_CURL_CONFIG" \
+  -D cluster.headers -o cluster.json \
+  "$TENANT_API_URL/v1/clusters/$CLUSTER_NAME"
+etag=$(awk 'tolower($1) == "etag:" {sub("\r$", ""); print $2}' cluster.headers)
+test -n "$etag"
+cluster_body=$(jq \
+  --arg channel "$CHANNEL_NAME" --arg version "$VERSION_SELECTOR" \
+  '{metadata: (.metadata | {name, uid}), spec}
+   | .spec.release.channel = {name: $channel, version: $version}' \
+  cluster.json)
+printf '%s\n' "$cluster_body" | jq .
+```
+
+Review the complete spec, including the unchanged node pools, before submitting:
+
+```sh
+curl --fail-with-body -i --config "$TENANT_CURL_CONFIG" \
+  -X PUT -H "If-Match: $etag" -H 'Content-Type: application/json' \
+  --data-binary "$cluster_body" \
+  "$TENANT_API_URL/v1/clusters/$CLUSTER_NAME"
+```
+
+Expect HTTP 200. The manager resolves the selection subject to channel eligibility
+and minimum upgrade age. A successful API response means the request was stored.
+
+Worker releases are selected separately through [node profiles](../apis/v1/nodeprofile_types.go).
+To change one, GET the cluster and ETag again, then use this request transformation
+in place of the channel selection above. Submit it with the same PUT command:
+
+```sh
+NODE_POOL_NAME='<existing-node-pool-name>'
+NODE_PROFILE='<approved-profile>:<tag>'
+cluster_body=$(jq \
+  --arg pool "$NODE_POOL_NAME" --arg profile "$NODE_PROFILE" \
+  'if any(.spec.nodePools[]?; .name == $pool) then
+     {metadata: (.metadata | {name, uid}), spec}
+     | (.spec.nodePools[] | select(.name == $pool) | .nodeProfile) = $profile
+   else error("node pool not found") end' \
+  cluster.json)
+printf '%s\n' "$cluster_body" | jq .
+```
+
+## Verify the rollout
+
+```sh
+curl --fail-with-body --config "$TENANT_CURL_CONFIG" \
+  "$TENANT_API_URL/v1/clusters/$CLUSTER_NAME" | jq .
+kubectl -n "$TENANT_NAMESPACE" \
+  get nvkeclusters.service.nvke.nvidia.com "$CLUSTER_NAME" -o json
+```
+
+Verify that status reflects the latest requested generation and intended release,
+then check the matching NVKE controller operation and actual node readiness.
+Reported progress and worker counts should agree with the running cluster.
+Use the deployment's [Kubernetes API access procedure](../../docs/tenant-clusters/kubernetes-api-access.md)
+to inspect workload nodes. API success or `Synced=True` alone does not prove the
+rollout completed.
+
+## Diagnose failures and retire old releases
 
 | Symptom | Check |
 | --- | --- |
-| Chart pull fails | Argo source URL/version and repository credentials. |
-| `ImagePullBackOff` | Namespace-local pull Secret and the Pod's reference. |
-| HTTP 401/403 | Caller identity, audience and permissions. |
-| API unavailable or datastore forbidden | Datastore connection and workload RBAC. |
-| Request stored, provisioning incomplete | Condition messages, template location, catalog references and backend/provider logs. |
-| Update/delete rejected | ETag, immutable fields and references to the resource. |
+| API unavailable or HTTP 401/403 | Endpoint, caller credentials, permissions and workload readiness. |
+| Update rejected | ETag, immutable fields and resource references. |
+| Release not selected | Channel selector, minimum upgrade age and lifecycle settings. |
+| Request stored, rollout incomplete | Condition messages, tenant template, catalog references and backend/provider logs. |
 
-Exercise one agreed failure on isolated input, such as an invalid profile. Record
-the error and verify existing workers remain unchanged. Correct the input or
-publish a compatible new release; a channel edit is not a guaranteed downgrade.
-For installation problems, follow [upgrade and state-retention guidance](helm-installation.md#crd-ownership-upgrades-and-retention).
+Correct the input or publish a compatible new release. A channel edit is not a
+guaranteed downgrade. For installation problems, follow
+[upgrade and state-retention guidance](helm-installation.md#crd-ownership-upgrades-and-retention).
 
-To remove the test cluster, obtain a fresh ETag, then DELETE:
+Retain previous releases for the agreed recovery period. Once an old release is
+unused and eligible for removal, get a fresh ETag before deleting it:
 
 ```sh
-curl --fail-with-body --config tenant-access.curl -D cluster.headers -o cluster.json http://127.0.0.1:18080/v1/clusters/cluster-service-smoke
-etag=$(awk 'tolower($1) == "etag:" {sub("\r$", ""); print $2}' cluster.headers)
+RETIRED_RELEASE_NAME='<unused-release-name>'
+curl --fail-with-body --config "$OPERATOR_CURL_CONFIG" \
+  -D retired-release.headers -o retired-release.json \
+  "$OPERATOR_API_URL/v1/cluster-releases/$RETIRED_RELEASE_NAME"
+etag=$(awk 'tolower($1) == "etag:" {sub("\r$", ""); print $2}' retired-release.headers)
+test -n "$etag"
+curl --fail-with-body -i --config "$OPERATOR_CURL_CONFIG" \
+  -X DELETE -H "If-Match: $etag" \
+  "$OPERATOR_API_URL/v1/cluster-releases/$RETIRED_RELEASE_NAME"
 ```
 
-Stop if GET failed or no ETag was returned, then run:
+Expect HTTP 202. Remove stale channel references before removing a release; retain
+shared images, schemas, credentials and namespaces still in use.
 
-```sh
-curl --fail-with-body -i --config tenant-access.curl -X DELETE -H "If-Match: $etag" http://127.0.0.1:18080/v1/clusters/cluster-service-smoke
-```
-
-Expect HTTP 202. Wait for backend cleanup before removing test-owned catalog
-entries; retain shared schemas, credentials and namespaces.
-
-Record package and image references, identity and namespace, request UID and
-generation, API results, backend outcome, failure check and cleanup.
+Record package and image references, cluster and release identities, API results,
+observed outcome and any recovery actions. Keep the generated response files for
+review according to the site's data-handling rules.
 
 Created with AI assistance
