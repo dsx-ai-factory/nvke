@@ -102,38 +102,37 @@ require a new release name.
 
 ## Update the channel
 
-GET the existing channel and its ETag, which identifies the version being edited.
-Continue only after HTTP 200 and a nonempty ETag:
+Fetch the existing channel and display its response headers and JSON:
 
 ```sh
-curl \
-  -w 'HTTP %{http_code}\n' \
-  -D channel.headers -o channel.json \
+curl -D - -o channel.json \
   "${OPERATOR_API_URL:?}/v1/cluster-release-channels/${CHANNEL_NAME:?}"
-etag=$(awk 'tolower($1) == "etag:" {sub("\r$", ""); print $2}' channel.headers)
-printf 'ETag: %s\n' "${etag:?}"
+cat channel.json
 ```
+
+Set `CHANNEL_ETAG` to the response's `ETag` header value, including its double
+quotes. It identifies the version being edited.
 
 Replace that selector's candidate list with the new release, preserving other
 selectors and settings. Keep only writable metadata from the GET response:
 
 ```sh
-channel_body=$(jq \
+jq \
   --arg selector "${VERSION_SELECTOR:?}" \
   --arg release "${RELEASE_NAME:?}" \
   --arg age "${MINIMUM_UPGRADE_AGE:?}" \
   '{metadata: (.metadata | {name, uid}), spec}
    | .spec.releases[$selector] = [{name: $release, minimumUpgradeAge: $age}]' \
-  channel.json)
-printf '%s\n' "${channel_body:?}" | jq .
+  channel.json > channel-update.json
+cat channel-update.json
 ```
 
-After review, submit the update:
+Submit the reviewed update:
 
 ```sh
-curl -i \
-  -X PUT -H "If-Match: ${etag:?}" -H 'Content-Type: application/json' \
-  --data-binary "${channel_body:?}" \
+curl -i -X PUT \
+  -H "If-Match: ${CHANNEL_ETAG:?}" -H 'Content-Type: application/json' \
+  --data-binary @channel-update.json \
   "${OPERATOR_API_URL:?}/v1/cluster-release-channels/${CHANNEL_NAME:?}"
 ```
 
