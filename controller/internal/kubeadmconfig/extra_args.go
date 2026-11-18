@@ -172,6 +172,12 @@ func parseFeatureGates(value string) (map[string]bool, error) {
 		if !ok || !featureGateNameRE.MatchString(name) || (setting != "true" && setting != "false") {
 			return nil, fmt.Errorf("feature-gates entry %q is not Name=true or Name=false", strings.TrimSpace(entry))
 		}
+		// AllAlpha and AllBeta set every gate of a stage, including gates a
+		// later Kubernetes version adds, so an upgrade would turn on features
+		// nobody chose. Gates have to be named one by one.
+		if name == "AllAlpha" || name == "AllBeta" {
+			return nil, fmt.Errorf("feature gate %q sets every gate of a stage and isn't accepted; name the gates you need", name)
+		}
 		if _, seen := gates[name]; seen {
 			return nil, fmt.Errorf("feature gate %q is set more than once", name)
 		}

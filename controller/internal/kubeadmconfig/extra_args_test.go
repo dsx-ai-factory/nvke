@@ -122,6 +122,18 @@ func TestValidateExtraArgs(t *testing.T) {
 			wantErr: `feature gate "SchedulerAsyncAPICalls" is set more than once`,
 		},
 		{
+			name:    "AllBeta",
+			version: imageVolumeVersion,
+			args:    ExtraArgs{APIServer: map[string]string{featureGatesFlag: "SELinuxMount=true,AllBeta=true"}},
+			wantErr: `apiServer.extraArgs: feature gate "AllBeta" sets every gate of a stage and isn't accepted`,
+		},
+		{
+			name:    "AllAlpha, even when false",
+			version: imageVolumeVersion,
+			args:    ExtraArgs{Scheduler: map[string]string{featureGatesFlag: "AllAlpha=false"}},
+			wantErr: `scheduler.extraArgs: feature gate "AllAlpha" sets every gate of a stage and isn't accepted`,
+		},
+		{
 			name:    "gate contradicting NVKE's ImageVolume",
 			version: imageVolumeVersion,
 			args:    ExtraArgs{APIServer: map[string]string{featureGatesFlag: "ImageVolume=false"}},

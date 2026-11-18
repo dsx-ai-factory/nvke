@@ -349,7 +349,7 @@ type ConfigProfile struct {
 
 // ControlPlaneComponentConfig Arguments for one control-plane component.
 type ControlPlaneComponentConfig struct {
-	// ExtraArgs Flags for this component, as a map from flag name without the leading "--" to its value. A flag NVKE sets on the component is rejected. feature-gates is merged with the gates NVKE sets, and a gate that contradicts NVKE's is rejected. Flags and gates are not checked against the Kubernetes version. A caller can set any flag NVKE doesn't set, including authentication and authorization flags.
+	// ExtraArgs Flags for this component, as a map from flag name without the leading "--" to its value. A flag NVKE sets on the component is rejected. feature-gates is merged with the gates NVKE sets, and a gate that contradicts NVKE's is rejected, as are AllAlpha and AllBeta. Flags and gates are not checked against the Kubernetes version. A caller can set any flag NVKE doesn't set, including authentication and authorization flags.
 	ExtraArgs map[string]string `json:"extraArgs,omitempty"`
 }
 
