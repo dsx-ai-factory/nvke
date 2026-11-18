@@ -396,6 +396,9 @@ jobs:
             echo "s5cmd_sha256_amd64=$(make --no-print-directory print-S5CMD_SHA256_AMD64)"
             echo "s5cmd_sha256_arm64=$(make --no-print-directory print-S5CMD_SHA256_ARM64)"
             echo "syft_version=$(make --no-print-directory print-SYFT_VERSION)"
+            echo "cyclonedx_cli_version=$(make --no-print-directory print-CYCLONEDX_CLI_VERSION)"
+            echo "cyclonedx_cli_sha256_amd64=$(make --no-print-directory print-CYCLONEDX_CLI_SHA256_AMD64)"
+            echo "cyclonedx_cli_sha256_arm64=$(make --no-print-directory print-CYCLONEDX_CLI_SHA256_ARM64)"
             echo "luks_passphrase=$(make --no-print-directory -C os-image/packer print-LUKS_PASSPHRASE)"
           } >> "$GITHUB_OUTPUT"
 
@@ -408,6 +411,30 @@ jobs:
         uses: anchore/sbom-action/download-syft@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
           syft-version: ${{ steps.versions.outputs.syft_version }}
+
+      # Validates the CycloneDX SBOM extracted below against the 1.6 schema.
+      - name: Install cyclonedx-cli
+        env:
+          CYCLONEDX_CLI_VERSION: ${{ steps.versions.outputs.cyclonedx_cli_version }}
+          CYCLONEDX_CLI_SHA256: ${{ steps.versions.outputs.cyclonedx_cli_sha256_amd64 }}
+          CYCLONEDX_CLI_SHA256_ARM64: ${{ steps.versions.outputs.cyclonedx_cli_sha256_arm64 }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          expected="${CYCLONEDX_CLI_SHA256}"
+          platform=x64
+          if [[ "${ARCH}" == "arm64" ]]; then
+            expected="${CYCLONEDX_CLI_SHA256_ARM64}"
+            platform=arm64
+          fi
+          binary="cyclonedx-linux-${platform}"
+          tmp="$(mktemp -d)"
+          curl -fsSL --retry 8 --retry-all-errors --retry-max-time 240 \
+            -o "${tmp}/${binary}" \
+            "https://github.com/CycloneDX/cyclonedx-cli/releases/download/v${CYCLONEDX_CLI_VERSION}/${binary}"
+          echo "${expected}  ${tmp}/${binary}" | sha256sum -c -
+          sudo install -m 0755 "${tmp}/${binary}" /usr/local/bin/cyclonedx
+          DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 cyclonedx --version
 
       - name: Resolve version and tags
         id: meta
@@ -814,7 +841,7 @@ jobs:
       # documented placeholder (`changeit`, see this workflow's release body
       # and os-image/docs/full-disk-encryption.md), read from the Makefile that
       # baked it in rather than repeated here.
-      - name: Extract an SBOM from the qcow2
+      - name: Extract SBOMs from the qcow2
         env:
           DISK: ${{ steps.disks.outputs.disk }}
           VARIANT: ${{ matrix.variant }}
@@ -827,7 +854,7 @@ jobs:
           [[ "${VARIANT}" == "fde" ]] && passphrase="${LUKS_PASSPHRASE}"
           LUKS_PASSPHRASE="${passphrase}" \
             os-image/packer/scripts/extract-image-sbom.sh \
-              "dist/${DISK}" "dist/${DISK%.qcow2}.spdx.json"
+              "dist/${DISK}" "dist/${DISK%.qcow2}.spdx.json" "dist/${DISK%.qcow2}.cdx.json"
 
       # --artifact-platform is still marked experimental in the ORAS CLI. It is
       # load-bearing: without it the manifest has no platform in its config and
@@ -892,11 +919,12 @@ jobs:
           set -euo pipefail
           mkdir -p assets
           ( cd dist && sha256sum "${DISK}" ) > "assets/checksums-${BUILD}.txt"
-          # The SBOM is hashed here and copied into the upload, so publish-s3
-          # can put it beside the disk it describes.
-          sbom="${DISK%.qcow2}.spdx.json"
-          ( cd dist && sha256sum "${sbom}" ) >> "assets/checksums-${BUILD}.txt"
-          cp "dist/${sbom}" "assets/${sbom}"
+          # The SBOMs are hashed here and copied into the upload, so publish-s3
+          # can put them beside the disk they describe.
+          for sbom in "${DISK%.qcow2}.spdx.json" "${DISK%.qcow2}.cdx.json"; do
+            ( cd dist && sha256sum "${sbom}" ) >> "assets/checksums-${BUILD}.txt"
+            cp "dist/${sbom}" "assets/${sbom}"
+          done
           if [[ "${BUILD}" == "amd64-non-fde" ]]; then
             cp os-image/bin/nvke-os-image-check assets/nvke-os-image-check
             ( cd assets && sha256sum nvke-os-image-check >> "checksums-${BUILD}.txt" )
@@ -1125,10 +1153,10 @@ jobs:
           ARCH: ${{ matrix.arch }}
         run: |
           set -euo pipefail
-          # The SBOM, this leg's checksums and (amd64 non-FDE only) the checker
+          # The SBOMs, this leg's checksums and (amd64 non-FDE only) the checker
           # binary travel with the disk.
           shopt -s nullglob
-          for f in dist/*.qcow2 expected/*.spdx.json expected/checksums-*.txt expected/nvke-os-image-check; do
+          for f in dist/*.qcow2 expected/*.spdx.json expected/*.cdx.json expected/checksums-*.txt expected/nvke-os-image-check; do
             # nullglob drops only an unmatched pattern. The checker is a literal
             # path, so every other leg would hand the uploader a missing file.
             [[ -e "${f}" ]] || continue
@@ -1156,7 +1184,7 @@ jobs:
           bucket="${bucket%%/*}"
           s3_path="${S3_URI#s3://*/}"
           shopt -s nullglob
-          for f in dist/*.qcow2 expected/*.spdx.json expected/checksums-*.txt expected/nvke-os-image-check; do
+          for f in dist/*.qcow2 expected/*.spdx.json expected/*.cdx.json expected/checksums-*.txt expected/nvke-os-image-check; do
             [[ -e "${f}" ]] || continue
             bn="$(basename "$f")"
             key="${s3_path}/os-image/releases/${RELEASE}/${ARCH}/${bn}"

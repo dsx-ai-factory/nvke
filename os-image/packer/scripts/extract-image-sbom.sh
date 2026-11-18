@@ -2,9 +2,16 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Write an SPDX SBOM for a finished node qcow2.
+# Write an SPDX and a CycloneDX 1.6 SBOM for a finished node qcow2.
 #
-# Usage: extract-image-sbom.sh <disk.qcow2> <out.spdx.json>
+# Usage: extract-image-sbom.sh <disk.qcow2> <out.spdx.json> <out.cdx.json>
+#
+# The CycloneDX document is the one reconciled with dpkg: finish-image-sbom.py
+# records each package's dpkg state, marks a package whose copyright file
+# names no license as NOASSERTION, reports license coverage, and fails when
+# the document and the package database disagree. It is then validated
+# against the CycloneDX 1.6 schema. The SPDX document keeps its shape for the
+# consumers that already read it, and now carries licenses as well.
 #
 # The document describes the disk that was just built, not this source tree:
 # the package set is read out of the image's own dpkg database. A node runs
@@ -27,8 +34,10 @@
 
 set -euo pipefail
 
-DISK="${1:?usage: extract-image-sbom.sh <disk.qcow2> <out.spdx.json>}"
-OUT="${2:?usage: extract-image-sbom.sh <disk.qcow2> <out.spdx.json>}"
+USAGE="usage: extract-image-sbom.sh <disk.qcow2> <out.spdx.json> <out.cdx.json>"
+DISK="${1:?${USAGE}}"
+OUT="${2:?${USAGE}}"
+OUT_CDX="${3:?${USAGE}}"
 
 # Only the FDE image needs it. Empty is the correct value for the non-FDE
 # image, which has no LUKS container to open.
@@ -38,7 +47,12 @@ LUKS_PASSPHRASE="${LUKS_PASSPHRASE:-}"
 # for a libvirt session, which no runner here has.
 export LIBGUESTFS_BACKEND="${LIBGUESTFS_BACKEND:-direct}"
 
-for tool in guestfish syft tar jq; do
+# cyclonedx-cli is a self-contained .NET binary, which aborts at startup on a
+# host without libicu unless globalization is switched off. Validation needs
+# no culture data.
+export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT="${DOTNET_SYSTEM_GLOBALIZATION_INVARIANT:-1}"
+
+for tool in guestfish syft tar jq python3 cyclonedx; do
   command -v "${tool}" >/dev/null || {
     echo "::error::${tool} is not on PATH" >&2
     exit 1
@@ -74,7 +88,7 @@ ensure_appliance_kernel
 #     from the command's signature.
 WORK="$(mktemp -d)"
 ROOT="${WORK}/root"
-mkdir -p "${ROOT}/var/lib/dpkg" "${ROOT}/etc" "${ROOT}/usr/lib"
+mkdir -p "${ROOT}/var/lib/dpkg" "${ROOT}/etc" "${ROOT}/usr/lib" "${ROOT}/usr/share/doc"
 
 # One appliance for the whole sequence: booting it is the expensive part, and
 # finding the root filesystem takes several steps that each need a decision
@@ -161,6 +175,14 @@ gf download /usr/lib/os-release "${ROOT}/usr/lib/os-release"
 
 tar -xf "${WORK}/dpkg.tar" -C "${ROOT}/var/lib/dpkg"
 
+# syft reads each package's license from /usr/share/doc/<package>/copyright.
+# provision.sh strips the rest of /usr/share/doc, so this is the copyright
+# files and the symlinks between them, not the documentation.
+if [[ "$(gf is-dir /usr/share/doc)" == "true" ]]; then
+  gf tar-out /usr/share/doc "${WORK}/doc.tar"
+  tar -xf "${WORK}/doc.tar" -C "${ROOT}/usr/share/doc"
+fi
+
 # syft reads the distro from /etc/os-release, and without it every purl comes
 # out as a bare `pkg:deb/<name>` with no `distro=` qualifier -- which is what a
 # vulnerability matcher keys on to decide whether an Ubuntu security update
@@ -188,3 +210,16 @@ if [[ "${packages}" -lt 2 ]]; then
   exit 1
 fi
 echo "Wrote ${OUT}: ${packages} packages from $(basename "${DISK}")"
+
+# A second scan, not a second --output on the first: without file metadata
+# the CycloneDX document lists packages, not every copyright and dpkg info
+# file as a component of its own, but the same setting would also zero the
+# file checksums in the SPDX document.
+SYFT_FILE_METADATA_SELECTION=none syft scan "dir:${ROOT}" \
+  --output "cyclonedx-json@1.6=${OUT_CDX}" \
+  --source-name "$(basename "${DISK}")"
+
+python3 "$(dirname "${BASH_SOURCE[0]}")/finish-image-sbom.py" \
+  --status "${ROOT}/var/lib/dpkg/status" --sbom "${OUT_CDX}"
+cyclonedx validate --input-file "${OUT_CDX}" --input-format json --input-version v1_6 --fail-on-errors
+echo "Wrote ${OUT_CDX}: $(jq '[.components[] | select(.purl // "" | startswith("pkg:deb/"))] | length' "${OUT_CDX}") packages from $(basename "${DISK}")"
