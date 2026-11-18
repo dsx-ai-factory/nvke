@@ -25,6 +25,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
 	certificatesv1 "k8s.io/api/certificates/v1"
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -229,6 +230,7 @@ func newTenantClient(restConfig *rest.Config, clusterName string) (client.Client
 	scheme := runtime.NewScheme()
 	for name, addToScheme := range map[string]func(*runtime.Scheme) error{
 		"apps/v1":                      appsv1.AddToScheme,
+		"batch/v1":                     batchv1.AddToScheme,
 		"certificates.k8s.io/v1":       certificatesv1.AddToScheme,
 		"coordination/v1":              coordinationv1.AddToScheme,
 		"core/v1":                      corev1.AddToScheme,
