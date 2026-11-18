@@ -4,6 +4,7 @@
 package activities
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"slices"
@@ -15,9 +16,11 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
 // rotateFailureDomain moves a pending control-plane node off a failure domain the
@@ -34,7 +37,7 @@ func (a *Activities) rotateFailureDomain(
 	unavailable bool,
 ) (bool, error) {
 	current := machine.Spec.FailureDomain
-	if !a.cfg.ControlPlaneFailureDomainFallbackEnabled || !node.ControlPlane || current == "" {
+	if !node.ControlPlane || current == "" || nodes.IsDeleteInFlight(node) {
 		return false, nil
 	}
 	// A surge is placed in the domain of the node it replaces; moving it can leave
@@ -56,7 +59,7 @@ func (a *Activities) rotateFailureDomain(
 	case node.FailureDomainUnavailableSince == nil:
 		now := time.Now()
 		return false, a.setFailureDomainUnavailableSince(ctx, node, &now)
-	case time.Since(*node.FailureDomainUnavailableSince) < a.cfg.ControlPlaneFailureDomainFallbackGracePeriod:
+	case time.Since(*node.FailureDomainUnavailableSince) < cmp.Or(a.cfg.ControlPlaneFailureDomainFallbackGracePeriod, config.DefaultControlPlaneFailureDomainFallbackGracePeriod):
 		return false, nil
 	}
 

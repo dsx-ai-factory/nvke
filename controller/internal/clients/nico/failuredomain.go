@@ -32,13 +32,6 @@ func RotateFailureDomain(ctx context.Context, deps shared.MachineAdvanceDeps, no
 	return deps.RotateFailureDomain(ctx, node, machine, unavailable)
 }
 
-// FailureDomainUnavailable reports whether CAPNICo's latest instance create for
-// machine failed because NICo had no machine free in the domain machine requests
-// now. A NicoMachine that does not exist yet reports false.
-func (*Client) FailureDomainUnavailable(ctx context.Context, deps shared.MachineAdvanceDeps, machine *clusterv1.Machine) (bool, error) {
-	return failureDomainUnavailable(ctx, deps.K8sClient, machine)
-}
-
 // failureDomainUnavailable reports whether CAPNICo's latest instance create for
 // machine failed because NICo had no machine free in the domain machine requests
 // now. A NicoMachine that does not exist yet reports false.

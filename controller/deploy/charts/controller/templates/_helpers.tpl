@@ -225,13 +225,13 @@ render if it does not parse, as the controller would refuse it at startup.
 {{- end }}
 
 {{/*
-Refuse a non-positive gracePeriod while the fallback is enabled, as the controller does at startup.
+Refuse a non-positive gracePeriod, as the controller does at startup.
 */}}
 {{- define "controller.validateControlPlaneFailureDomainFallback" -}}
 {{- $fallback := .Values.controlPlaneFailureDomainFallback -}}
 {{- $gracePeriod := include "controller.durationNanoseconds" ($fallback.gracePeriod | default "10m") | int64 -}}
-{{- if and $fallback.enabled (le $gracePeriod 0) -}}
-{{- fail "controlPlaneFailureDomainFallback.gracePeriod must be greater than 0 while the fallback is enabled" -}}
+{{- if le $gracePeriod 0 -}}
+{{- fail "controlPlaneFailureDomainFallback.gracePeriod must be greater than 0" -}}
 {{- end -}}
 {{- end }}
 

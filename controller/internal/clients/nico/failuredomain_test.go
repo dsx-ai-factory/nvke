@@ -11,11 +11,14 @@ import (
 	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
 	nicov1 "github.com/dsx-ai-factory/cluster-api-provider-nico/api/v1alpha1"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
+	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
 func TestIsFailureDomainUnavailable(t *testing.T) {
@@ -59,7 +62,7 @@ func TestIsFailureDomainUnavailable(t *testing.T) {
 	}
 }
 
-func TestFailureDomainUnavailable(t *testing.T) {
+func TestRotateFailureDomainPassesUnavailable(t *testing.T) {
 	t.Parallel()
 
 	machine := testCAPINicoMachine()
@@ -74,19 +77,28 @@ func TestFailureDomainUnavailable(t *testing.T) {
 			Reason:  nicov1.FailureDomainUnavailableReason,
 			Message: `failure domain "fd-a": No Machines are available for specified Instance Type`,
 		}}
-		deps := shared.MachineAdvanceDeps{K8sClient: newNicoMachineRotationClient(t, nicoMachine)}
-		got, err := New().FailureDomainUnavailable(context.Background(), deps, machine)
-		require.NoError(t, err)
-		assert.True(t, got)
+		assert.True(t, rotateUnavailable(t, newNicoMachineRotationClient(t, nicoMachine), machine))
 	})
 
 	t.Run("NicoMachine not created yet", func(t *testing.T) {
 		t.Parallel()
 		scheme := runtime.NewScheme()
 		require.NoError(t, nicov1.AddToScheme(scheme))
-		deps := shared.MachineAdvanceDeps{K8sClient: fake.NewClientBuilder().WithScheme(scheme).Build()}
-		got, err := New().FailureDomainUnavailable(context.Background(), deps, machine)
-		require.NoError(t, err)
-		assert.False(t, got)
+		assert.False(t, rotateUnavailable(t, fake.NewClientBuilder().WithScheme(scheme).Build(), machine))
 	})
+}
+
+func rotateUnavailable(t *testing.T, k8sClient client.Client, machine *clusterv1.Machine) bool {
+	t.Helper()
+	var got bool
+	deps := shared.MachineAdvanceDeps{
+		K8sClient: k8sClient,
+		RotateFailureDomain: func(_ context.Context, _ db.Node, _ *clusterv1.Machine, unavailable bool) (bool, error) {
+			got = unavailable
+			return false, nil
+		},
+	}
+	_, err := RotateFailureDomain(context.Background(), deps, db.Node{}, machine)
+	require.NoError(t, err)
+	return got
 }

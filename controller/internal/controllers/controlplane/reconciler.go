@@ -134,14 +134,6 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	// accounting for it. The node write re-enqueues the cluster, and the next
 	// reconcile reads a fresh snapshot where the delete is in flight -- rollout and
 	// scale-down then defer to it and reconcileRequestedDeletes promotes it.
-	replaced, err := r.reconcileStuckPendingNodes(ctx, cluster, controlPlane, provider.MachineMaterialization())
-	if err != nil {
-		return fmt.Errorf("reconciling stuck pending control plane nodes: %w", err)
-	}
-	if replaced {
-		return nil
-	}
-
 	remediated, err := r.remediateMachines(ctx, cluster, controlPlane)
 	if err != nil {
 		return err

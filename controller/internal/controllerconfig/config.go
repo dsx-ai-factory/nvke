@@ -73,13 +73,12 @@ type Config struct {
 
 // ControlPlaneFailureDomainFallbackConfig groups the ControlPlaneFailureDomainFallback* settings in config.Config.
 type ControlPlaneFailureDomainFallbackConfig struct {
-	Enabled     bool            `json:"enabled"`
-	GracePeriod metav1.Duration `json:"gracePeriod"`
+	GracePeriod *metav1.Duration `json:"gracePeriod"`
 }
 
-// validate requires a positive gracePeriod when enabled is true.
+// validate requires gracePeriod, when set, to be positive.
 func (f ControlPlaneFailureDomainFallbackConfig) validate() error {
-	if f.Enabled && f.GracePeriod.Duration <= 0 {
+	if f.GracePeriod != nil && f.GracePeriod.Duration <= 0 {
 		return errors.New("gracePeriod must be greater than 0")
 	}
 	return nil
