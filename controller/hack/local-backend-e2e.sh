@@ -431,16 +431,14 @@ docker exec "${runner_name}" mkdir -p /state
 docker cp "${e2e_binary}" "${runner_name}:/state/cwe-e2e.test"
 docker cp "${internal_kubeconfig}" "${runner_name}:/state/management.kubeconfig"
 docker cp "${e2e_config}" "${runner_name}:/state/e2e-config.json"
-# The Mokka checks install charts on their tenant with helm. In CI the helm on PATH
-# is hack/ci/helm-dockerhub-mirror.sh, which needs bash, so copy the binary behind it.
-for helm_bin in helm-real helm; do
-  if command -v "${helm_bin}" >/dev/null; then
-    docker cp "$(command -v "${helm_bin}")" "${runner_name}:/usr/local/bin/helm"
-    break
-  fi
+# The Mokka checks install charts on their tenant with helm, and the NVSentinel check
+# drives Mokka with kubectl exec. The runner is Linux whatever the host, so it takes
+# both from the CAPD node image, which has them built for this architecture.
+node_tools="$(docker create "${node_image}")"
+for tool in helm kubectl; do
+  docker cp -L "${node_tools}:/usr/bin/${tool}" - | docker cp - "${runner_name}:/usr/local/bin"
 done
-# The NVSentinel check drives Mokka with kubectl exec.
-docker cp -L "$(command -v kubectl)" "${runner_name}:/usr/local/bin/kubectl"
+docker rm "${node_tools}" >/dev/null
 oidc_issuer_host=""
 if [[ "${LOCAL_NKE_E2E_BUILD_TAGS:-}" =~ (^|[[:space:],])oidc_acceptance($|[[:space:],]) ]]; then
   oidc_issuer_host="$(docker inspect --format '{{(index .NetworkSettings.Networks "kind").IPAddress}}' "${runner_name}")"
