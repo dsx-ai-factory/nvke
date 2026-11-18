@@ -392,6 +392,7 @@ container report a new boot ID like a real machine.
 | `NICO_CONTAINERS_ENABLED` | `true` | Enable Docker containers; set to `false` for VM-only custom seeds |
 | `NICO_CONTAINERS_REQUIRE_HEALTHY` | `false` | Fail startup when Docker is unavailable |
 | `NICO_CONTAINERS_NODE_NETWORK` | `kind` | Docker network for container nodes |
+| `NICO_CONTAINERS_NODE_SHM_SIZE` | `16g` | `/dev/shm` size (`docker create --shm-size`) for container nodes; Kata Containers inside a node needs more than Docker's 64 MB default |
 | `NICO_CONTAINERS_NODE_IMAGE` | `cwe-capd-kindest-node:local` | Container node image |
 | `NICO_CONTAINERS_DOCKER_BINARY` | `docker` | Docker CLI path |
 

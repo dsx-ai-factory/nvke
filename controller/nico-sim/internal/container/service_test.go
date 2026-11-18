@@ -107,3 +107,58 @@ esac
 		t.Fatal("instance creation waited for the bootstrap gate")
 	}
 }
+
+func TestUnit_CreateInstanceShmSize(t *testing.T) {
+	inspect := `[{"Config":{"Labels":{"nvidia.com/nico-containers.instance-id":"instance","nvidia.com/nico-containers.site-id":"site","nvidia.com/nico-containers.vpc-id":"vpc","nvidia.com/nico-containers.instance-type-id":"instance-type","nvidia.com/nico-containers.tenant-id":"tenant","nvidia.com/nico-containers.spire-attestation-method":"tpm"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"kind":{"IPAddress":"192.0.2.10"}}}}]`
+	tests := map[string]struct {
+		shmSize string
+		want    string
+	}{
+		"defaults to 16g":           {want: "16g"},
+		"whitespace falls to 16g":   {shmSize: "  ", want: "16g"},
+		"passes the override":       {shmSize: "32g", want: "32g"},
+		"trims whitespace override": {shmSize: " 512m ", want: "512m"},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			argsFile := filepath.Join(dir, "create-args")
+			docker := filepath.Join(dir, "docker")
+			fakeDocker := fmt.Sprintf(`#!/bin/sh
+case "$1" in
+  create)
+    printf '%%s\n' "$@" > '%s'
+    echo container-id
+    ;;
+  inspect) printf '%%s' '%s' ;;
+  exec) cat >/dev/null ;;
+esac
+`, argsFile, inspect)
+			require.NoError(t, os.WriteFile(docker, []byte(fakeDocker), 0o755))
+			service, err := New(Config{
+				OrgID: "org", TenantID: "tenant", SiteID: "site", VPCID: "vpc", SubnetID: "subnet",
+				SSHKeyGroupID: "ssh-group", InstanceTypeID: "instance-type", NodeNetwork: "kind",
+				NodeShmSize: tt.shmSize, DockerBinary: docker,
+			}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			require.NoError(t, err)
+			req := &nicosdk.InstanceCreateRequest{}
+			req.SetName("node")
+			_, err = service.createInstance(context.Background(), "12345678-aaaa", *req)
+			require.NoError(t, err)
+
+			raw, err := os.ReadFile(argsFile)
+			require.NoError(t, err)
+			args := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
+			index := -1
+			for i, arg := range args {
+				if arg == "--shm-size" {
+					index = i
+				}
+			}
+			require.NotEqual(t, -1, index, "docker create args %v lack --shm-size", args)
+			require.Equal(t, tt.want, args[index+1])
+			require.Equal(t, "--network", args[index-2])
+			require.Equal(t, "kind", args[index-1])
+		})
+	}
+}
