@@ -39,10 +39,8 @@ out of Git and captured results.
 Choose an existing machine image and channel from the catalog:
 
 ```sh
-curl -i \
-  "${OPERATOR_API_URL:?}/v1/machine-images"
-curl -i \
-  "${OPERATOR_API_URL:?}/v1/cluster-release-channels"
+curl -i "${OPERATOR_API_URL:?}/v1/machine-images"
+curl -i "${OPERATOR_API_URL:?}/v1/cluster-release-channels"
 ```
 
 Set the new release's name, image, Kubernetes version and approved cloud-init
@@ -65,28 +63,18 @@ including additional bootstrap files and commands.
 
 ## Publish the release
 
-Build the request directly from those inputs, then inspect it:
-
 ```sh
-release_body=$(jq -n \
-  --arg name "${RELEASE_NAME:?}" \
-  --arg image "${MACHINE_IMAGE_NAME:?}" \
-  --arg version "${KUBERNETES_VERSION:?}" \
-  --rawfile userData "${USER_DATA_TEMPLATE:?}" \
-  '{metadata: {name: $name}, spec: {
-    kubernetes: {version: $version},
-    machineImageRef: {name: $image},
-    machineInit: {userDataTemplate: $userData}
-  }}')
-printf '%s\n' "${release_body:?}" | jq .
-```
-
-After review, publish it:
-
-```sh
-curl -i \
-  -H 'Content-Type: application/json' \
-  --data-binary "${release_body:?}" \
+curl -i -H 'Content-Type: application/json' \
+  --data-binary "$(jq -n \
+    --arg name "${RELEASE_NAME:?}" \
+    --arg image "${MACHINE_IMAGE_NAME:?}" \
+    --arg version "${KUBERNETES_VERSION:?}" \
+    --rawfile userData "${USER_DATA_TEMPLATE:?}" \
+    '{metadata: {name: $name}, spec: {
+      kubernetes: {version: $version},
+      machineImageRef: {name: $image},
+      machineInit: {userDataTemplate: $userData}
+    }}')" \
   "${OPERATOR_API_URL:?}/v1/cluster-releases"
 ```
 
@@ -190,8 +178,7 @@ printf '%s\n' "${cluster_body:?}" | jq .
 ## Verify the rollout
 
 ```sh
-curl -i \
-  "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
+curl -i "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
 kubectl -n "${TENANT_NAMESPACE:?}" \
   get nvkeclusters.service.nvke.nvidia.com "${CLUSTER_NAME:?}" -o json
 ```
