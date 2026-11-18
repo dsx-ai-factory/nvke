@@ -12,8 +12,9 @@ so that:
   * every deb component carries its dpkg Status ("want flag state") as the
     nvke:dpkg:status property, so held, unpacked and half-configured packages
     are reported as such;
-  * stubs dpkg lists as not-installed or config-files, which put no package
-    files on the image, are removed;
+  * packages dpkg lists as not-installed or config-files are removed, because
+    dpkg does not count them as installed (a config-files package can still
+    leave its configuration files on the image);
   * every deb component has a license, or an explicit NOASSERTION where its
     copyright file names none, and the share that does is recorded as the
     nvke:license-coverage metadata property;
@@ -34,7 +35,7 @@ from urllib.parse import parse_qs, urlsplit
 STATUS_PROPERTY = "nvke:dpkg:status"
 COVERAGE_PROPERTY = "nvke:license-coverage"
 UNKNOWN_LICENSE = "NOASSERTION"
-# dpkg states that leave no package files on the root filesystem.
+# dpkg states the SBOM excludes: dpkg does not count these as installed.
 ABSENT_STATES = {"not-installed", "config-files"}
 
 

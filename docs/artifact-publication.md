@@ -266,8 +266,9 @@ image:
 - Each package carries its dpkg status as the property `nvke:dpkg:status`, for
   example `hold ok installed` or `install ok half-configured`, so a held or
   half-configured package is reported as one.
-- Packages dpkg lists as `not-installed` or `config-files` are left out: they
-  put no package files on the image.
+- Packages dpkg lists as `not-installed` or `config-files` are left out,
+  because dpkg does not count them as installed. A `config-files` package can
+  still leave its configuration files on the image.
 - The share of packages with a license is the metadata property
   `nvke:license-coverage`, as `<licensed>/<total>`, and is in the build log.
 

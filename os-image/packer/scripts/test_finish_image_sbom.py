@@ -68,7 +68,7 @@ class FinishImageSBOMTest(unittest.TestCase):
                 self.assertEqual(total, 1)
                 self.assertEqual(status_of(sbom["components"][0]), [status])
 
-    def test_drops_stubs_that_put_no_files_on_the_image(self):
+    def test_drops_packages_dpkg_does_not_count_as_installed(self):
         stanzas = [
             stanza("kept", "install ok installed"),
             stanza("removed", "deinstall ok config-files"),
