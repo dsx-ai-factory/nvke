@@ -216,25 +216,49 @@ curl -i "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
 kubectl -n "${TENANT_NAMESPACE:?}" get nvkeclusters.service.nvke.nvidia.com "${CLUSTER_NAME:?}" -o json
 ```
 
-Verify that status reflects the latest requested generation and intended release,
-then check the matching NVKE controller operation and actual node readiness.
-Reported progress and worker counts should agree with the running cluster.
-Use the deployment's [Kubernetes API access procedure](../../docs/tenant-clusters/kubernetes-api-access.md)
-to inspect workload nodes. API success or `Synced=True` alone does not prove the
-rollout completed.
+Check the stored resource and the workload cluster together:
+
+| Check | Expected result |
+| --- | --- |
+| `status.observedGeneration` | Matches `metadata.generation`. Channel edits do not change the cluster's generation, so also check the resolved release. |
+| `status.currentRelease` | Names the intended control-plane release and Kubernetes version. This records backend configuration, not completed node replacement. |
+| `status.conditions` | Current `Synced`, `ControlPlaneReady` and `Ready` observations are `True`; inspect their reasons and messages if not. |
+| Backend operation | `NVKEControllerProvisioned` is `True`; provisioning, control-plane upgrading and node recycling have finished, with no reported `NVKEControllerUpdateFailed`. Missing observations do not establish completion. |
+
+Use the [workload cluster access procedure](../../docs/workload-clusters/access.md)
+to obtain its kubeconfig. Set `WORKLOAD_KUBECONFIG` to that file and inspect nodes:
+
+```sh
+kubectl --kubeconfig "${WORKLOAD_KUBECONFIG:?}" get nodes -o wide
+```
+
+All expected nodes must be present and `Ready`. Control-plane nodes must run the
+selected Kubernetes version; worker nodes must match their selected node profiles.
+Compare actual node counts with the requested pools. API success, `currentRelease`
+or `Ready=True` alone does not establish that replacement or scaling has finished.
 
 ## Diagnose failures and retire old releases
 
-| Symptom | Check |
-| --- | --- |
-| API unavailable or HTTP 401/403 | Endpoint, caller credentials, permissions and workload readiness. |
-| Update rejected | ETag, immutable fields and resource references. |
-| Release not selected | Channel selector, minimum upgrade age and lifecycle settings. |
-| Request stored, rollout incomplete | Condition messages, tenant template, catalog references and backend/provider logs. |
+Inspect the resource's conditions and events:
 
-Correct the input or publish a compatible new release. A channel edit is not a
-guaranteed downgrade. For installation problems, follow
-[upgrade and state-retention guidance](helm-installation.md#crd-ownership-upgrades-and-retention).
+```sh
+kubectl -n "${TENANT_NAMESPACE:?}" describe nvkeclusters.service.nvke.nvidia.com "${CLUSTER_NAME:?}"
+```
+
+| Symptom | Next action |
+| --- | --- |
+| API unavailable or HTTP 401/403 | Check the endpoint and workload readiness; confirm the site's caller credentials and permissions before retrying. |
+| HTTP 412 on update | Fetch the resource again, review changes and rebuild the request with its new ETag. |
+| Release not selected | Check the channel/version selection, minimum upgrade age and release lifecycle fields. Correct those inputs before retrying. |
+| `ClusterReconciled=False` or `NodePoolsReconciled=False` | Read the condition message. Check the referenced catalog resources and tenant infrastructure template; correct the failing input. |
+| `NVKEControllerUpdateFailed=True`, stalled replacement or nodes not Ready | Capture the condition messages, backend cluster ID (`status.id`) and node state. Involve the backend/provider owner before making another version change. |
+
+For a bad release, stop promoting it to other channels while investigating. A
+channel edit or Helm rollback does not undo a workload cluster upgrade. Follow
+the [workload upgrade guidance](../../docs/workload-clusters/upgrade.md) for supported
+control-plane and worker operations; recovery from a partially completed upgrade
+needs the backend/provider owner's assessment. For package or datastore problems,
+see [upgrade and state retention](helm-installation.md#crd-ownership-upgrades-and-retention).
 
 Retain previous releases for the agreed recovery period. Set `RETIRED_RELEASE_NAME`
 to the release to remove and inspect it:
