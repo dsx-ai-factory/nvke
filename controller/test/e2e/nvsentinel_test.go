@@ -91,11 +91,14 @@ func validateNVSentinel(test *tenantTest) {
 			if err := c.List(ctx, &pods, client.InNamespace(namespace)); err != nil {
 				return err
 			}
+			if len(pods.Items) == 0 {
+				return fmt.Errorf("no pods in %s yet", namespace)
+			}
 			var jobs batchv1.JobList
 			if err := c.List(ctx, &jobs, client.InNamespace(namespace)); err != nil {
 				return err
 			}
-			return joinProblems(namespace, append(podsNotReady(pods.Items), jobsIncomplete(jobs.Items)...))
+			return joinProblems(namespace+" pods", podProblems(pods.Items, jobs.Items))
 		}).WithContext(ctx).WithTimeout(timeout).WithPolling(sitePoll).Should(Succeed())
 	}
 
@@ -208,34 +211,4 @@ func sampleNode(ctx context.Context, c client.Client) (string, error) {
 		}
 	}
 	return "", nil
-}
-
-// podsNotReady lists the pods that have neither finished nor become Ready. A
-// namespace with no pods yet is not ready either. A failed Job attempt is left
-// to jobsIncomplete.
-func podsNotReady(pods []corev1.Pod) []string {
-	if len(pods) == 0 {
-		return []string{"no pods yet"}
-	}
-	var problems []string
-	for i := range pods {
-		pod := &pods[i]
-		finished := pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
-		if !finished && !podReady(pod) {
-			problems = append(problems, pod.Name+" is not Ready")
-		}
-	}
-	return problems
-}
-
-// jobsIncomplete lists the Jobs that have not completed, such as a datastore
-// setup Job whose every attempt failed.
-func jobsIncomplete(jobs []batchv1.Job) []string {
-	var problems []string
-	for i := range jobs {
-		if !jobComplete(jobs[i]) {
-			problems = append(problems, jobs[i].Name+" has not completed")
-		}
-	}
-	return problems
 }
