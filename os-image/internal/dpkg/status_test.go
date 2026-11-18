@@ -136,6 +136,13 @@ Config-Version: 2.66.1+24.04
 			wantInstalled: []bool{false},
 		},
 		{
+			name:          "config-files from an old dpkg without architecture",
+			input:         "Package: snapd\nStatus: deinstall ok config-files\nVersion: 2.66.1+24.04\n",
+			want:          []Package{{Name: "snapd", Version: "2.66.1+24.04", Status: Status{WantDeinstall, FlagOK, StateConfigFiles}}},
+			wantHeld:      []bool{false},
+			wantInstalled: []bool{false},
+		},
+		{
 			name: "not-installed hold is reported",
 			input: `Package: linux-image-generic
 Status: hold ok not-installed
@@ -218,6 +225,8 @@ Homepage: https://www.openssh.com/
 		{name: "unknown flag", input: "Package: a\nStatus: install bad installed\nArchitecture: all\nVersion: 1\n", wantErr: ErrMalformed, wantErrText: "unknown flag"},
 		{name: "unknown state", input: "Package: a\nStatus: install ok broken\nArchitecture: all\nVersion: 1\n", wantErr: ErrMalformed, wantErrText: "unknown state"},
 		{name: "installed without version", input: "Package: a\nStatus: install ok installed\nArchitecture: all\n", wantErr: ErrMalformed, wantErrText: "lacks Version"},
+		{name: "installed without architecture", input: "Package: a\nStatus: install ok installed\nVersion: 1\n", wantErr: ErrMalformed, wantErrText: "lacks Architecture"},
+		{name: "config-files without version", input: "Package: a\nStatus: deinstall ok config-files\n", wantErr: ErrMalformed, wantErrText: "lacks Version"},
 		{
 			name:        "field repeated in one stanza",
 			input:       "Package: alpha\nStatus: install ok installed\nArchitecture: all\nVersion: 1\npackage: beta\n",

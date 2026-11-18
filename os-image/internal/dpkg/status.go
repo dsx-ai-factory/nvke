@@ -89,7 +89,8 @@ func (s Status) String() string {
 
 // Package is one stanza of the status database. Source and SourceVersion are
 // empty when the binary package carries no Source field; Version and
-// Architecture may be empty for a not-installed or half-installed package.
+// Architecture may be empty for a not-installed or half-installed package, and
+// Architecture for a config-files one.
 type Package struct {
 	Name          string `json:"name"`
 	Version       string `json:"version,omitempty"`
@@ -236,10 +237,14 @@ func newPackage(fields map[string]string) (Package, error) {
 		return Package{}, fmt.Errorf("package %s: %w", p.Name, err)
 	}
 	p.Status = status
-	// dpkg itself leaves Version and Architecture unset on a not-installed or
-	// half-installed record.
-	if status.State != StateNotInstalled && status.State != StateHalfInstalled && (p.Version == "" || p.Architecture == "") {
-		return Package{}, fmt.Errorf("package %s is %s but lacks Version or Architecture", p.Name, status.State)
+	// As dpkg does: a not-installed or half-installed record may lack Version,
+	// and a config-files one written by an old dpkg may also lack Architecture.
+	exempt := status.State == StateNotInstalled || status.State == StateHalfInstalled
+	if !exempt && p.Version == "" {
+		return Package{}, fmt.Errorf("package %s is %s but lacks Version", p.Name, status.State)
+	}
+	if !exempt && status.State != StateConfigFiles && p.Architecture == "" {
+		return Package{}, fmt.Errorf("package %s is %s but lacks Architecture", p.Name, status.State)
 	}
 	// Source is "name" or "name (version)"; without a version the source
 	// version is the binary's.
