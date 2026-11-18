@@ -28,6 +28,13 @@ func envOrDefault(key, defaultVal string) string {
 	return defaultVal
 }
 
+func envTrimmedOrDefault(key, defaultVal string) string {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		return v
+	}
+	return defaultVal
+}
+
 func envOrDefaultInt(key string, defaultVal int) (int, error) {
 	v := os.Getenv(key)
 	if v == "" {
@@ -212,7 +219,7 @@ func Parse(logger *slog.Logger) (Config, error) {
 		DiagSSHPassword:                 envOrDefault("NICO_VMS_DIAG_SSH_PASSWORD", "nico-diag"),
 		ContainerEnabled:                strings.EqualFold(envOrDefault("NICO_CONTAINERS_ENABLED", "true"), "true"),
 		ContainerNodeNetwork:            envOrDefault("NICO_CONTAINERS_NODE_NETWORK", "kind"),
-		ContainerNodeShmSize:            envOrDefault("NICO_CONTAINERS_NODE_SHM_SIZE", "16g"),
+		ContainerNodeShmSize:            envTrimmedOrDefault("NICO_CONTAINERS_NODE_SHM_SIZE", "16g"),
 		ContainerNodeImage:              envOrDefault("NICO_CONTAINERS_NODE_IMAGE", "cwe-capd-kindest-node:local"),
 		ContainerSpireAttestationMethod: envOrDefault("NICO_CONTAINERS_SPIRE_ATTESTATION_METHOD", "tpm"),
 		ContainerDockerBinary:           envOrDefault("NICO_CONTAINERS_DOCKER_BINARY", "docker"),
