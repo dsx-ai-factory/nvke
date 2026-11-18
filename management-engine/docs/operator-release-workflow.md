@@ -63,6 +63,16 @@ including additional bootstrap files and commands.
 
 ## Publish the release
 
+Check that the release name is available:
+
+```sh
+curl -i "${OPERATOR_API_URL:?}/v1/cluster-releases/${RELEASE_NAME:?}"
+```
+
+Continue with publication only after HTTP 404. If the response is HTTP 200,
+compare the existing release with the intended inputs: reuse it if they match,
+or choose a new name if they differ. Resolve other errors before continuing.
+
 Write the request to `release.json` and inspect it:
 
 ```sh
@@ -87,8 +97,8 @@ curl -i -H 'Content-Type: application/json' \
   "${OPERATOR_API_URL:?}/v1/cluster-releases"
 ```
 
-Expect HTTP 201 and the created release. If the name already exists, GET and compare
-it first. Immutable image or initialization changes require a new release name.
+Expect HTTP 201 and the created release. Immutable image or initialization changes
+require a new release name.
 
 ## Update the channel
 
