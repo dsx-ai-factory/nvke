@@ -1190,6 +1190,9 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		MachineAnnotations:          maps.Clone(cfg.MachineAnnotations),
 		MachineLabels:               maps.Clone(cfg.MachineLabels),
 		LaunchLayer:                 apiLaunchLayerControlPlaneProviderFromDB(cfg.LaunchLayer),
+		APIServer:                   apiComponentConfigFromDB(cfg.APIServerExtraArgs),
+		ControllerManager:           apiComponentConfigFromDB(cfg.ControllerManagerExtraArgs),
+		Scheduler:                   apiComponentConfigFromDB(cfg.SchedulerExtraArgs),
 	}
 }
 

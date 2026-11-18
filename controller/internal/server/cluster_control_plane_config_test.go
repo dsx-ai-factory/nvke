@@ -909,6 +909,28 @@ func TestControlPlaneConfig_MachineMetadata(t *testing.T) {
 	}
 }
 
+func TestControlPlaneConfig_ExtraArgs(t *testing.T) {
+	input := &api.CreateClusterControlPlaneConfig{
+		APIServer: &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"feature-gates": "MaxUnavailableStatefulSet=true"}},
+		Scheduler: &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"feature-gates": "SchedulerAsyncAPICalls=true"}},
+	}
+	spec := controlPlaneConfigSpecFromCreateAPI(input, "1.36.0", false, db.ProviderTypeCAPI)
+
+	// The snapshot is stored as JSONB.
+	raw, err := json.Marshal(spec)
+	require.NoError(t, err)
+	var stored db.ControlPlaneConfigSpec
+	require.NoError(t, json.Unmarshal(raw, &stored))
+
+	response := apiControlPlaneConfigFromDB(db.ControlPlaneConfig{ControlPlaneConfigSpec: stored})
+	require.Equal(t, input.APIServer, response.APIServer)
+	require.Equal(t, input.Scheduler, response.Scheduler)
+	require.Nil(t, response.ControllerManager, "a component without arguments is left out")
+
+	input.APIServer.ExtraArgs["feature-gates"] = "changed"
+	require.Equal(t, "MaxUnavailableStatefulSet=true", spec.APIServerExtraArgs["feature-gates"])
+}
+
 func TestValidateCreateClusterRequestFields_MachineMetadata(t *testing.T) {
 	type parameters struct {
 		annotations, labels               map[string]string

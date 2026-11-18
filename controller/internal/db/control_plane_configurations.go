@@ -42,6 +42,12 @@ type ControlPlaneConfigSpec struct {
 	MachineAnnotations          map[string]string                `json:"machine_annotations,omitempty" bun:"-"`
 	MachineLabels               map[string]string                `json:"machine_labels,omitempty" bun:"-"`
 	LaunchLayer                 *LaunchLayerControlPlaneProvider `json:"launch_layer,omitempty" bun:"-"`
+	// APIServerExtraArgs, ControllerManagerExtraArgs and SchedulerExtraArgs are
+	// the operator's flags for each control-plane component, as the caller sent
+	// them. The renderer merges them with the flags NVKE sets.
+	APIServerExtraArgs         map[string]string `json:"api_server_extra_args,omitempty" bun:"-"`
+	ControllerManagerExtraArgs map[string]string `json:"controller_manager_extra_args,omitempty" bun:"-"`
+	SchedulerExtraArgs         map[string]string `json:"scheduler_extra_args,omitempty" bun:"-"`
 }
 
 type NicoControlPlaneProvider struct {
@@ -190,6 +196,9 @@ func normalizeConfigSpec(cfg ControlPlaneConfigSpec) ControlPlaneConfigSpec {
 	out.NodeLabels = CloneStringMap(cfg.NodeLabels)
 	out.MachineAnnotations = CloneStringMap(cfg.MachineAnnotations)
 	out.MachineLabels = CloneStringMap(cfg.MachineLabels)
+	out.APIServerExtraArgs = CloneStringMap(cfg.APIServerExtraArgs)
+	out.ControllerManagerExtraArgs = CloneStringMap(cfg.ControllerManagerExtraArgs)
+	out.SchedulerExtraArgs = CloneStringMap(cfg.SchedulerExtraArgs)
 	out.Nico = cloneNicoControlPlaneProvider(cfg.Nico)
 	out.Capi = cloneCAPIControlPlaneProvider(cfg.Capi)
 	out.LaunchLayer = cloneLaunchLayerControlPlaneProvider(cfg.LaunchLayer)

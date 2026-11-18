@@ -1181,6 +1181,23 @@ components:
         version:
           type: string
           description: Exact agent release version. An empty value disables agent convergence.
+    ControlPlaneComponentConfig:
+      description: Arguments for one control-plane component.
+      type: object
+      additionalProperties: false
+      properties:
+        extraArgs:
+          type: object
+          additionalProperties:
+            type: string
+          description: >-
+            Flags for this component, as a map from flag name without the leading
+            "--" to its value. A flag NVKE sets on the component is rejected.
+            feature-gates is merged with the gates NVKE sets, and a gate that
+            contradicts NVKE's is rejected. Flags and gates are not checked
+            against the Kubernetes version. A caller can set any flag NVKE
+            doesn't set, including authentication and authorization flags.
+          x-go-type-skip-optional-pointer: true
     NodeAgentUpgradeStatus:
       description: The active agent upgrade and latest retry error.
       type: object
@@ -1285,6 +1302,12 @@ components:
           description: Infra provider control plane fields.
         nodeAgentConfig:
           $ref: "#/components/schemas/NodeAgentConfig"
+        apiServer:
+          $ref: "#/components/schemas/ControlPlaneComponentConfig"
+        controllerManager:
+          $ref: "#/components/schemas/ControlPlaneComponentConfig"
+        scheduler:
+          $ref: "#/components/schemas/ControlPlaneComponentConfig"
     ClusterControlPlane:
       type: object
       additionalProperties: false
@@ -1452,6 +1475,12 @@ components:
           $ref: "#/components/schemas/InfraControlPlaneProvider"
         nodeAgentConfig:
           $ref: "#/components/schemas/NodeAgentConfig"
+        apiServer:
+          $ref: "#/components/schemas/ControlPlaneComponentConfig"
+        controllerManager:
+          $ref: "#/components/schemas/ControlPlaneComponentConfig"
+        scheduler:
+          $ref: "#/components/schemas/ControlPlaneComponentConfig"
     UpdateClusterControlPlaneConfig:
       type: object
       additionalProperties: false

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -352,6 +353,9 @@ func controlPlaneConfigSpecFromCreateAPI(
 		KubernetesVersion:           kubernetesVersion,
 		MachineAnnotations:          db.CloneStringMap(c.MachineAnnotations),
 		MachineLabels:               db.CloneStringMap(c.MachineLabels),
+		APIServerExtraArgs:          componentExtraArgsFromAPI(c.APIServer),
+		ControllerManagerExtraArgs:  componentExtraArgsFromAPI(c.ControllerManager),
+		SchedulerExtraArgs:          componentExtraArgsFromAPI(c.Scheduler),
 	}
 
 	if c.NodeAgentConfig != nil && c.NodeAgentConfig.Version != nil {
@@ -391,6 +395,22 @@ func controlPlaneConfigSpecFromCreateAPI(
 	default:
 		return db.ControlPlaneConfigSpec{}
 	}
+}
+
+func componentExtraArgsFromAPI(c *api.ControlPlaneComponentConfig) map[string]string {
+	if c == nil || len(c.ExtraArgs) == 0 {
+		return nil
+	}
+	return maps.Clone(c.ExtraArgs)
+}
+
+// apiComponentConfigFromDB returns nil for a component without arguments, so
+// the response leaves it out.
+func apiComponentConfigFromDB(extraArgs map[string]string) *api.ControlPlaneComponentConfig {
+	if len(extraArgs) == 0 {
+		return nil
+	}
+	return &api.ControlPlaneComponentConfig{ExtraArgs: maps.Clone(extraArgs)}
 }
 
 func dbLaunchLayerControlPlaneProviderFromAPI(provider api.LaunchLayerControlPlaneProvider) db.LaunchLayerControlPlaneProvider {
