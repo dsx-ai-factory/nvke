@@ -58,7 +58,11 @@ LOCAL_NKE_E2E_LABEL_FILTER=nvsentinel hack/local-backend-e2e.sh
 
 ## Clean up
 
+Point `kubectl` and Helm at the workload cluster first, as in [`demo.sh`'s clean-up](../README.md#clean-up).
+
 ```bash
+nvkectl get kubeconfig <WORKLOAD_CLUSTER> --output-file workload.kubeconfig
+export KUBECONFIG=$PWD/workload.kubeconfig
 helm uninstall nvsentinel --namespace nvsentinel
 kubectl delete -f https://github.com/cert-manager/cert-manager/releases/download/v1.19.1/cert-manager.yaml
 helm uninstall nvml-mock-sentinel --namespace mokka
