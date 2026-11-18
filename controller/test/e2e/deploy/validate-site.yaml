@@ -223,6 +223,8 @@ spec:
         - name: validate
           image: "__IMAGE__"
           env:
+            # These win over a validation profile, even blank: delete one to
+            # take it from the profile instead.
             - name: NVKE_CONTROLLER_EXPECTED_VERSION
               value: "__CONTROLLER_VERSION__"
             - name: NVKE_SITE_KUBERNETES_VERSION

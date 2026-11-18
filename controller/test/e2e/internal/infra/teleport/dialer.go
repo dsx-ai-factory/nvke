@@ -93,10 +93,17 @@ func (d *Dialer) Dial(ctx context.Context, target Target) (*Client, error) {
 	}
 
 	hostKey, pin := d.pinHostKey(target)
+	var accepted ssh.PublicKey
 	cfg := &ssh.ClientConfig{
-		User:            target.User,
-		Auth:            []ssh.AuthMethod{ssh.PublicKeys(target.Signer)},
-		HostKeyCallback: hostKey,
+		User: target.User,
+		Auth: []ssh.AuthMethod{ssh.PublicKeys(target.Signer)},
+		HostKeyCallback: func(hostname string, remote net.Addr, key ssh.PublicKey) error {
+			if err := hostKey(hostname, remote, key); err != nil {
+				return err
+			}
+			accepted = key
+			return nil
+		},
 	}
 	type handshake struct {
 		conn  ssh.Conn
@@ -129,7 +136,7 @@ func (d *Dialer) Dial(ctx context.Context, target Target) (*Client, error) {
 			return nil, fmt.Errorf("teleport: ssh to %s@%s through %s: %w%s", target.User, target.Address, target.JumpHost, hs.err, relayDiagnostics(stream))
 		}
 		pin()
-		return &Client{ssh: ssh.NewClient(hs.conn, hs.chans, hs.reqs), stream: stream}, nil
+		return &Client{ssh: ssh.NewClient(hs.conn, hs.chans, hs.reqs), stream: stream, hostKey: accepted}, nil
 	case <-ctx.Done():
 		return nil, fail(ctx.Err())
 	case <-timer.C:

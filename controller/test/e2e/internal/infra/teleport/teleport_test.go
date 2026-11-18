@@ -409,7 +409,10 @@ func TestDialRejectsWrongKey(t *testing.T) {
 
 func TestDialPinsHostKey(t *testing.T) {
 	h := newHarness(t)
-	_ = h.dial(t)
+	c := h.dial(t)
+	if want := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(h.node.hostKey.PublicKey()))); c.HostKey() != want {
+		t.Errorf("HostKey() = %q, want the node's %q", c.HostKey(), want)
+	}
 	_ = h.dial(t)
 
 	h.node.hostKey = newSigner(t)

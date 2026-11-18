@@ -19,7 +19,7 @@ import (
 // A kept node's record round-trips, readable only by its owner.
 func TestSaveRecord(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "node-keys")
-	want := Record{Name: "site-a", Address: "10.0.0.7", User: "ubuntu", JumpHost: "jump", JumpLogin: "root", Key: KeyPath(dir, "site-a")}
+	want := Record{Name: "site-a", Address: "10.0.0.7", User: "ubuntu", JumpHost: "jump", JumpLogin: "root", Key: KeyPath(dir, "site-a"), HostKey: "ssh-ed25519 AAAA"}
 	if err := SaveRecord(dir, want); err != nil {
 		t.Fatal(err)
 	}

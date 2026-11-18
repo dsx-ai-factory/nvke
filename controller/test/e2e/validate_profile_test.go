@@ -117,10 +117,12 @@ func loadValidateProfile(path string) (map[string]string, error) {
 	if err := decoder.Decode(&next); !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("%s: %s holds more than one YAML document", validateProfileEnv, path)
 	}
-	values := map[string]string{}
-	if len(doc.Content) == 0 {
-		return values, nil
+	// A profile that sets nothing is a wrong file or ConfigMap key far more
+	// often than a site built from deploy/nico, which needs no profile.
+	if len(doc.Content) == 0 || doc.Content[0].Kind == yaml.MappingNode && len(doc.Content[0].Content) == 0 {
+		return nil, fmt.Errorf("%s: %s sets nothing; a site that needs no profile is run without one", validateProfileEnv, path)
 	}
+	values := map[string]string{}
 	root := doc.Content[0]
 	if root.Kind != yaml.MappingNode {
 		return nil, fmt.Errorf("%s: %s is not a mapping of variable to value", validateProfileEnv, path)

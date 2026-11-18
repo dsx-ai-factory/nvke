@@ -478,7 +478,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 				record := provision.Record{
 					Name: node.Name, Address: node.IP, User: node.User,
 					JumpHost: node.JumpHost, JumpLogin: node.JumpLogin,
-					Key: provision.KeyPath(dir, node.Name),
+					Key: provision.KeyPath(dir, node.Name), HostKey: node.HostKey,
 				}
 				if cluster.Kubeconfig != "" {
 					if path, err := site.KeepKubeconfig(cluster, dir, node.Name); err != nil {
