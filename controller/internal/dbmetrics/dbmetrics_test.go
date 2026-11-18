@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
@@ -323,8 +324,9 @@ func findLifecycleMetric(families []*io_prometheus_client.MetricFamily, clusterN
 }
 
 // TestUnit_Collector_NodeLifecycleElapsed tests nvke_controller_node_lifecycle_elapsed_seconds.
-// It uses a MockDB so results are independent of the SQLite-incompatible PostgreSQL
-// JSONB/EXTRACT query used in production.
+// It uses a MockDB so results are independent of the query used in production;
+// TestUnit_Collector_NodeLifecycleElapsedIncludesControlPlaneNodes exercises the
+// query itself against a real database.
 func TestUnit_Collector_NodeLifecycleElapsed(t *testing.T) {
 	t.Run("emits no series when query returns empty", func(t *testing.T) {
 		reg := newMockCollector(t, []db.NodeLifecycleElapsed{}, nil)
@@ -415,6 +417,93 @@ func TestUnit_Collector_NodeLifecycleElapsed(t *testing.T) {
 		require.NotNil(t, f)
 		assert.Len(t, f.GetMetric(), 3, "one series per row")
 	})
+}
+
+// findLifecycleNodeMetric finds the series for one node in one lifecycle state.
+func findLifecycleNodeMetric(families []*io_prometheus_client.MetricFamily, clusterName, nodeName, state string) *io_prometheus_client.Metric {
+	f := findMetricFamily(families, "nvke_controller_node_lifecycle_elapsed_seconds")
+	if f == nil {
+		return nil
+	}
+	for _, m := range f.GetMetric() {
+		labels := labelsAsMap(m)
+		if labels["tenant_cluster"] == clusterName && labels["node"] == nodeName && labels["state"] == state {
+			return m
+		}
+	}
+	return nil
+}
+
+// TestUnit_Collector_NodeLifecycleElapsedIncludesControlPlaneNodes runs
+// ListNodeLifecycleElapsed against a real database and asserts that
+// control-plane nodes with no node pool emit series labeled node_type="cp".
+func TestUnit_Collector_NodeLifecycleElapsedIncludesControlPlaneNodes(t *testing.T) {
+	ctx := context.Background()
+	te := setupCollectorTestEnv(ctx, t)
+
+	cluster := te.createCluster(ctx, t, "tenant-a")
+	np := te.createNodePool(ctx, t, cluster, "workers")
+	ns := te.createNodeSet(ctx, t, np)
+
+	transition := time.Now().Add(-2 * time.Hour).UTC()
+	trueCondition := db.Condition{Status: db.ConditionStatusTrue, LastTransitionTime: transition}
+
+	worker := db.Node{
+		ID:                     uuid.New(),
+		ClusterID:              cluster.ID,
+		NodePoolID:             np.ID,
+		NodeSetID:              ns.ID,
+		Name:                   "tenant-a-w-1",
+		IP:                     "10.0.0.10",
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		Conditions:             db.NodeConditions{Pending: trueCondition},
+	}
+	_, err := te.database.CreateNode(ctx, &worker)
+	require.NoError(t, err)
+
+	// A control-plane node managed by the control-plane controller has no node
+	// pool or node set and was previously filtered out by the inner joins.
+	controlPlane := db.Node{
+		ID:                     uuid.New(),
+		ClusterID:              cluster.ID,
+		ControlPlane:           true,
+		Name:                   "tenant-a-cp-1",
+		IP:                     "10.0.0.20",
+		SpireAttestationMethod: db.SpireAttestationMethodTPM,
+		Conditions: db.NodeConditions{
+			Provisioning:       trueCondition,
+			MarkedForRecycling: trueCondition,
+		},
+	}
+	_, err = te.database.CreateNode(ctx, &controlPlane)
+	require.NoError(t, err)
+
+	collector := dbmetrics.NewCollector(testLogger(), te.database)
+	reg := prometheus.NewPedanticRegistry()
+	require.NoError(t, reg.Register(collector))
+	families, err := reg.Gather()
+	require.NoError(t, err)
+
+	tests := []struct {
+		name         string
+		node         string
+		state        string
+		wantNodeType string
+	}{
+		{name: "worker node keeps worker type", node: "tenant-a-w-1", state: "pending", wantNodeType: "worker"},
+		{name: "control-plane node is reported as cp", node: "tenant-a-cp-1", state: "provisioning", wantNodeType: "cp"},
+		{name: "control-plane markedForRecycling row is also reported", node: "tenant-a-cp-1", state: "markedForRecycling", wantNodeType: "cp"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m := findLifecycleNodeMetric(families, "tenant-a", tt.node, tt.state)
+			require.NotNil(t, m, "expected series for %s node %s in state %s", tt.wantNodeType, tt.node, tt.state)
+			assert.Equal(t, tt.wantNodeType, labelsAsMap(m)["node_type"])
+			// The transition was 2h ago: the gauge must read ~7200 seconds, not
+			// merely positive, so a wrong unit (minutes, milliseconds) fails.
+			assert.InDelta(t, (2 * time.Hour).Seconds(), m.GetGauge().GetValue(), 60, "elapsed should be ~2h in seconds")
+		})
+	}
 }
 
 // TestUnit_Collector_NodeInfoIncludesControlPlaneNodes tests that nvke_controller_node_info covers control-plane
