@@ -125,7 +125,7 @@ The node pool side is still under review. Where the management engine takes a po
 
 The controller doesn't check that a flag exists in the Kubernetes version, or that a gate exists, what stage it is at, whether it is locked, or whether its dependencies are on. Either kind of mistake stops the component; see [When an argument is wrong](#when-an-argument-is-wrong).
 
-The request schema checks the shape: each map is from a non-empty flag name to a string value. A flag that kubeadm sets, such as `--etcd-servers` or `--service-account-issuer`, can be overridden, as it can through kubeadm. Overriding one is the caller's responsibility.
+The request schema checks that each map is from a flag name to a string value. The controller also requires a flag name to be lowercase words joined by single hyphens, without the leading `--`. Components turn `_` into `-` when they parse flags, so a name like `enable_admission_plugins` would otherwise get past the check on flags NVKE sets. A flag that kubeadm sets, such as `--etcd-servers` or `--service-account-issuer`, can be overridden, as it can through kubeadm. Overriding one is the caller's responsibility.
 
 ### Arguments NVKE sets
 
