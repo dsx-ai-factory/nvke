@@ -19,12 +19,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
 	"k8s.io/utils/ptr"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
@@ -37,6 +34,9 @@ const (
 	certManagerChart     = "oci://quay.io/jetstack/charts/cert-manager"
 	certManagerVersion   = "v1.19.1"
 	certManagerNamespace = "cert-manager"
+	// nvsentinelGuideValues are Mokka's NVSentinel guide values, which
+	// testdata/nvsentinel-values.yaml is layered over.
+	nvsentinelGuideValues = "https://raw.githubusercontent.com/NVIDIA/k8s-test-infra/797b96a8a57f1285cf18a15d9cbf67cbbb782c14/docs/guides/nv-sentinel/nvsentinel-values.yaml"
 	// nvsentinelWait bounds the datastore, which comes up in stages: the Percona
 	// operator, the replica set, its certificates and a collection-setup Job.
 	nvsentinelWait = 15 * time.Minute
@@ -70,19 +70,12 @@ var capdNVSentinelEntry = Entry("CAPD NVSentinel", Ordered, ContinueOnFailure, L
 // simulated GPUs, overheats one GPU, and asserts NVSentinel cordons its node,
 // drains a GPU workload to another node, and uncordons it once the GPU cools.
 func validateNVSentinel(test *tenantTest) {
-	var (
-		c          client.Client
-		clientset  kubernetes.Interface
-		restConfig *rest.Config
-	)
+	var c client.Client
 	connect := func(ctx context.Context) {
 		GinkgoHelper()
-		if c != nil {
-			return
+		if c == nil {
+			c = expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
 		}
-		restConfig = expectSucceed(test.tenantClients.AdminRESTConfig(ctx, test.cluster.Name))
-		clientset = expectSucceed(kubernetes.NewForConfig(restConfig))
-		c = expectSucceed(test.tenantClients.GetAdminClient(ctx, test.cluster.Name))
 	}
 	ready := func(ctx context.Context, namespace string, timeout time.Duration) {
 		GinkgoHelper()
@@ -125,7 +118,7 @@ func validateNVSentinel(test *tenantTest) {
 		// moment late, failing the install before it creates anything.
 		Eventually(func(ctx context.Context) error {
 			return helmOnTenant(ctx, test, "upgrade", "--install", "nvsentinel", nvsentinelChart, "--version", nvsentinelVersion,
-				"--namespace", nvsentinelNamespace, "--create-namespace", "--values", values,
+				"--namespace", nvsentinelNamespace, "--create-namespace", "--values", nvsentinelGuideValues, "--values", values,
 			)
 		}).WithContext(ctx).WithTimeout(helmRun).WithPolling(sitePoll).Should(Succeed())
 		ready(ctx, nvsentinelNamespace, nvsentinelWait)
@@ -147,7 +140,10 @@ func validateNVSentinel(test *tenantTest) {
 		Expect(c.List(ctx, &pods, client.InNamespace(mokkaNamespace))).To(Succeed())
 		i := slices.IndexFunc(pods.Items, func(pod corev1.Pod) bool { return pod.Spec.NodeName == target })
 		Expect(i).NotTo(BeNumerically("<", 0), "no Mokka pod on %s", target)
-		mock := &pods.Items[i]
+		// Mokka's control CLI runs in the pod's default container.
+		mockCtl := func(ctx context.Context, args ...string) error {
+			return runOnTenant(ctx, test, "kubectl", append([]string{"exec", "--namespace", mokkaNamespace, pods.Items[i].Name, "--", "nvml-mock-ctl"}, args...)...)
+		}
 		// Cool the GPU however the spec ends, so a kept or reused cluster has no node quarantined.
 		DeferCleanup(func() {
 			if CurrentSpecReport().Failed() && keepOnFailure() {
@@ -155,7 +151,7 @@ func validateNVSentinel(test *tenantTest) {
 			}
 			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), siteCleanup)
 			defer cancel()
-			if _, err := kube.Exec(cleanupCtx, restConfig, clientset, mock, "nvml-mock-ctl", "reset", "--gpu", "0"); err != nil {
+			if err := mockCtl(cleanupCtx, "reset", "--gpu", "0"); err != nil {
 				GinkgoLogr.Error(err, "cleanup", "node", target)
 			}
 		})
@@ -165,12 +161,12 @@ func validateNVSentinel(test *tenantTest) {
 			return node.Spec.Unschedulable, err
 		}
 
-		Expect(kube.Exec(ctx, restConfig, clientset, mock, "nvml-mock-ctl", "temp", "--gpu", "0", hotGPUTemp)).Error().NotTo(HaveOccurred())
+		Expect(mockCtl(ctx, "temp", "--gpu", "0", hotGPUTemp)).To(Succeed())
 		Eventually(cordoned).WithContext(ctx).WithTimeout(faultWait).WithPolling(sitePoll).Should(BeTrue(), "NVSentinel did not cordon %s", target)
 		Eventually(sampleNode).WithContext(ctx).WithArguments(c).WithTimeout(faultWait).WithPolling(sitePoll).
 			Should(And(Not(BeEmpty()), Not(Equal(target))), "the workload was not drained off %s", target)
 
-		Expect(kube.Exec(ctx, restConfig, clientset, mock, "nvml-mock-ctl", "reset", "--gpu", "0")).Error().NotTo(HaveOccurred())
+		Expect(mockCtl(ctx, "reset", "--gpu", "0")).To(Succeed())
 		Eventually(cordoned).WithContext(ctx).WithTimeout(faultWait).WithPolling(sitePoll).Should(BeFalse(), "NVSentinel did not uncordon %s", target)
 	}, NodeTimeout(siteCreateTimeout+3*faultWait+time.Minute))
 }

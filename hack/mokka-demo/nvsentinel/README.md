@@ -9,7 +9,7 @@ The run:
 1. Runs [`../demo.sh`](../README.md) for a pool of two Mokka nodes.
 2. Turns on GPU Operator's standalone DCGM, which the GPU Health Monitor polls.
 3. Installs cert-manager, which issues NVSentinel's MongoDB certificates.
-4. Installs NVSentinel with [`nvsentinel-values.yaml`](../../../controller/test/e2e/testdata/nvsentinel-values.yaml), Mokka's guide values: MongoDB through the Percona operator, here in an `emptyDir` so the cluster needs no StorageClass, the thermal-margin watch acting rather than dry-run, and the circuit breaker off for a two-node pool.
+4. Installs NVSentinel with Mokka's guide values, pinned to a commit: MongoDB through the Percona operator, the thermal-margin watch acting rather than dry-run, and the circuit breaker off for a two-node pool. [`nvsentinel-values.yaml`](../../../controller/test/e2e/testdata/nvsentinel-values.yaml) keeps MongoDB's data in an `emptyDir`, so the cluster needs no StorageClass.
 5. Runs a Deployment that requests one GPU on the pool.
 6. Heats one GPU on the workload's node, then resets it.
 
@@ -22,7 +22,7 @@ It prints `PASS` or `FAIL` for each check and exits non-zero if any fails:
 
 ## Run it
 
-Prerequisites are those of [`demo.sh`](../README.md#before-you-begin), plus network access to `ghcr.io` for the NVSentinel chart, `github.com` for cert-manager, and Docker Hub for the Percona images. NVSentinel's core modules run on the control-plane node, so a drain never evicts them.
+Prerequisites are those of [`demo.sh`](../README.md#before-you-begin), plus network access to `ghcr.io` for the NVSentinel chart, `github.com` for cert-manager and the guide values, and Docker Hub for the Percona images. NVSentinel's core modules run on the control-plane node, so a drain never evicts them.
 
 ```bash
 CLUSTER=<WORKLOAD_CLUSTER> hack/mokka-demo/nvsentinel/run.sh

@@ -10,7 +10,8 @@
 set -euo pipefail
 
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-# Shared with the e2e suite, which embeds it.
+# Mokka's NVSentinel guide values, and the override the e2e suite layers over them.
+guide_values="https://raw.githubusercontent.com/NVIDIA/k8s-test-infra/797b96a8a57f1285cf18a15d9cbf67cbbb782c14/docs/guides/nv-sentinel/nvsentinel-values.yaml"
 values="$(cd -- "${here}/../../.." && pwd)/controller/test/e2e/testdata/nvsentinel-values.yaml"
 
 CLUSTER="${CLUSTER:?set CLUSTER to the NVKE workload cluster name}"
@@ -88,7 +89,7 @@ step "NVSentinel ${NVSENTINEL_VERSION}"
 # Percona CRDs a moment after Helm creates them.
 install_nvsentinel() {
   helm upgrade --install nvsentinel oci://ghcr.io/nvidia/nvsentinel --version "$NVSENTINEL_VERSION" \
-    --namespace nvsentinel --create-namespace -f "$values" --timeout "$TIMEOUT" >/dev/null
+    --namespace nvsentinel --create-namespace -f "$guide_values" -f "$values" --timeout "$TIMEOUT" >/dev/null
 }
 install_nvsentinel || install_nvsentinel
 kubectl -n nvsentinel wait --for=condition=complete job -l app.kubernetes.io/name=create-mongodb-database --timeout=15m >/dev/null ||
