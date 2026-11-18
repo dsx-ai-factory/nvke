@@ -436,7 +436,7 @@ docker cp "${e2e_config}" "${runner_name}:/state/e2e-config.json"
 # The Mokka checks install charts on their tenant with helm, and the NVSentinel check
 # drives Mokka with kubectl exec. The runner is Linux whatever the host, so it takes
 # both from the CAPD node image, which has them built for this architecture.
-node_tools="$(docker create "${node_image}")"
+node_tools="$(docker create "${CAPD_NODE_IMAGE:-cwe-capd-kindest-node:local}")"
 for tool in helm kubectl; do
   docker cp -L "${node_tools}:/usr/bin/${tool}" - | docker cp - "${runner_name}:/usr/local/bin"
 done
