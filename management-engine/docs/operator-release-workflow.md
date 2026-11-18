@@ -110,15 +110,14 @@ curl -D - -o channel.json \
 cat channel.json
 ```
 
-Set `CHANNEL_ETAG` to the response's `ETag` header value, including its double
-quotes. It identifies the version being edited.
+Copy the response's `ETag` value into `CHANNEL_ETAG`, keeping the double quotes.
+The API requires it in `If-Match` so the update cannot overwrite a newer change.
 
 Replace that selector's candidate list with the new release, preserving other
 selectors and settings. Keep only writable metadata from the GET response:
 
 ```sh
-jq \
-  --arg selector "${VERSION_SELECTOR:?}" \
+jq --arg selector "${VERSION_SELECTOR:?}" \
   --arg release "${RELEASE_NAME:?}" \
   --arg age "${MINIMUM_UPGRADE_AGE:?}" \
   '{metadata: (.metadata | {name, uid}), spec}
@@ -142,35 +141,31 @@ timestamps and status are read-only.
 
 ## Select the release for a cluster
 
-Changing a channel can affect clusters already following it. To select the channel
-and version explicitly for an existing cluster, GET its current state and ETag:
+Changing a channel can affect clusters already following it. To select a channel
+and version for an existing cluster, fetch its current state:
 
 ```sh
-curl \
-  -w 'HTTP %{http_code}\n' \
-  -D cluster.headers -o cluster.json \
-  "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
-etag=$(awk 'tolower($1) == "etag:" {sub("\r$", ""); print $2}' cluster.headers)
-printf 'ETag: %s\n' "${etag:?}"
+curl -D - -o cluster.json "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
+cat cluster.json
 ```
 
-Expect HTTP 200 and an ETag before building the update:
+Copy the response's `ETag` value into `CLUSTER_ETAG`, keeping the double quotes.
+Write the updated selection to `cluster-update.json`:
 
 ```sh
-cluster_body=$(jq \
-  --arg channel "${CHANNEL_NAME:?}" --arg version "${VERSION_SELECTOR:?}" \
+jq --arg channel "${CHANNEL_NAME:?}" --arg version "${VERSION_SELECTOR:?}" \
   '{metadata: (.metadata | {name, uid}), spec}
    | .spec.release.channel = {name: $channel, version: $version}' \
-  cluster.json)
-printf '%s\n' "${cluster_body:?}" | jq .
+  cluster.json > cluster-update.json
+cat cluster-update.json
 ```
 
-Review the complete spec, including the unchanged node pools, before submitting:
+Review the complete spec, including the unchanged node pools, then submit it:
 
 ```sh
-curl -i \
-  -X PUT -H "If-Match: ${etag:?}" -H 'Content-Type: application/json' \
-  --data-binary "${cluster_body:?}" \
+curl -i -X PUT \
+  -H "If-Match: ${CLUSTER_ETAG:?}" -H 'Content-Type: application/json' \
+  --data-binary @cluster-update.json \
   "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
 ```
 
@@ -179,26 +174,25 @@ and minimum upgrade age. A successful API response means the request was stored.
 
 Worker releases are selected separately through [node profiles](../apis/v1/nodeprofile_types.go).
 Set `NODE_POOL_NAME` to the existing pool and `NODE_PROFILE` to its approved
-`profile:tag`. GET the cluster and ETag again, then use this transformation in
-place of the channel selection above. Submit it with the same PUT command:
+`profile:tag`. Fetch `cluster.json` again and copy its new ETag into `CLUSTER_ETAG`.
+Use this command to change the worker profile, then submit `cluster-update.json`
+with the PUT command above:
 
 ```sh
-cluster_body=$(jq \
-  --arg pool "${NODE_POOL_NAME:?}" --arg profile "${NODE_PROFILE:?}" \
+jq --arg pool "${NODE_POOL_NAME:?}" --arg profile "${NODE_PROFILE:?}" \
   'if any(.spec.nodePools[]?; .name == $pool) then
      {metadata: (.metadata | {name, uid}), spec}
      | (.spec.nodePools[] | select(.name == $pool) | .nodeProfile) = $profile
    else error("node pool not found") end' \
-  cluster.json)
-printf '%s\n' "${cluster_body:?}" | jq .
+  cluster.json > cluster-update.json
+cat cluster-update.json
 ```
 
 ## Verify the rollout
 
 ```sh
 curl -i "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
-kubectl -n "${TENANT_NAMESPACE:?}" \
-  get nvkeclusters.service.nvke.nvidia.com "${CLUSTER_NAME:?}" -o json
+kubectl -n "${TENANT_NAMESPACE:?}" get nvkeclusters.service.nvke.nvidia.com "${CLUSTER_NAME:?}" -o json
 ```
 
 Verify that status reflects the latest requested generation and intended release,
@@ -221,28 +215,23 @@ Correct the input or publish a compatible new release. A channel edit is not a
 guaranteed downgrade. For installation problems, follow
 [upgrade and state-retention guidance](helm-installation.md#crd-ownership-upgrades-and-retention).
 
-Retain previous releases for the agreed recovery period. Once an old release is
-unused and eligible for removal, set `RETIRED_RELEASE_NAME` and get a fresh ETag:
+Retain previous releases for the agreed recovery period. Set `RETIRED_RELEASE_NAME`
+to the release to remove and inspect it:
 
 ```sh
-curl \
-  -w 'HTTP %{http_code}\n' \
-  -D retired-release.headers -o retired-release.json \
-  "${OPERATOR_API_URL:?}/v1/cluster-releases/${RETIRED_RELEASE_NAME:?}"
-etag=$(awk 'tolower($1) == "etag:" {sub("\r$", ""); print $2}' retired-release.headers)
-printf 'ETag: %s\n' "${etag:?}"
+curl -i "${OPERATOR_API_URL:?}/v1/cluster-releases/${RETIRED_RELEASE_NAME:?}"
 ```
 
-After HTTP 200, confirm the release is unused, then delete it:
+Confirm it is unused and remove any remaining channel references. Copy its `ETag`
+into `RELEASE_ETAG`, keeping the double quotes, then delete the release record:
 
 ```sh
-curl -i \
-  -X DELETE -H "If-Match: ${etag:?}" \
+curl -i -X DELETE -H "If-Match: ${RELEASE_ETAG:?}" \
   "${OPERATOR_API_URL:?}/v1/cluster-releases/${RETIRED_RELEASE_NAME:?}"
 ```
 
-Expect HTTP 202. Remove stale channel references before removing a release; retain
-shared images, schemas, credentials and namespaces still in use.
+Expect HTTP 202. Retain shared images, schemas, credentials and namespaces still
+in use.
 
 Record package and image references, cluster and release identities, API results,
 observed outcome and any recovery actions. Keep the generated response files for
