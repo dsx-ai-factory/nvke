@@ -89,7 +89,7 @@ func (s Status) String() string {
 
 // Package is one stanza of the status database. Source and SourceVersion are
 // empty when the binary package carries no Source field; Version and
-// Architecture may be empty for a not-installed package.
+// Architecture may be empty for a not-installed or half-installed package.
 type Package struct {
 	Name          string `json:"name"`
 	Version       string `json:"version,omitempty"`
@@ -135,8 +135,9 @@ func ReadFS(fsys fs.FS) (Manifest, error) {
 
 // Parse reads a status database. Every stanza is reported, including
 // not-installed ones that dpkg keeps for a selection or a hold: callers that
-// want only what is on disk filter on State. A stanza without Package or
-// Status, an unknown Status word, a duplicate name and architecture, or a
+// want only what is on disk filter on State. Field names are matched without
+// regard to case. A stanza without Package or Status, a field repeated in one
+// stanza, an unknown Status word, a duplicate name and architecture, or a
 // database with no stanza at all is an error.
 func Parse(r io.Reader) (Manifest, error) {
 	br := bufio.NewReader(r)
@@ -187,6 +188,11 @@ func Parse(r io.Reader) (Manifest, error) {
 			if fields == nil {
 				fields, start = map[string]string{}, lineNo
 			}
+			// dpkg field names are case-insensitive, and dpkg rejects a field repeated in one stanza.
+			name = strings.ToLower(name)
+			if _, dup := fields[name]; dup {
+				return Manifest{}, fmt.Errorf("%w: line %d: field %q repeated in one stanza", ErrMalformed, lineNo, name)
+			}
 			last = name
 			fields[name] = strings.TrimSpace(value)
 		}
@@ -214,14 +220,14 @@ func Parse(r io.Reader) (Manifest, error) {
 // newPackage builds a Package from one stanza's fields.
 func newPackage(fields map[string]string) (Package, error) {
 	p := Package{
-		Name:         fields["Package"],
-		Version:      fields["Version"],
-		Architecture: fields["Architecture"],
+		Name:         fields["package"],
+		Version:      fields["version"],
+		Architecture: fields["architecture"],
 	}
 	if p.Name == "" {
 		return Package{}, errors.New("no Package field")
 	}
-	raw, ok := fields["Status"]
+	raw, ok := fields["status"]
 	if !ok {
 		return Package{}, fmt.Errorf("package %s has no Status field", p.Name)
 	}
@@ -230,17 +236,18 @@ func newPackage(fields map[string]string) (Package, error) {
 		return Package{}, fmt.Errorf("package %s: %w", p.Name, err)
 	}
 	p.Status = status
-	if status.State != StateNotInstalled && (p.Version == "" || p.Architecture == "") {
+	// dpkg itself leaves Version and Architecture unset on a not-installed or
+	// half-installed record.
+	if status.State != StateNotInstalled && status.State != StateHalfInstalled && (p.Version == "" || p.Architecture == "") {
 		return Package{}, fmt.Errorf("package %s is %s but lacks Version or Architecture", p.Name, status.State)
 	}
 	// Source is "name" or "name (version)"; without a version the source
 	// version is the binary's.
-	if src := fields["Source"]; src != "" {
-		name, version, hasVersion := strings.Cut(src, " (")
-		p.Source = name
-		p.SourceVersion = p.Version
-		if hasVersion {
-			p.SourceVersion = strings.TrimSuffix(version, ")")
+	if src := fields["source"]; src != "" {
+		p.Source, p.SourceVersion = src, p.Version
+		if open := strings.IndexByte(src, '('); open > 0 && strings.HasSuffix(src, ")") {
+			p.Source = strings.TrimSpace(src[:open])
+			p.SourceVersion = strings.TrimSpace(src[open+1 : len(src)-1])
 		}
 	}
 	return p, nil

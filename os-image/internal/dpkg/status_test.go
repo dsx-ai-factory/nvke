@@ -88,6 +88,31 @@ Version: 1.7.27-0ubuntu1
 			wantInstalled: []bool{false},
 		},
 		{
+			name:          "half-installed without version or architecture",
+			input:         "Package: containerd\nStatus: install reinstreq half-installed\n",
+			want:          []Package{{Name: "containerd", Status: Status{WantInstall, FlagReinstReq, StateHalfInstalled}}},
+			wantHeld:      []bool{false},
+			wantInstalled: []bool{false},
+		},
+		{
+			name:          "field names are case-insensitive",
+			input:         "package: bash\nSTATUS: hold ok installed\nArchitecture: amd64\nversion: 5.2\n",
+			want:          []Package{{Name: "bash", Version: "5.2", Architecture: "amd64", Status: Status{WantHold, FlagOK, StateInstalled}}},
+			wantHeld:      []bool{true},
+			wantInstalled: []bool{true},
+		},
+		{
+			name: "source version after a tab or several spaces",
+			input: "Package: zlib1g\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.3+b1\nSource: zlib\t(1.3)\n\n" +
+				"Package: zlib1g-dev\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.3+b1\nSource: zlib   (1.3)\n",
+			want: []Package{
+				{Name: "zlib1g", Version: "1.3+b1", Architecture: "amd64", Source: "zlib", SourceVersion: "1.3", Status: Status{WantInstall, FlagOK, StateInstalled}},
+				{Name: "zlib1g-dev", Version: "1.3+b1", Architecture: "amd64", Source: "zlib", SourceVersion: "1.3", Status: Status{WantInstall, FlagOK, StateInstalled}},
+			},
+			wantHeld:      []bool{false, false},
+			wantInstalled: []bool{true, true},
+		},
+		{
 			name: "installed but reinstall required",
 			input: `Package: containerd
 Status: install reinstreq installed
@@ -193,6 +218,12 @@ Homepage: https://www.openssh.com/
 		{name: "unknown flag", input: "Package: a\nStatus: install bad installed\nArchitecture: all\nVersion: 1\n", wantErr: ErrMalformed, wantErrText: "unknown flag"},
 		{name: "unknown state", input: "Package: a\nStatus: install ok broken\nArchitecture: all\nVersion: 1\n", wantErr: ErrMalformed, wantErrText: "unknown state"},
 		{name: "installed without version", input: "Package: a\nStatus: install ok installed\nArchitecture: all\n", wantErr: ErrMalformed, wantErrText: "lacks Version"},
+		{
+			name:        "field repeated in one stanza",
+			input:       "Package: alpha\nStatus: install ok installed\nArchitecture: all\nVersion: 1\npackage: beta\n",
+			wantErr:     ErrMalformed,
+			wantErrText: "line 5",
+		},
 		{
 			name:        "duplicate name and arch",
 			input:       "Package: a\nStatus: install ok installed\nArchitecture: all\nVersion: 1\n\nPackage: a\nStatus: install ok installed\nArchitecture: all\nVersion: 2\n",
