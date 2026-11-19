@@ -12,8 +12,11 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -233,6 +236,7 @@ func TestValidateAuthConfig(t *testing.T) {
 			cfg: AgentConfig{
 				GRPCAuthMode:           authModeTLSJWT,
 				DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange",
+				DSXIdentityTimeout:     defaultDSXIdentityTimeout,
 			},
 		},
 		{
@@ -264,6 +268,7 @@ func TestValidateAuthConfig(t *testing.T) {
 			cfg: AgentConfig{
 				GRPCAuthMode:             authModeTLSJWT,
 				DSXIdentityExchangeURL:   "https://identity.example.test/v1/exchange",
+				DSXIdentityTimeout:       defaultDSXIdentityTimeout,
 				ControllerClientCABundle: "/etc/nke/controller-ca.crt",
 			},
 		},
@@ -475,4 +480,147 @@ func TestAuditLogCarriesIncomingTraceContext(t *testing.T) {
 	assert.NotContains(t, untracedStreamRecord, "trace_id")
 	assert.NotContains(t, untracedStreamRecord, "span_id")
 	assert.Equal(t, "/grpc.health.v1.Health/Watch", untracedStreamRecord["method"])
+}
+
+// The controller rewrites AGENT_ARGS on a running node, so a list this binary
+// cannot parse has to be rejected while the node is still reachable rather than
+// at the restart that applies it.
+func TestValidateAgentArgs(t *testing.T) {
+	// The cases that must pass name their own audit log, so the result does not
+	// depend on /var/log being writable where the tests run.
+	auditLog := "--audit-log-file=" + filepath.Join(t.TempDir(), "audit.log")
+	tests := map[string]struct {
+		args    []string
+		wantErr bool
+	}{
+		"the arguments a provisioned node runs with": {
+			args: []string{auditLog, "--secure-server-port", "15005", "--controller-audience=nvke-controller"},
+		},
+		"an unknown flag": {
+			args:    []string{"--secure-server-port", "15005", "--not-a-flag"},
+			wantErr: true,
+		},
+		"a value the flag's type rejects": {
+			args:    []string{"--dsx-identity-timeout=soon"},
+			wantErr: true,
+		},
+		"a positional argument the agent would ignore": {
+			args:    []string{"--disable-mtls", "init"},
+			wantErr: true,
+		},
+		"--version, which prints and exits instead of serving": {
+			args:    []string{"--version"},
+			wantErr: true,
+		},
+		"an auth combination the startup check rejects": {
+			args:    []string{"--disable-mtls", "--grpc-auth-mode=tls-jwt"},
+			wantErr: true,
+		},
+		"an unknown gRPC auth mode": {
+			args:    []string{"--grpc-auth-mode=none"},
+			wantErr: true,
+		},
+		"an audience the startup check rejects": {
+			args:    []string{"--controller-audience=someone-else"},
+			wantErr: true,
+		},
+		"a plaintext identity exchange endpoint the client rejects": {
+			args:    []string{"--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url=http://identity.example"},
+			wantErr: true,
+		},
+		"an identity exchange timeout the client rejects": {
+			args: []string{
+				"--grpc-auth-mode=tls-jwt",
+				"--dsx-identity-exchange-url=https://identity.example",
+				"--dsx-identity-timeout=0s",
+			},
+			wantErr: true,
+		},
+		"an https identity exchange endpoint": {
+			args: []string{auditLog, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url=https://identity.example"},
+		},
+		"a listener port outside the valid range": {
+			args:    []string{"--secure-server-port=65536"},
+			wantErr: true,
+		},
+		"a listener port that is not a number": {
+			args:    []string{"--secure-server-port=grpc"},
+			wantErr: true,
+		},
+		"port 0, which binds an arbitrary port the controller cannot find": {
+			args:    []string{"--secure-server-port=0"},
+			wantErr: true,
+		},
+		"an audit-log path in a directory that does not exist": {
+			args:    []string{"--audit-log-file=/no-such-directory/audit.log"},
+			wantErr: true,
+		},
+		"an audit-log path that is a directory": {
+			args:    []string{"--audit-log-file=" + os.TempDir()},
+			wantErr: true,
+		},
+		"an audit-log path that is not a regular file": {
+			args:    []string{"--audit-log-file=/dev/null"},
+			wantErr: true,
+		},
+		"an identity CA bundle that does not exist": {
+			args: []string{
+				"--grpc-auth-mode=tls-jwt",
+				"--dsx-identity-exchange-url=https://identity.example",
+				"--dsx-identity-ca-bundle=/no-such-directory/ca.crt",
+			},
+			wantErr: true,
+		},
+	}
+	for name, params := range tests {
+		t.Run(name, func(t *testing.T) {
+			err := validateAgentArgs(params.args)
+			if params.wantErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
+}
+
+// A candidate audit-log path has to be checked without side effects: the
+// argument list may still be rejected for another reason, and main treats an
+// unopenable audit log as fatal.
+func TestValidateAuditLogPath(t *testing.T) {
+	t.Run("creates no file while probing a path that does not exist yet", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "audit.log")
+		require.NoError(t, validateAuditLogPath(path))
+		_, err := os.Stat(path)
+		assert.True(t, os.IsNotExist(err), "the probe left a file behind at %s", path)
+	})
+
+	t.Run("keeps a file that already exists", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "audit.log")
+		require.NoError(t, os.WriteFile(path, []byte("existing\n"), 0o644))
+		require.NoError(t, validateAuditLogPath(path))
+		contents, err := os.ReadFile(path)
+		require.NoError(t, err)
+		assert.Equal(t, "existing\n", string(contents))
+	})
+
+	t.Run("rejects a FIFO, which would block the open forever", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "audit.fifo")
+		require.NoError(t, syscall.Mkfifo(path, 0o644))
+		require.Error(t, validateAuditLogPath(path))
+	})
+
+	t.Run("rejects a path it could not create", func(t *testing.T) {
+		if os.Geteuid() == 0 {
+			t.Skip("root ignores the directory permissions this case relies on")
+		}
+		dir := t.TempDir()
+		require.NoError(t, os.Chmod(dir, 0o500))
+		t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+		require.Error(t, validateAuditLogPath(filepath.Join(dir, "audit.log")))
+	})
+
+	t.Run("rejects an empty path", func(t *testing.T) {
+		require.Error(t, validateAuditLogPath(""))
+	})
 }

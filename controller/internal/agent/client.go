@@ -56,6 +56,7 @@ type Client interface {
 	ConvergeNodeAgent(ctx context.Context, node db.Node, target, method string) (string, bool, error)
 	ReconfigureSpireAgent(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error)
 	GetSpireAgentStatus(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error)
+	ReconfigureNodeAgentArgs(ctx context.Context, node db.Node, args []string) (*nvkeproto.ReconfigureNodeAgentArgsResponse, error)
 }
 
 type NodeAgentClient struct {
@@ -286,6 +287,27 @@ func (c *NodeAgentClient) ReconfigureSpireAgent(ctx context.Context, node db.Nod
 	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to reconfigure SPIRE agent on node %s: %w", node.Name, err)
+	}
+	return resp, nil
+}
+
+// ReconfigureNodeAgentArgs replaces the node agent's own startup arguments in
+// its environment file, which is otherwise written once at bootstrap. The agent
+// reads them only at startup, so the call changes nothing on the running
+// process; the response reports whether a restart is still pending.
+func (c *NodeAgentClient) ReconfigureNodeAgentArgs(ctx context.Context, node db.Node, args []string) (*nvkeproto.ReconfigureNodeAgentArgsResponse, error) {
+	conn, cleanup, err := c.getGRPCConnection(ctx, node)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to node agent on node %s: %w", node.Name, err)
+	}
+	defer cleanup()
+
+	resp, err := nvkeproto.NewNodeAgentClient(conn).ReconfigureNodeAgentArgs(ctx, &nvkeproto.ReconfigureNodeAgentArgsRequest{Args: args})
+	if status.Code(err) == codes.Unimplemented {
+		return nil, fmt.Errorf("node agent on node %s does not support ReconfigureNodeAgentArgs; upgrade the node agent before retrying: %w", node.Name, err)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to reconfigure node-agent arguments on node %s: %w", node.Name, err)
 	}
 	return resp, nil
 }

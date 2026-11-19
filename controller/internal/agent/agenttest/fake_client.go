@@ -96,6 +96,10 @@ type FakeClient struct {
 	// records no calls for them; a hook that needs to must synchronize itself.
 	ReconfigureSpireAgentHook func(ctx context.Context, node db.Node, req *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error)
 	GetSpireAgentStatusHook   func(ctx context.Context, node db.Node) (*nvkeproto.GetSpireAgentStatusResponse, error)
+
+	// ReconfigureNodeAgentArgsHook produces the response for that RPC. Like the
+	// two above it records no calls; a hook that needs to must synchronize itself.
+	ReconfigureNodeAgentArgsHook func(ctx context.Context, node db.Node, args []string) (*nvkeproto.ReconfigureNodeAgentArgsResponse, error)
 }
 
 func (f *FakeClient) GetEtcdEncryptionKeyIdentity(_ context.Context, node db.Node, digest string) (string, error) {
@@ -338,6 +342,14 @@ func (f *FakeClient) ReconfigureSpireAgent(ctx context.Context, node db.Node, re
 		return nil, errors.New("ReconfigureSpireAgentHook is nil")
 	}
 	return f.ReconfigureSpireAgentHook(ctx, node, req)
+}
+
+// ReconfigureNodeAgentArgs implements agent.Client through ReconfigureNodeAgentArgsHook.
+func (f *FakeClient) ReconfigureNodeAgentArgs(ctx context.Context, node db.Node, args []string) (*nvkeproto.ReconfigureNodeAgentArgsResponse, error) {
+	if f.ReconfigureNodeAgentArgsHook == nil {
+		return nil, errors.New("ReconfigureNodeAgentArgsHook is nil")
+	}
+	return f.ReconfigureNodeAgentArgsHook(ctx, node, args)
 }
 
 // GetSpireAgentStatus implements agent.Client through GetSpireAgentStatusHook.
