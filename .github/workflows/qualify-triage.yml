@@ -8,9 +8,15 @@ name: Qualify triage
 # the tag's Slack thread. Diagnosis only: it re-runs nothing, deletes nothing and
 # takes no Forge machine.
 #
+# THIS FILE IS THE TRIGGERS. The work is in qualify-triage-reusable.yml, which
+# another repository calls the same way, with its own rules and notify
+# configuration. A `workflow_run` trigger has to be declared by the repository
+# whose workflow it watches, so it cannot move there.
+#
 # TWO WAYS TO RUN. When a Qualify e2e run on a beta tag finishes with a failure,
-# this runs on its own, but only if the repository variable QUALIFY_TRIAGE_POST
-# is "true": that variable is the switch, and unset it is off. By hand, a
+# this runs on its own, but only if the variable QUALIFY_TRIAGE_POST of the
+# ci-shared environment is "true": that variable is the switch, and unset it is
+# off. By hand, a
 # dispatch with a run id triages that run. It prints what it would post and
 # posts only when `post` is set, so a rule can be checked against an old failure
 # with no side effect.
@@ -71,133 +77,15 @@ jobs:
       github.repository_id == '1323115536' &&
       (github.event_name == 'workflow_dispatch' ||
       (github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.event == 'push'))
-    # The bot token for Slack is a secret of this environment, as it is for the
-    # qualification's own plan job, which uses it unattended.
-    environment: ci-shared
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.work
-          cache: true
-          cache-dependency-path: |
-            go.work.sum
-            **/go.sum
-
-      - name: Build triage
-        run: go build -o "${RUNNER_TEMP}/triage" ./release/cmd/triage
-
-      - name: Check the rules
-        run: '"${RUNNER_TEMP}/triage" validate --rules release/triage.yaml'
-
-      # Everything after this reads the run from the API, not from the event
-      # payload, and only a validated tag is ever written to an output.
-      - name: Read the run
-        id: run
-        env:
-          RUN_ID: ${{ github.event.workflow_run.id || inputs.run-id }}
-          EVENT_NAME: ${{ github.event_name }}
-          INPUT_ATTEMPT: ${{ inputs.attempt }}
-          EVENT_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
-          INPUT_POST: ${{ inputs.post }}
-          VAR_POST: ${{ vars.QUALIFY_TRIAGE_POST }}
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -Eeuo pipefail
-
-          [[ "${RUN_ID}" =~ ^[0-9]+$ ]] || { echo "::error::the run id is not a number"; exit 1; }
-          [[ -z "${INPUT_ATTEMPT}" || "${INPUT_ATTEMPT}" =~ ^[0-9]+$ ]] || { echo "::error::the attempt is not a number"; exit 1; }
-
-          IFS=$'\t' read -r head event attempt url < <(
-            gh api "repos/${GH_REPO}/actions/runs/${RUN_ID}" \
-              --jq '[.head_branch, .event, .run_attempt, .html_url] | @tsv'
-          )
-
-          # A beta tag run: a push whose branch is a version tag.
-          tag=""
-          if [[ "${event}" == push && "${head}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-            tag="${head}"
-          fi
-
-          # A tag's thread is only posted to when told to: by the variable for
-          # an automatic run, by `post` for a manual one.
-          post=false
-          if [[ -n "${tag}" ]]; then
-            if [[ "${EVENT_NAME}" == workflow_run && "${VAR_POST}" == true ]]; then post=true; fi
-            if [[ "${EVENT_NAME}" == workflow_dispatch && "${INPUT_POST}" == true ]]; then post=true; fi
-          fi
-
-          # An automatic run reads the attempt that finished, from the event and
-          # not the API: a re-run started before this step runs makes the API's
-          # latest attempt the new one, which has no failed jobs yet. A manual
-          # run reads what it was given, else every attempt for the summary and
-          # the latest for a post.
-          want_attempt="${INPUT_ATTEMPT}"
-          if [[ "${EVENT_NAME}" == workflow_run ]]; then
-            [[ "${EVENT_ATTEMPT}" =~ ^[0-9]+$ ]] || { echo "::error::the event's attempt is not a number"; exit 1; }
-            want_attempt="${EVENT_ATTEMPT}"
-          fi
-
-          {
-            echo "run-id=${RUN_ID}"
-            echo "tag=${tag}"
-            echo "url=${url}"
-            echo "post=${post}"
-            echo "post-attempt=${want_attempt:-${attempt}}"
-            echo "summary-attempt=${want_attempt}"
-          } >> "${GITHUB_OUTPUT}"
-
-      - name: Classify
-        env:
-          RUN_ID: ${{ steps.run.outputs.run-id }}
-          ATTEMPT: ${{ steps.run.outputs.summary-attempt }}
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -Eeuo pipefail
-          TRIAGE="${RUNNER_TEMP}/triage" RULES=release/triage.yaml \
-            release/hack/triage-run.sh "${RUN_ID}" | tee -a "${GITHUB_STEP_SUMMARY}"
-
-      # A dry run needs the thread too: a reply is only rendered when there is a
-      # thread to reply in. Downloading it takes no secret. A run with no saved
-      # thread, or an expired one, previews nothing; the summary above still
-      # names every failure.
-      - name: Restore the thread
-        if: steps.run.outputs.tag != ''
-        continue-on-error: true
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: notify-state-${{ steps.run.outputs.run-id }}
-          path: ${{ runner.temp }}/notify-state
-          run-id: ${{ steps.run.outputs.run-id }}
-          github-token: ${{ github.token }}
-
-      # A notification is a courtesy: it must not turn a diagnosis into a
-      # failure. The token reaches this step and no other, and only for a real
-      # post.
-      - name: Reply in the tag's thread
-        if: steps.run.outputs.tag != ''
-        continue-on-error: true
-        timeout-minutes: 5
-        env:
-          RUN_ID: ${{ steps.run.outputs.run-id }}
-          ATTEMPT: ${{ steps.run.outputs.post-attempt }}
-          RUN_URL: ${{ steps.run.outputs.url }}
-          DRY_RUN: ${{ steps.run.outputs.post == 'true' && 'false' || 'true' }}
-          NOTIFY_STATE_KEY: ${{ steps.run.outputs.tag }}
-          STATE_DIR: ${{ runner.temp }}/notify-state
-          SLACK_BOT_TOKEN: ${{ steps.run.outputs.post == 'true' && secrets.NOTIFY_SLACK_BOT_TOKEN || '' }}
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-        run: |
-          set -Eeuo pipefail
-          FORMAT=jsonl TRIAGE="${RUNNER_TEMP}/triage" RULES=release/triage.yaml \
-            release/hack/triage-run.sh "${RUN_ID}" | release/hack/triage-post.sh
+    uses: ./.github/workflows/qualify-triage-reusable.yml
+    with:
+      rules: release/triage.yaml
+      notify-config: release/notify.yml
+      # This repository runs the tools it ships: the commit that triggered this.
+      tools-ref: ${{ github.sha }}
+      # The bot token for Slack is a secret of this environment, as it is for the
+      # qualification's own plan job, which uses it unattended.
+      environment: ci-shared
+      dispatch-run-id: ${{ inputs.run-id }}
+      attempt: ${{ inputs.attempt }}
+      post: ${{ inputs.post == true }}

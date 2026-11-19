@@ -23,12 +23,17 @@ type Result struct {
 // unknownNote is what a person is told when no rule matches.
 const unknownNote = "No rule matches this failure. Read the failed step's log and add a rule if it recurs."
 
-// Classify returns the first rule that matches the failed step and the evidence.
-func (c *Config) Classify(step string, e Evidence) Result {
+// Classify returns the first rule that matches the failed job, its failed step
+// and the evidence.
+func (c *Config) Classify(job, step string, e Evidence) Result {
 	text := e.Text()
 
 	for i := range c.Rules {
 		r := &c.Rules[i]
+
+		if r.job != nil && !r.job.MatchString(job) {
+			continue
+		}
 
 		if r.step != nil && !r.step.MatchString(step) {
 			continue

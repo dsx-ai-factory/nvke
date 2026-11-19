@@ -54,6 +54,10 @@ type Rule struct {
 	// Class groups rules that mean the same thing, such as one failure that
 	// reads differently on two architectures.
 	Class string `json:"class"`
+	// Job is a regular expression matched against the name of the failed job.
+	// Empty matches any job. A repository whose jobs are named differently
+	// uses it to keep a rule to the jobs it is about.
+	Job string `json:"job,omitempty"`
 	// Step is a regular expression matched against the name of the failed
 	// step. Empty matches any step.
 	Step string `json:"step,omitempty"`
@@ -64,25 +68,41 @@ type Rule struct {
 	// Note says what the failure means and what to do, for a person.
 	Note string `json:"note"`
 
+	job   *regexp.Regexp
 	step  *regexp.Regexp
 	match *regexp.Regexp
 }
 
-// Load reads and validates a rules file.
-func Load(path string) (*Config, error) {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("reading the triage rules: %w", err)
+// Load reads and validates rules files. The rules of the files are joined in
+// the order given, so a repository can put its own rules before, or after,
+// those it shares. Rule names are unique across all of them.
+func Load(paths ...string) (*Config, error) {
+	docs := make([][]byte, 0, len(paths))
+
+	for _, path := range paths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("reading the triage rules: %w", err)
+		}
+
+		docs = append(docs, b)
 	}
 
-	return Parse(b)
+	return Parse(docs...)
 }
 
-// Parse validates the contents of a rules file and compiles its expressions.
-func Parse(b []byte) (*Config, error) {
+// Parse validates the contents of rules files, joined in order, and compiles
+// their expressions.
+func Parse(docs ...[]byte) (*Config, error) {
 	var c Config
-	if err := yaml.UnmarshalStrict(b, &c); err != nil {
-		return nil, fmt.Errorf("parsing the triage rules: %w", err)
+
+	for _, b := range docs {
+		var one Config
+		if err := yaml.UnmarshalStrict(b, &one); err != nil {
+			return nil, fmt.Errorf("parsing the triage rules: %w", err)
+		}
+
+		c.Rules = append(c.Rules, one.Rules...)
 	}
 
 	if err := c.compile(); err != nil {
@@ -142,6 +162,12 @@ func (c *Config) compile() error {
 
 		if r.match, err = regexp.Compile(r.Match); err != nil {
 			fail("match: %v", err)
+		}
+
+		if r.Job != "" {
+			if r.job, err = regexp.Compile(r.Job); err != nil {
+				fail("job: %v", err)
+			}
 		}
 
 		if r.Step != "" {

@@ -401,7 +401,7 @@ func TestClassify(t *testing.T) {
 				t.Fatalf("Extract: %v", err)
 			}
 
-			got := cfg.Classify(tt.step, e)
+			got := cfg.Classify("", tt.step, e)
 
 			if got.Class != tt.wantClass || got.Rule != tt.wantRule || got.Action != tt.wantAction {
 				t.Fatalf("got class=%q rule=%q action=%q, want class=%q rule=%q action=%q\nevidence:\n%s",
@@ -466,11 +466,11 @@ func TestStepNarrowsARule(t *testing.T) {
 
 	e := Evidence{Annotations: []string{"boom"}}
 
-	if got := c.Classify("Plan", e); got.Rule != "a" {
+	if got := c.Classify("", "Plan", e); got.Rule != "a" {
 		t.Fatalf("on the Plan step got rule %q, want a", got.Rule)
 	}
 
-	if got := c.Classify("Run the e2e suite", e); got.Class != ClassUnknown {
+	if got := c.Classify("", "Run the e2e suite", e); got.Class != ClassUnknown {
 		t.Fatalf("on another step got class %q, want unknown", got.Class)
 	}
 }
@@ -490,8 +490,53 @@ func TestAnOverlongLineDoesNotStopTheLog(t *testing.T) {
 		t.Fatalf("an overlong line failed the extraction: %v", err)
 	}
 
-	got := cfg.Classify("Check every artifact the plan names", e)
+	got := cfg.Classify("", "Check every artifact the plan names", e)
 	if got.Rule != "os-image-not-published" {
 		t.Errorf("rule = %q, want os-image-not-published; the line after the overlong one was lost", got.Rule)
+	}
+}
+
+func TestAJobFilterKeepsARuleToItsJobs(t *testing.T) {
+	c, err := Parse([]byte("rules:\n  - {name: a, class: c, job: '^forge-', match: boom, action: none, note: n}"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := Evidence{Annotations: []string{"boom"}}
+
+	if got := c.Classify("forge-gb200-amd64", "Run", e); got.Rule != "a" {
+		t.Fatalf("a job the filter names: got %+v", got)
+	}
+
+	if got := c.Classify("hosted-amd64", "Run", e); got.Class != ClassUnknown {
+		t.Fatalf("a job the filter does not name: got %+v", got)
+	}
+
+	if _, err := Parse([]byte("rules:\n  - {name: a, class: c, job: '(', match: boom, action: none, note: n}")); err == nil {
+		t.Fatal("a bad job expression must be rejected")
+	}
+}
+
+func TestRulesFilesAreJoinedInOrderAndNamesStayUnique(t *testing.T) {
+	own := []byte("rules:\n  - {name: own, class: c1, match: boom, action: none, note: n}")
+	shared := []byte("rules:\n  - {name: shared, class: c2, match: boom, action: none, note: n}")
+
+	c, err := Parse(own, shared)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := Evidence{Annotations: []string{"boom"}}
+
+	if got := c.Classify("", "", e); got.Rule != "own" {
+		t.Fatalf("the first file's rule goes first: got %+v", got)
+	}
+
+	if c, _ = Parse(shared, own); c.Classify("", "", e).Rule != "shared" {
+		t.Fatal("order follows the order given")
+	}
+
+	if _, err := Parse(own, own); err == nil {
+		t.Fatal("a name used in two files must be rejected")
 	}
 }
