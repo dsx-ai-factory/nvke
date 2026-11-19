@@ -16,7 +16,7 @@ require (
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/oasdiff/yaml v0.1.1 // indirect
 	github.com/oasdiff/yaml3 v0.0.14 // indirect
-	github.com/rogpeppe/go-internal v1.14.1 // indirect
+	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/stretchr/testify v1.12.1 // indirect
 	golang.org/x/text v0.43.0 // indirect

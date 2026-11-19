@@ -20,7 +20,7 @@ notices-check` verifies it is up to date.
 |---------|---------|--------|--------|
 | `github.com/GehirnInc/crypt` | BSD-2-Clause | `github.com/GehirnInc/crypt@v0.0.0-20230320061759-8cc1b52080c5` | https://github.com/GehirnInc/crypt/blob/8cc1b52080c5/LICENSE |
 | `github.com/apapsch/go-jsonmerge/v2` | MIT | `github.com/apapsch/go-jsonmerge/v2@v2.0.0` | https://github.com/apapsch/go-jsonmerge/blob/v2.0.0/LICENSE |
-| `github.com/beevik/etree` | BSD-2-Clause | `github.com/beevik/etree@v1.6.0` | https://github.com/beevik/etree/blob/v1.6.0/LICENSE |
+| `github.com/beevik/etree` | BSD-2-Clause | `github.com/beevik/etree@v1.7.0` | https://github.com/beevik/etree/blob/v1.7.0/LICENSE |
 | `github.com/beorn7/perks/quantile` | MIT | `github.com/beorn7/perks@v1.0.1` | https://github.com/beorn7/perks/blob/v1.0.1/LICENSE |
 | `github.com/blang/semver/v4` | MIT | `github.com/blang/semver/v4@v4.0.0` | https://github.com/blang/semver/blob/v4.0.0/LICENSE |
 | `github.com/caarlos0/env/v11` | MIT | `github.com/caarlos0/env/v11@v11.4.2` | https://github.com/caarlos0/env/blob/v11.4.2/LICENSE.md |
@@ -95,8 +95,8 @@ notices-check` verifies it is up to date.
 | `github.com/prometheus/procfs` | Apache-2.0 | `github.com/prometheus/procfs@v0.22.0` | https://github.com/prometheus/procfs/blob/v0.22.0/LICENSE |
 | `github.com/puzpuzpuz/xsync/v3` | Apache-2.0 | `github.com/puzpuzpuz/xsync/v3@v3.5.1` | https://github.com/puzpuzpuz/xsync/blob/v3.5.1/LICENSE |
 | `github.com/robfig/cron` | MIT | `github.com/robfig/cron@v1.2.0` | https://github.com/robfig/cron/blob/v1.2.0/LICENSE |
-| `github.com/russellhaering/gosaml2` | Apache-2.0 | `github.com/russellhaering/gosaml2@v0.11.0` | https://github.com/russellhaering/gosaml2/blob/v0.11.0/LICENSE |
-| `github.com/russellhaering/goxmldsig` | Apache-2.0 | `github.com/russellhaering/goxmldsig@v1.6.0` | https://github.com/russellhaering/goxmldsig/blob/v1.6.0/LICENSE |
+| `github.com/russellhaering/gosaml2` | Apache-2.0 | `github.com/russellhaering/gosaml2@v0.12.0` | https://github.com/russellhaering/gosaml2/blob/v0.12.0/LICENSE |
+| `github.com/russellhaering/goxmldsig` | Apache-2.0 | `github.com/russellhaering/goxmldsig@v1.6.1` | https://github.com/russellhaering/goxmldsig/blob/v1.6.1/LICENSE |
 | `github.com/santhosh-tekuri/jsonschema/v6` | Apache-2.0 | `github.com/santhosh-tekuri/jsonschema/v6@v6.0.3` | https://github.com/santhosh-tekuri/jsonschema/blob/v6.0.3/LICENSE |
 | `github.com/spf13/cobra` | Apache-2.0 | `github.com/spf13/cobra@v1.10.2` | https://github.com/spf13/cobra/blob/v1.10.2/LICENSE.txt |
 | `github.com/spf13/pflag` | BSD-3-Clause | `github.com/spf13/pflag@v1.1.0` | https://github.com/spf13/pflag/blob/v1.1.0/LICENSE |
@@ -256,7 +256,7 @@ SOFTWARE.
 
 ### github.com/beevik/etree
 
-_BSD-2-Clause — github.com/beevik/etree@v1.6.0_
+_BSD-2-Clause — github.com/beevik/etree@v1.7.0_
 
 #### LICENSE
 
@@ -9178,7 +9178,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ### github.com/russellhaering/gosaml2
 
-_Apache-2.0 — github.com/russellhaering/gosaml2@v0.11.0_
+_Apache-2.0 — github.com/russellhaering/gosaml2@v0.12.0_
 
 #### LICENSE
 
@@ -9363,7 +9363,7 @@ _Apache-2.0 — github.com/russellhaering/gosaml2@v0.11.0_
 
 ### github.com/russellhaering/goxmldsig
 
-_Apache-2.0 — github.com/russellhaering/goxmldsig@v1.6.0_
+_Apache-2.0 — github.com/russellhaering/goxmldsig@v1.6.1_
 
 #### LICENSE
 

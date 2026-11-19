@@ -69,6 +69,7 @@ require (
 	github.com/pandatix/go-abnf v0.5.3 // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
+	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/spf13/pflag v1.1.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.7.3 // indirect
