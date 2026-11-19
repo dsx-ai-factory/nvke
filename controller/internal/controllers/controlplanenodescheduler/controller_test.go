@@ -116,7 +116,7 @@ func expectProvisionWorkflow(t *testing.T, temporalClient *mockWorkflowStarter, 
 		return opts.TaskQueue == "test-task-queue" &&
 			opts.ID == constants.ProvisionNodeWorkflowPrefix+nodeID.String()
 	}), mock.Anything, mock.MatchedBy(func(input workflows.ProvisionNodeInput) bool {
-		return input.NodeID == nodeID && input.RebootNodeWaitForUptimeTimeout == 5*time.Minute
+		return input.NodeID == nodeID
 	})).Return(mockWorkflowRun{id: nodeID.String()}, nil).Once()
 }
 

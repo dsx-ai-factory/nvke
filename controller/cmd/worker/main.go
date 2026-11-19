@@ -137,7 +137,6 @@ func main() {
 	logger.Info("Loaded nke-controller-config", "path", cfg.ControllerConfigPath, "oidcProviders", len(controllerCfg.OIDC.Providers))
 
 	authenticator, err := authn.Setup(ctx, authn.Options{
-		ConfigPath: cfg.AuthConfigPath,
 		Permissive: cfg.PermissiveMode,
 		Recorder:   metrics.RecordAuthRequest,
 		Config:     controllerCfg.APIAuth.AuthConfig(),
@@ -443,6 +442,7 @@ func main() {
 					},
 				},
 			},
+			Cache: clustercache.CacheOptions{Indexes: bootstrap.KubeletClientCSRCacheIndexes()},
 			ClusterFilter: func(cluster *clusterv1.Cluster) bool {
 				return capi.IsNVKEManagedCluster(cluster, cfg.ManagedByLabelValue)
 			},
@@ -474,6 +474,16 @@ func main() {
 		)
 		if err := bootstrapAuthorizationController.SetupWithManager(k8sControllerManager); err != nil {
 			logger.Error("Failed to set up bootstrap authorization controller", "error", err)
+			os.Exit(1)
+		}
+
+		kubeletClientCSRController := bootstrap.NewKubeletClientCSRController(
+			k8sControllerManager.GetClient(),
+			clusterCache,
+			logger.With("logger", "kubelet-client-csr-controller"),
+		)
+		if err := kubeletClientCSRController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up kubelet client CSR controller", "error", err)
 			os.Exit(1)
 		}
 	} else {

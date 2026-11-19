@@ -90,6 +90,7 @@ UNIT_PACKAGES = $(shell $(GO) list ./... | grep -v -E '/(apis|controllers)(/|$$)
 test-unit: fmt vet ## Run unit tests without a Kubernetes API server.
 	@$(COVERAGE_MKDIR)
 	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,unit) -covermode=$(GO_COVER_MODE) $(UNIT_PACKAGES)
+	python3 -B ./hack/test_publish.py
 
 .PHONY: test-integration
 test-integration: ENVTEST_K8S_VERSION=1.37.0
@@ -101,9 +102,9 @@ test-integration: fmt vet setup-envtest ginkgo ## Run resource and public API in
 # Separate test invocations need distinct profiles to avoid overwriting coverage.
 # hack/coverage.sh treats every coverage/management-engine*.out as this
 # module's, and the suffixes come from make/coverage.mk.
-test-api: manifests generate fmt vet ## Run API tests.
+test-api: manifests generate fmt vet setup-envtest ## Run API tests.
 	@$(COVERAGE_MKDIR)
-	$(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,apis) -covermode=$(GO_COVER_MODE) ./apis/...
+	KUBEBUILDER_ASSETS="$(shell "$(ENVTEST)" use $(ENVTEST_K8S_VERSION) --bin-dir "$(LOCALBIN)" -p path)" $(GO) test $(GO_TEST_FLAGS) -race -coverprofile=$(call coverprofile,apis) -covermode=$(GO_COVER_MODE) ./apis/...
 
 .PHONY: test-controller
 test-controller: test-unit manifests generate fmt vet setup-envtest ginkgo ## Run controller envtest fixtures.
@@ -328,3 +329,9 @@ chart-check: manifests kubebuilder ## Check generation, lint and test every inst
 .PHONY: chart-assets-check
 chart-assets-check: manifests kubebuilder ## Verify the complete generated chart is current.
 	$(GO) run ./hack/chartgen -kubebuilder "$(KUBEBUILDER)" -check
+
+##@ Image publication
+
+.PHONY: release-build
+release-build: ## Build/push one runtime by digest (protected publisher inputs required).
+	./hack/publish.sh build

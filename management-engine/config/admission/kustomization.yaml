@@ -1,0 +1,7 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Admission policies installed with the CRDs, one file per rule under policies/.
+# Kustomize does not expand globs; hack/chart_test.go checks that every file is listed.
+resources:
+- policies/unique-node-profile.yaml

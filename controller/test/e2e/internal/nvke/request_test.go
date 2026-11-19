@@ -489,6 +489,43 @@ func TestBuildNicoControlPlaneConfigVpcPrefix(t *testing.T) {
 	}
 }
 
+// A FLAT VPC's machines ask NICo to attach them, with autoNetwork and no
+// interfaces, control plane and workers alike. A pool naming a prefix as well
+// is refused rather than sending CAPNICo both.
+func TestBuildNicoAutoNetworkMachines(t *testing.T) {
+	pool, err := buildNicoNodePool("c", uuid.New(), NodePoolSpec{
+		Name: "w", InstanceTypeID: uuid.NewString(), AutoNetwork: true,
+	}, NodePayloads{})
+	if err != nil {
+		t.Fatalf("building an autoNetwork pool: %v", err)
+	}
+	cfg, err := buildNicoControlPlaneConfig("c", uuid.New(), ClusterSpec{
+		ControlPlane: ControlPlane{Config: &ControlPlaneConfigSpec{
+			DesiredCount: 1, InstanceTypeID: uuid.NewString(), AutoNetwork: true,
+		}},
+	}, NodePayloads{})
+	if err != nil {
+		t.Fatalf("building an autoNetwork control plane: %v", err)
+	}
+	for role, template := range map[string]map[string]any{"worker": pool.Infra.MachineTemplate, "control plane": cfg.Infra.MachineTemplate} {
+		spec, _ := template[capiSpecKey].(map[string]any)
+		tmpl, _ := spec["template"].(map[string]any)
+		inner, _ := tmpl[capiSpecKey].(map[string]any)
+		if inner["autoNetwork"] != true {
+			t.Errorf("%s machine template autoNetwork = %v, want true", role, inner["autoNetwork"])
+		}
+		if interfaces, ok := inner["interfaces"]; ok {
+			t.Errorf("%s machine template carries interfaces beside autoNetwork: %v", role, interfaces)
+		}
+	}
+
+	if _, err := buildNicoNodePool("c", uuid.New(), NodePoolSpec{
+		Name: "w", InstanceTypeID: uuid.NewString(), AutoNetwork: true, VpcPrefixIDs: []string{uuid.NewString()},
+	}, NodePayloads{}); err == nil {
+		t.Error("an autoNetwork pool that also names a prefix should be refused")
+	}
+}
+
 // machineTemplateInterfaces digs the interfaces out of a NicoMachineTemplate.
 func machineTemplateInterfaces(t *testing.T, template map[string]any) []map[string]any {
 	t.Helper()

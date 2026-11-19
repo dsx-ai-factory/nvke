@@ -87,8 +87,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 	// filtering the full CAPD row below. The full row needs three control-plane
 	// nodes for its scale, rotation, and certificate checks; the core lane only
 	// proves that the deployed controller's control-plane path can create a usable
-	// cluster and delete it again, and that GPU Operator runs on its worker with
-	// Mokka's simulated GPUs.
+	// cluster and delete it again, and that GPU Operator runs on its two workers,
+	// each presenting a different Mokka-simulated GPU model.
 	Entry("CAPD node-agent convergence", Ordered, ContinueOnFailure, Label("node-agent-upgrade"), testSpec{
 		buildSpec: capdSpec,
 		shape:     clusterShape{controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, NodeAgentVersion: "v0.1.991", SystemReservedMemory: "1Gi"}, workerPools: []nvke.NodePoolSpec{{DesiredNodeCount: 1}}},
@@ -99,10 +99,16 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 		buildSpec: capdSpec,
 		shape: clusterShape{
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
-			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "true"}}},
+			workerPools: []nvke.NodePoolSpec{
+				{Name: "mokka-gb300", NodeNamePrefix: "mg", DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "gb300"}},
+				{Name: "mokka-h100", NodeNamePrefix: "mh", DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "h100"}},
+			},
+			// Encrypted, as the create docs' example is, so the CIS scan
+			// checks the encryption configuration NVKE renders.
+			etcdEncrypted: true,
 		},
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{provisioningOnly: true, mokkaGPU: true},
+		validate: validations{provisioningOnly: true, mokkaGPU: true, cisBenchmark: true},
 	}),
 	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal", "cert-renewal"), testSpec{
 		buildSpec: capdSpec,
@@ -367,8 +373,9 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3},
 			etcdEncrypted:      true,
 		},
-		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
-		validate: validations{etcdEncryption: true},
+		options: nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		// The full runs' CIS scan: an encrypted cluster, like CAPD core's.
+		validate: validations{etcdEncryption: true, cisBenchmark: true},
 	}),
 	Entry("CAPD brownfield etcd encryption", Ordered, ContinueOnFailure, Label("capd", "extended", "encryption", "etcd-encryption-enable"), testSpec{
 		buildSpec: capdSpec,
@@ -581,6 +588,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateOIDCPostCreate(&test)
 			}
 			validateNodeReadinessPostCreate(&test)
+			if spec.validate.cisBenchmark {
+				validateCISBenchmarkPostCreate(&test)
+			}
 			if spec.validate.tpmAttestation {
 				validateTPMAttestationPostCreate(&test)
 			}
@@ -969,8 +979,12 @@ type validations struct {
 	// after the rolling update. The entry must set controlPlaneConfig.NodeLabels.
 	controlPlaneNodeLabels bool
 	// mokkaGPU runs GPU Operator on Mokka's simulated GPUs, on the worker pools
-	// labeled mokkaLabelKey. The runner needs helm.
+	// labeled mokkaLabelKey with a profile in mokkaProfiles. The runner needs helm.
 	mokkaGPU bool
+	// cisBenchmark scans the cluster with kube-bench right after it is ready,
+	// before other specs scale, reboot or replace its nodes, and judges the
+	// result against the exception register (internal/kubebench).
+	cisBenchmark bool
 }
 
 // managementCluster is the cluster the controller runs on, which a tenant test reaches
@@ -2069,7 +2083,8 @@ func nicoDSXSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 
 // dsxNodePoolSpecs fills each pool from the datahall. forgeNodePoolSpecs with
 // the subnet half removed: a DSX site declares a prefix and nothing else, so
-// there is no choice to make between the two.
+// there is no choice to make between the two. A FLAT datahall declares no
+// prefix at all, and its pools attach by autoNetwork instead.
 func dsxNodePoolSpecs(
 	pools []nvke.NodePoolSpec,
 	defaultName, defaultNodeNamePrefix string,
@@ -2084,7 +2099,8 @@ func dsxNodePoolSpecs(
 			DesiredNodeCount:     pool.DesiredNodeCount,
 			SystemReservedMemory: cmp.Or(pool.SystemReservedMemory, "16Gi"),
 			InstanceTypeID:       cmp.Or(pool.InstanceTypeID, instanceType.ID),
-			VpcPrefixIDs:         defaultStrings(pool.VpcPrefixIDs, site.VpcPrefixID),
+			VpcPrefixIDs:         optionalStrings(pool.VpcPrefixIDs, site.VpcPrefixID),
+			AutoNetwork:          site.AutoNetwork,
 			SSHKeyGroupIDs:       defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
 		})
 	}
@@ -2104,7 +2120,8 @@ func dsxControlPlaneConfig(
 	out := *cfg
 	out.SystemReservedMemory = cmp.Or(out.SystemReservedMemory, "16Gi")
 	out.InstanceTypeID = cmp.Or(out.InstanceTypeID, instanceType.ID)
-	out.VpcPrefixIDs = defaultStrings(out.VpcPrefixIDs, site.VpcPrefixID)
+	out.VpcPrefixIDs = optionalStrings(out.VpcPrefixIDs, site.VpcPrefixID)
+	out.AutoNetwork = site.AutoNetwork
 	out.SSHKeyGroupIDs = defaultStrings(out.SSHKeyGroupIDs, site.SSHKeyGroupID)
 	return &out
 }

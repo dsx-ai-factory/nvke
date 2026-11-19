@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: service.nvke.nvidia.com/v1
+kind: ClusterRelease
+metadata:
+  name: cluster-release
+spec:
+  kubernetes:
+    version: "1.36.3"
+  machineImageRef:
+    name: example-image
+  machineInit:
+    userDataTemplate: |
+      #cloud-config

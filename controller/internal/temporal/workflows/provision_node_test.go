@@ -397,9 +397,131 @@ func TestProvisioningConvergesAgentBeforePreflight(t *testing.T) {
 			}
 			env.OnActivity(a.NodePreflight, mock.Anything, mock.Anything).Return(nil).Run(func(mock.Arguments) { require.Equal(t, test.wantUpgrade, completed) }).Once()
 			// Stop after preflight so this test does not replace the join workflow tests.
-			env.OnActivity(a.GetNodeConfigProfile, mock.Anything, mock.Anything).Return(activities.ConfigProfile{}, temporal.NewNonRetryableApplicationError("stop after preflight", "test", nil)).Once()
+			env.OnActivity(a.GetClusterForNode, mock.Anything, nodeID).Return(db.Cluster{}, temporal.NewNonRetryableApplicationError("stop after preflight", "test", nil)).Once()
 			env.ExecuteWorkflow(agentBeforePreflightTestWorkflow, nodeID)
 			require.ErrorContains(t, env.GetWorkflowError(), "stop after preflight")
+			env.AssertExpectations(t)
+		})
+	}
+}
+
+func coreProvisioningTestWorkflow(ctx workflow.Context, nodeID uuid.UUID) error {
+	return provisionNode(ctx, ProvisionNodeInput{NodeID: nodeID}, nodeMetricLabels{}, activities.NodeProvisioningContext{NodeID: nodeID})
+}
+
+// A node must reach ReadyToJoin without depending on a legacy config profile;
+// a failed preflight must still prevent CNI setup and readiness.
+func TestUnit_ProvisionNodeCoreSetup(t *testing.T) {
+	type parameters struct {
+		preflightError error
+	}
+	for name, params := range map[string]parameters{
+		"ready without a legacy profile":     {},
+		"preflight failure blocks readiness": {preflightError: temporal.NewNonRetryableApplicationError("preflight failed", "test", nil)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			suite := &testsuite.WorkflowTestSuite{}
+			env := suite.NewTestWorkflowEnvironment()
+			nodeID := uuid.MustParse("60000000-0000-0000-0000-000000000001")
+			var a *activities.Activities
+			env.OnActivity(a.WaitForCAPIMachineReady, mock.Anything, mock.Anything).Return("", nil).Once()
+			env.OnActivity(a.NodePreflight, mock.Anything, mock.Anything).Return(params.preflightError).Once()
+			if params.preflightError == nil {
+				env.OnActivity(a.GetClusterForNode, mock.Anything, nodeID).Return(db.Cluster{CniPlugin: db.CNIOvnKubernetes}, nil).Once()
+				env.OnActivity(a.ConfigureOpenVSwitch, mock.Anything, mock.MatchedBy(func(input activities.ConfigureOpenVSwitchInput) bool {
+					return input.NodeID == nodeID && input.OperationID != ""
+				})).Return(activities.ConfigureOpenVSwitchResult{}, nil).Once()
+				env.OnActivity(a.UpdateNodeConditions, mock.Anything, mock.MatchedBy(func(input activities.NodeConditionsUpdate) bool {
+					return input.NodeID == nodeID && input.Conditions.ReadyToJoin != nil && input.Conditions.ReadyToJoin.Status == db.ConditionStatusTrue
+				})).Return(nil).Once()
+			}
+
+			env.ExecuteWorkflow(coreProvisioningTestWorkflow, nodeID)
+
+			if params.preflightError != nil {
+				require.ErrorContains(t, env.GetWorkflowError(), "preflight failed")
+			} else {
+				require.NoError(t, env.GetWorkflowError())
+			}
+			// Any profile, runbook or reboot dispatch is unexpected in this environment.
+			env.AssertNotCalled(t, "GetNodeConfigProfile", mock.Anything, mock.Anything)
+			env.AssertNotCalled(t, "ExecuteNodeRunbookHook", mock.Anything, mock.Anything)
+			env.AssertExpectations(t)
+		})
+	}
+}
+
+func coreJoinTestWorkflow(ctx workflow.Context, nodeCtx activities.NodeProvisioningContext) error {
+	return joinProvisionedNode(ctx, nodeCtx.NodeID, nodeCtx, nodeMetricLabels{}, nodeCtx.ControlPlane)
+}
+
+func TestUnit_JoinProvisionedNodeCoreSetup(t *testing.T) {
+	type parameters struct {
+		controlPlane  bool
+		initialNode   bool
+		alreadyJoined bool
+	}
+	for name, params := range map[string]parameters{
+		"worker":                                 {},
+		"initial control plane":                  {controlPlane: true, initialNode: true},
+		"additional control plane":               {controlPlane: true},
+		"joined control plane resumes post join": {controlPlane: true, alreadyJoined: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			suite := &testsuite.WorkflowTestSuite{}
+			env := suite.NewTestWorkflowEnvironment()
+			nodeID := uuid.MustParse("60000000-0000-0000-0000-000000000002")
+			clusterID := uuid.MustParse("60000000-0000-0000-0000-000000000003")
+			node := db.Node{ID: nodeID, ClusterID: clusterID, Name: "node-0", ControlPlane: params.controlPlane}
+			if params.alreadyJoined {
+				node.Conditions.Joined.Status = db.ConditionStatusTrue
+			}
+			var a *activities.Activities
+			env.OnActivity(a.GetNode, mock.Anything, nodeID).Return(node, nil)
+			env.OnActivity(a.GetClusterForNode, mock.Anything, nodeID).Return(db.Cluster{
+				ID: clusterID, ProviderType: db.ProviderTypeCAPI,
+				Capi: &db.CAPIClusterProvider{InfraCluster: []byte(`{"kind":"DockerCluster"}`)},
+			}, nil).Once()
+			if !params.controlPlane {
+				env.OnActivity(a.WaitForParentNodePoolProvisioned, mock.Anything, mock.Anything).Return(activities.WaitForParentNodePoolProvisionedResult{}, nil).Once()
+			}
+			if !params.alreadyJoined {
+				if params.controlPlane {
+					env.OnActivity(a.RemoveEtcdMember, mock.Anything, mock.Anything).Return(nil).Once()
+					env.OnActivity(a.KubeadmReset, mock.Anything, mock.Anything).Return(activities.KubeadmResetResult{}, nil).Once()
+				}
+				env.OnActivity(a.KubeadmJoin, mock.Anything, mock.Anything).Return(activities.KubeadmJoinResult{IsInitialNode: params.initialNode}, nil).Once()
+				if !params.initialNode {
+					env.OnActivity(a.UpdateNodeConditions, mock.Anything, mock.MatchedBy(func(input activities.NodeConditionsUpdate) bool {
+						return input.NodeID == nodeID && input.Conditions.Joined != nil && input.Conditions.Joined.Status == db.ConditionStatusTrue
+					})).Return(nil).Once()
+				}
+			}
+			env.OnActivity(a.ApplyNodeMetadata, mock.Anything, mock.Anything).Return(activities.ApplyNodeMetadataResult{}, nil).Once()
+			if params.controlPlane {
+				env.OnActivity(a.VerifyControlPlaneRoleLabel, mock.Anything, nodeID).Return(nil).Once()
+			}
+			if !params.initialNode {
+				env.OnActivity(a.ConfigureKubeVip, mock.Anything, mock.Anything).Return(activities.ConfigureKubeVipResult{}, nil).Once()
+			}
+			env.OnActivity(a.TaintNode, mock.Anything, activities.TaintNodeInput{
+				NodeID: nodeID, TaintKey: "nvke.nvidia.com/provisioning", TaintValue: "true", TaintEffect: "NoSchedule-",
+			}).Return(activities.TaintNodeResult{}, nil).Once()
+			env.OnActivity(a.UpdateNodeConditions, mock.Anything, mock.MatchedBy(func(input activities.NodeConditionsUpdate) bool {
+				return input.NodeID == nodeID && input.Conditions.Provisioned != nil && input.Conditions.Provisioned.Status == db.ConditionStatusTrue
+			})).Return(nil).Once()
+
+			env.ExecuteWorkflow(coreJoinTestWorkflow, activities.NodeProvisioningContext{
+				NodeID: nodeID, ControlPlane: params.controlPlane, ManagedByNodePool: !params.controlPlane,
+			})
+
+			require.NoError(t, env.GetWorkflowError())
+			env.AssertNotCalled(t, "GetNodeConfigProfile", mock.Anything, mock.Anything)
+			env.AssertNotCalled(t, "ExecuteNodeRunbookHook", mock.Anything, mock.Anything)
+			if params.alreadyJoined {
+				env.AssertNotCalled(t, "KubeadmJoin", mock.Anything, mock.Anything)
+				env.AssertNotCalled(t, "KubeadmReset", mock.Anything, mock.Anything)
+			}
 			env.AssertExpectations(t)
 		})
 	}

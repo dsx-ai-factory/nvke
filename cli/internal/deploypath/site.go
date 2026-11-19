@@ -54,7 +54,7 @@ type TemplateContext struct {
 	// whose whole point is to produce a tree holding no credential. They stay
 	// empty here until nvkectl has somewhere to read them from; what fills
 	// them is a separate question from whether the template can name them.
-	Nico   struct{ Endpoint, OrgID, Token, APIName, TokenURL, ClientID, ClientSecret, Scope string }
+	Nico   struct{ Endpoint, OrgID, Token, APIName, TokenURL, ClientID, ClientSecret, Scope, CACertBase64 string }
 	Tenant struct{ User, Password string }
 	// LaunchLayer is the OAuth2 client CAPLL calls LaunchLayer as. Scopes stays
 	// empty when the stack config omits it.

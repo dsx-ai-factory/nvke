@@ -15,6 +15,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/config"
 	"sigs.k8s.io/controller-runtime/pkg/manager/signals"
 
+	"github.com/dsx-ai-factory/nvke/auth/authn"
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
 )
 
@@ -22,12 +23,25 @@ import (
 func Run(version string, registrations []resource.Registration, cfg resource.ClientConfig) error {
 	address := flag.String("listen", ":8080", "HTTP listen address")
 	contextName := flag.String("context", "", "Datastore kubeconfig context")
+	authConfig := flag.String("auth-config", "", "Authentication configuration file. Empty disables authentication.")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
 
 	if *showVersion {
 		fmt.Println(version)
 		return nil
+	}
+
+	var authenticator *authn.Authenticator
+	if *authConfig != "" {
+		var err error
+		authenticator, err = authn.Setup(context.Background(), authn.Options{ConfigPath: *authConfig}, slog.Default())
+		if err != nil {
+			return err
+		}
+		if authenticator == nil {
+			return fmt.Errorf("authentication config %q did not enable authentication", *authConfig)
+		}
 	}
 
 	datastore, err := config.GetConfigWithContext(*contextName)
@@ -56,8 +70,12 @@ func Run(version string, registrations []resource.Registration, cfg resource.Cli
 		}
 		w.WriteHeader(http.StatusOK)
 	})
+	handler := resource.WithLimits(mux, resource.ServerOptions{})
+	if authenticator != nil {
+		handler = authenticator.Wrap(handler)
+	}
 	server := &http.Server{
-		Addr: *address, Handler: resource.WithLimits(mux, resource.ServerOptions{}),
+		Addr: *address, Handler: handler,
 		ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 35 * time.Second, IdleTimeout: time.Minute,
 	}
 	ctx := signals.SetupSignalHandler()

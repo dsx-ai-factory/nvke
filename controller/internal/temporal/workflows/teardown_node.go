@@ -22,6 +22,13 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
+type HookType string
+
+const (
+	BeforeRemoveNode HookType = "before-remove"
+	AfterRemoveNode  HookType = "after-remove"
+)
+
 type TeardownNodeInput = nodes.TeardownNodeInput
 
 type MachineHealthIssue = nodes.MachineHealthIssue
@@ -561,7 +568,7 @@ func runTeardownHooks(ctx workflow.Context, input TeardownNodeInput, hookType Ho
 	}
 
 	var hooks []*activities.HookSpec
-	switch hookType { //nolint:exhaustive // Only remove-node hooks are valid for teardown
+	switch hookType {
 	case BeforeRemoveNode:
 		hooks = configProfile.Hooks.BeforeRemoveNode
 	case AfterRemoveNode:

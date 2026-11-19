@@ -60,6 +60,7 @@ func generate(binary string, check bool) (err error) {
 	for _, pair := range [][2]string{
 		{"hack/chart/templates", "templates"},
 		{"config/crd/bases", "files/crds"},
+		{"config/admission/policies", "files/admission"},
 		{"config/dev/tenant-api-rbac.yaml", "files/api/tenant-api-rbac.yaml"},
 		{"config/dev/operator-api-rbac.yaml", "files/api/operator-api-rbac.yaml"},
 		{"config/rbac/role.yaml", "files/roles/role.yaml"},

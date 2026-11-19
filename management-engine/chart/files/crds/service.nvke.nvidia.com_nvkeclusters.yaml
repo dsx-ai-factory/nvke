@@ -634,6 +634,25 @@ spec:
                 x-kubernetes-list-map-keys:
                 - type
                 x-kubernetes-list-type: map
+              currentRelease:
+                description: CurrentRelease identifies the control-plane release currently
+                  configured in the NVKE controller.
+                properties:
+                  name:
+                    description: ResourceName is a Kubernetes DNS subdomain name,
+                      not a provider identifier.
+                    maxLength: 253
+                    minLength: 1
+                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                    type: string
+                  version:
+                    maxLength: 128
+                    minLength: 1
+                    type: string
+                required:
+                - name
+                - version
+                type: object
               id:
                 description: ID is the NVKE controller's cluster UID.
                 format: uuid
@@ -686,6 +705,25 @@ spec:
                       x-kubernetes-list-map-keys:
                       - type
                       x-kubernetes-list-type: map
+                    currentRelease:
+                      description: CurrentRelease identifies the worker release currently
+                        configured in the NVKE controller.
+                      properties:
+                        name:
+                          description: ResourceName is a Kubernetes DNS subdomain
+                            name, not a provider identifier.
+                          maxLength: 253
+                          minLength: 1
+                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
+                          type: string
+                        version:
+                          maxLength: 128
+                          minLength: 1
+                          type: string
+                      required:
+                      - name
+                      - version
+                      type: object
                     id:
                       description: ID is the NVKE controller's node pool UUID.
                       format: uuid
@@ -708,25 +746,6 @@ spec:
                       format: int32
                       minimum: 0
                       type: integer
-                    resolvedRelease:
-                      description: ResolvedRelease identifies the worker release selected
-                        for this pool when it was created.
-                      properties:
-                        name:
-                          description: ResourceName is a Kubernetes DNS subdomain
-                            name, not a provider identifier.
-                          maxLength: 253
-                          minLength: 1
-                          pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                          type: string
-                        version:
-                          maxLength: 128
-                          minLength: 1
-                          type: string
-                      required:
-                      - name
-                      - version
-                      type: object
                     updatedReplicas:
                       description: |-
                         UpdatedReplicas is the number of nodes matching the requested pool configuration.
@@ -748,25 +767,6 @@ spec:
                 format: int64
                 minimum: 1
                 type: integer
-              resolvedRelease:
-                description: ResolvedRelease identifies the control-plane release
-                  selected for this cluster.
-                properties:
-                  name:
-                    description: ResourceName is a Kubernetes DNS subdomain name,
-                      not a provider identifier.
-                    maxLength: 253
-                    minLength: 1
-                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                    type: string
-                  version:
-                    maxLength: 128
-                    minLength: 1
-                    type: string
-                required:
-                - name
-                - version
-                type: object
             type: object
         required:
         - spec

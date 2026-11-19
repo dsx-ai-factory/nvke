@@ -89,9 +89,9 @@ func TestRenderedChart(t *testing.T) {
 			}
 			require.NoError(t, cfg.Validate())
 
-			// Both sources at once is a startup failure, so no render may produce it.
-			require.NoError(t, fromFile.CheckAuthSource(environment["AUTH_CONFIG_PATH"]))
-			require.NoError(t, fromFile.CheckAuthzNeedsAuthn(environment["AUTH_CONFIG_PATH"]))
+			// The controller refuses to start with it set.
+			require.NotContains(t, environment, "AUTH_CONFIG_PATH")
+			require.NoError(t, fromFile.CheckAuthzNeedsAuthn())
 			checkBundleMounted(t, deployment, fromFile.APIAuthz)
 
 			if filepath.Base(render) == "api-authz.yaml" {
@@ -109,11 +109,11 @@ func TestRenderedChart(t *testing.T) {
 
 			if filepath.Base(render) == "api-auth-inline.yaml" {
 				require.True(t, fromFile.APIAuth.Enabled, "the controller reads the chart's apiAuth.config from config.yaml")
-				require.NotContains(t, environment, "AUTH_CONFIG_PATH")
+				require.False(t, cfg.PermissiveMode)
 			}
 			if filepath.Base(render) == "api-auth-permissive.yaml" {
-				require.False(t, fromFile.APIAuth.Enabled, "a ConfigMap managed elsewhere stays on AUTH_CONFIG_PATH")
-				require.Contains(t, environment, "AUTH_CONFIG_PATH")
+				require.True(t, fromFile.APIAuth.Enabled)
+				require.True(t, cfg.PermissiveMode)
 			}
 
 			if filepath.Base(render) == "machine-metadata-allowlists.yaml" {
@@ -126,6 +126,15 @@ func TestRenderedChart(t *testing.T) {
 				require.Equal(t, config.AgentReadinessConfig{
 					Workers: 4, Timeout: 10 * time.Second, Interval: 90 * time.Second,
 				}, cfg.AgentReadiness)
+			}
+
+			switch filepath.Base(render) {
+			case "kube-vip-custom.yaml":
+				require.Equal(t, uint32(64512), cfg.KubeVip.LocalASN)
+				require.Equal(t, uint32(4200000000), cfg.KubeVip.StaticPeerASN)
+			case "defaults.yaml", "kube-vip-empty.yaml", "kube-vip-null.yaml", "kube-vip-null-section.yaml":
+				require.Equal(t, uint32(65100), cfg.KubeVip.LocalASN)
+				require.Equal(t, uint32(4294967000), cfg.KubeVip.StaticPeerASN)
 			}
 
 			if filepath.Base(render) == "dev-without-vip.yaml" {
@@ -310,6 +319,19 @@ func TestLoadStartupConfig(t *testing.T) {
 		require.Equal(t, file.ProfilesDir, cfg.ProfilesDir)
 	})
 
+	t.Run("older config without kubeVip uses defaults", func(t *testing.T) {
+		raw, err := os.ReadFile(localControllerConfig)
+		require.NoError(t, err)
+		legacy := strings.Replace(string(raw), "kubeVip:\n  localASN: 65100\n  staticPeerASN: 4294967000\n", "", 1)
+		require.NotContains(t, legacy, "kubeVip:")
+		t.Setenv("CONTROLLER_CONFIG_PATH", writeConfig(t, legacy))
+
+		cfg, _, err := controllerconfig.LoadStartupConfig()
+		require.NoError(t, err)
+		require.Equal(t, uint32(65100), cfg.KubeVip.LocalASN)
+		require.Equal(t, uint32(4294967000), cfg.KubeVip.StaticPeerASN)
+	})
+
 	t.Run("a missing file is an error", func(t *testing.T) {
 		t.Setenv("CONTROLLER_CONFIG_PATH", filepath.Join(t.TempDir(), "absent.yaml"))
 
@@ -317,17 +339,21 @@ func TestLoadStartupConfig(t *testing.T) {
 		require.ErrorContains(t, err, "absent.yaml")
 	})
 
-	t.Run("apiAuth and AUTH_CONFIG_PATH together are refused", func(t *testing.T) {
-		local, err := controllerconfig.Load(localControllerConfig)
-		require.NoError(t, err)
-		local.APIAuth = exampleAPIAuth()
-		encoded, err := yaml.Marshal(local)
-		require.NoError(t, err)
-		t.Setenv("CONTROLLER_CONFIG_PATH", writeConfig(t, string(encoded)))
+	t.Run("AUTH_CONFIG_PATH is refused, naming its replacement", func(t *testing.T) {
+		t.Setenv("CONTROLLER_CONFIG_PATH", localControllerConfig)
 		t.Setenv("AUTH_CONFIG_PATH", "/etc/nke/auth/auth.yaml")
 
-		_, _, err = controllerconfig.LoadStartupConfig()
-		require.ErrorContains(t, err, "configured twice")
+		_, _, err := controllerconfig.LoadStartupConfig()
+		require.ErrorContains(t, err, `AUTH_CONFIG_PATH is set to "/etc/nke/auth/auth.yaml", but the controller no longer reads an authentication file`)
+		require.ErrorContains(t, err, "apiAuth in nvke-controller-config")
+	})
+
+	t.Run("an empty AUTH_CONFIG_PATH is unset", func(t *testing.T) {
+		t.Setenv("CONTROLLER_CONFIG_PATH", localControllerConfig)
+		t.Setenv("AUTH_CONFIG_PATH", "")
+
+		_, _, err := controllerconfig.LoadStartupConfig()
+		require.NoError(t, err)
 	})
 
 	t.Run("authorization without authentication is refused", func(t *testing.T) {

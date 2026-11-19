@@ -122,8 +122,7 @@ fi
 expect "nktp from its index repository" 'helm upgrade --install nktp nktp --repo https://helm.ngc.nvidia.com/nvidia --version 0.2.0 ' "${out}"
 reject "no dependency build for nktp" 'helm dependency build .*nktp' "${out}"
 expect "controller from the checkout" 'helm upgrade --install nvke-controller .*/controller/deploy/charts/controller ' "${out}"
-expect "the controller builds its pinned local chart dependency" 'helm dependency build .*/controller/deploy/charts/controller --skip-refresh' "${out}"
-reject "local dependencies are not Helm repositories" 'helm repo add .*file://' "${out}"
+reject "the controller chart has no dependency to build" 'helm dependency build .*/controller/deploy/charts/controller' "${out}"
 expect "controller in its release.yaml namespace" 'helm upgrade --install nvke-controller .* --namespace nvke-controller ' "${out}"
 expect "postgresql from its OCI repository" 'helm upgrade --install postgres oci://registry-1.docker.io/bitnamicharts/postgresql --version 18.5.15 ' "${out}"
 expect "spire from its index repository" 'helm upgrade --install spire spire --repo https://spiffe.github.io/helm-charts-hardened/ --version 0.30.1 ' "${out}"
@@ -245,6 +244,17 @@ printf 'items:\n  - {name: ctl, type: helm}\n' >"${WORK}/handpath/nvke-deploy.ya
 printf 'chart:\n  name: nvke-controller\n  version: "1.0.0"\n  repository: oci://registry.example.test/charts\nrelease:\n  name: nvke-controller\n  namespace: nvke-controller\n' >"${WORK}/handpath/ctl/release.yaml"
 appdb_out="$(bash "${EXECUTOR}" install --deploy-path "${WORK}/handpath" --dry-run --values-for "ctl=${WORK}/appdb-override.yaml" 2>&1)" || fail "an appDb override on a deploy path with no Secret exited $?: ${appdb_out}"
 expect "an appDb override is applied where the chart reads appDb" "helm upgrade --install nvke-controller .*--values ${WORK}/appdb-override.yaml" "${appdb_out}"
+# A directory chart whose Chart.lock pins a local dependency has nothing to add
+# as a Helm repository: helm has no handler for file://, so adding one fails the
+# deploy before the dependency is built.
+mkdir -p "${WORK}/localdep/app/chart"
+printf 'items:\n  - {name: app, type: helm}\n' >"${WORK}/localdep/nvke-deploy.yaml"
+printf 'chart:\n  name: app\n  path: app/chart\nrelease:\n  name: app\n  namespace: app\n' >"${WORK}/localdep/app/release.yaml"
+printf 'apiVersion: v2\nname: app\nversion: 0.1.0\ndependencies:\n  - name: example-dependency\n    version: 0.1.0\n    repository: file://../example-dependency\n' >"${WORK}/localdep/app/chart/Chart.yaml"
+printf 'dependencies: []\n' >"${WORK}/localdep/app/chart/Chart.lock"
+localdep_out="$(bash "${EXECUTOR}" install --deploy-path "${WORK}/localdep" --dry-run 2>&1)" || fail "a chart with a local dependency exited $?: ${localdep_out}"
+reject "a local dependency is not added as a Helm repository" 'helm repo add .*file://' "${localdep_out}"
+expect "the local dependency is still built" "helm dependency build ${WORK}/localdep/app/chart --skip-refresh" "${localdep_out}"
 ! grep -q 'BEGIN' "${rendered}/spire/site-values.yaml" && pass "the CA is not copied into the spire values" || fail "spire site values hold PEM"
 expect "the rendered Secret is applied as a manifest" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/20-nico-credentials.yaml" "${out}"
 expect "the namespaces manifest is applied too" "^kubectl apply --server-side -f ${rendered}/nvke-base-config/00-namespaces.yaml" "${out}"

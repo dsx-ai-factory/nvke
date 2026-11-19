@@ -117,6 +117,12 @@ items:
       status: "False"
       type: Ready
     - lastTransitionTime: "1970-01-01T00:00:00Z"
+      message: Selected ClusterRelease "test-release" is supported
+      observedGeneration: 1
+      reason: ReleaseSupported
+      status: "True"
+      type: ReleaseSupported
+    - lastTransitionTime: "1970-01-01T00:00:00Z"
       message: |-
         * ClusterReconciled: resolve controller request: terminal error: resolve pod network: Pod and service ranges must be valid IPv4 CIDRs
         * NodePoolsReconciled: Condition not yet reported

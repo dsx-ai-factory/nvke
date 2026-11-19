@@ -1,0 +1,15 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: service.nvke.nvidia.com/v1
+kind: NodeProfile
+metadata:
+  name: node-profile
+spec:
+  profile: ubuntu
+  tag: "24.04"
+  machineImageRef:
+    name: example-image
+  machineInit:
+    userDataTemplate: |
+      #cloud-config

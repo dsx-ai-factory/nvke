@@ -247,7 +247,40 @@ func TestValidateAuthConfig(t *testing.T) {
 		{
 			name:    "tls-jwt without an exchange endpoint",
 			cfg:     AgentConfig{GRPCAuthMode: authModeTLSJWT},
-			wantErr: "requires --dsx-identity-exchange-url",
+			wantErr: "requires --dsx-identity-exchange-url or --dsx-identity-metadata-url",
+		},
+		{
+			name: "tls-jwt with a metadata service",
+			cfg: AgentConfig{
+				GRPCAuthMode:             authModeTLSJWT,
+				DSXIdentityMetadataURL:   "http://169.254.169.254",
+				ControllerClientCABundle: "/etc/nvke/controller-ca.crt",
+			},
+		},
+		{
+			name: "tls-jwt with both token sources",
+			cfg: AgentConfig{
+				GRPCAuthMode:           authModeTLSJWT,
+				DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange",
+				DSXIdentityMetadataURL: "http://169.254.169.254",
+			},
+			wantErr: "mutually exclusive",
+		},
+		{
+			name: "metadata service without external mTLS",
+			cfg: AgentConfig{
+				GRPCAuthMode:           authModeTLSJWT,
+				DSXIdentityMetadataURL: "http://169.254.169.254",
+			},
+			wantErr: "--dsx-identity-metadata-url requires --nvke-controller-client-ca-bundle",
+		},
+		{
+			name: "metadata service without tls-jwt",
+			cfg: AgentConfig{
+				GRPCAuthMode:           authModeSPIFFEMTLS,
+				DSXIdentityMetadataURL: "http://169.254.169.254",
+			},
+			wantErr: "--dsx-identity-metadata-url requires --grpc-auth-mode=tls-jwt",
 		},
 		{
 			name:    "unknown mode",

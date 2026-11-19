@@ -1823,10 +1823,13 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_CreatesSnapshotOnVersio
 			KubernetesVersion: newVersion,
 		},
 	}, nil).Once()
+	// The upgrading condition is raised in the same write that stores the target.
 	mockDB.MockTx.On("UpdateCluster", mock.Anything, mock.MatchedBy(func(c *db.Cluster) bool {
 		return c.ID == clusterID &&
 			c.KubernetesVersion == newVersion &&
-			c.ControlPlaneConfig.ConfigurationID == newCfgID
+			c.ControlPlaneConfig.ConfigurationID == newCfgID &&
+			c.Conditions.ControlPlaneUpgrading.Status == db.ConditionStatusTrue &&
+			c.Conditions.ControlPlaneUpgrading.Message == "upgrading control plane to "+newVersion
 	})).Return(db.Cluster{
 		ID:                clusterID,
 		KubernetesVersion: newVersion,
@@ -1854,6 +1857,45 @@ func TestClusterService_UpdateCluster_ControlPlaneConfig_CreatesSnapshotOnVersio
 	require.True(t, ok, "expected UpdateCluster200JSONResponse, got %T", resp)
 	assert.Equal(t, newVersion, body.ControlPlaneKubernetesVersion)
 	mockDB.AssertExpectations(t)
+}
+
+// A version update raises ControlPlaneUpgrading in the same write, so a second
+// version update before the upgrade finishes is rejected rather than compared with
+// the stored target (which would accept 1.36 -> 1.37 -> 1.38).
+func TestClusterService_UpdateCluster_RejectsVersionChangeWhileUpgrading(t *testing.T) {
+	clusterID := uuid.New()
+	newVersion := "1.38.0"
+
+	mockDB := &mockDB{MockTx: &mockTx{}}
+	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+	mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+		ID:                clusterID,
+		KubernetesVersion: "1.37.2",
+		ControlPlaneVIP:   "172.31.0.10",
+		ProviderType:      db.ProviderTypeCAPI,
+		Conditions: db.ClusterConditions{
+			ControlPlaneUpgrading: db.NewCondition(true, "upgrading control plane to 1.37.2"),
+		},
+	}, nil).Once()
+	controlPlaneFalse := false
+	mockDB.MockTx.On("ListNodePools", mock.Anything, db.NodePoolFilters{
+		ClusterID:    &clusterID,
+		ControlPlane: &controlPlaneFalse,
+	}).Return([]db.NodePool{}, nil).Once()
+
+	svc := newTestClusterService(discardLogger(), mockDB)
+	resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{
+		ClusterID: clusterID,
+		Body:      &api.UpdateClusterRequest{ControlPlaneKubernetesVersion: &newVersion},
+	})
+	require.NoError(t, err)
+
+	badRequest, ok := resp.(api.UpdateCluster400JSONResponse)
+	require.True(t, ok, "expected UpdateCluster400JSONResponse, got %T", resp)
+	assert.Contains(t, badRequest.Message, "cannot update Kubernetes version while an upgrade is already in progress")
+	mockDB.MockTx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
+	mockDB.AssertExpectations(t)
+	mockDB.MockTx.AssertExpectations(t)
 }
 
 func TestClusterService_UpdateCluster_ControlPlaneConfig_RejectsPodCIDRCapacityExceeded(t *testing.T) {
@@ -2138,6 +2180,83 @@ func TestClusterService_CreateClusterRejectsCalicoBeforeTransaction(t *testing.T
 	require.True(t, ok, "expected CreateCluster400JSONResponse, got %T", resp)
 	assert.Equal(t, "calico cluster creation is disabled by this controller deployment; use ovn-kubernetes", badRequest.Message)
 	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+}
+
+func TestClusterService_CreateClusterRejectsExtraArgsBeforeTransaction(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		config  func(*api.CreateClusterControlPlaneConfig)
+		wantErr string
+	}{
+		{
+			name:    "flag NVKE sets on kube-apiserver",
+			version: "1.36.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.APIServer = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"profiling": "true"}}
+			},
+			wantErr: `controlPlaneConfig: apiServer.extraArgs: flag "profiling" is set by NVKE and can't be overridden`,
+		},
+		{
+			name:    "flag NVKE sets on kube-controller-manager",
+			version: "1.36.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.ControllerManager = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"bind-address": "0.0.0.0"}}
+			},
+			wantErr: `controlPlaneConfig: controllerManager.extraArgs: flag "bind-address" is set by NVKE and can't be overridden`,
+		},
+		{
+			name:    "flag NVKE sets on kube-scheduler",
+			version: "1.36.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.Scheduler = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"bind-address": "0.0.0.0"}}
+			},
+			wantErr: `controlPlaneConfig: scheduler.extraArgs: flag "bind-address" is set by NVKE and can't be overridden`,
+		},
+		{
+			name:    "malformed flag name",
+			version: "1.36.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.APIServer = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"enable_admission_plugins": "AlwaysAdmit"}}
+			},
+			wantErr: `controlPlaneConfig: apiServer.extraArgs: flag name "enable_admission_plugins" must be lowercase words joined by hyphens, without the leading --`,
+		},
+		{
+			name:    "feature-gates that doesn't parse",
+			version: "1.36.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.Scheduler = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"feature-gates": "SchedulerAsyncAPICalls"}}
+			},
+			wantErr: `controlPlaneConfig: scheduler.extraArgs: feature-gates entry "SchedulerAsyncAPICalls" is not Name=true or Name=false`,
+		},
+		{
+			name:    "gate contradicting NVKE's",
+			version: "1.35.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.APIServer = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"feature-gates": "ImageVolume=false"}}
+			},
+			wantErr: `controlPlaneConfig: apiServer.extraArgs: feature gate "ImageVolume" contradicts NVKE, which sets it to true on Kubernetes 1.35.0`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB := &mockDB{}
+			svc := server.NewClusterService(discardLogger(), mockDB, nil, config.TeleportConfig{}, false, nil, false, "")
+			req := baseNicoClusterCreateRequest()
+			req.CniPlugin = api.CreateClusterRequestCniPluginOvnKubernetes
+			req.ControlPlaneKubernetesVersion = tt.version
+			tt.config(req.ControlPlaneConfig)
+
+			resp, err := svc.CreateCluster(context.Background(), api.CreateClusterRequestObject{Body: req})
+
+			require.NoError(t, err)
+			badRequest, ok := resp.(api.CreateCluster400JSONResponse)
+			require.True(t, ok, "expected CreateCluster400JSONResponse, got %T", resp)
+			assert.Equal(t, tt.wantErr, badRequest.Message)
+			mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+		})
+	}
 }
 
 func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testing.T) {

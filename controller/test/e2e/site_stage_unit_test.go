@@ -4,11 +4,13 @@
 package e2e
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/dsx"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/infra/forge"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 )
 
 // A full run's tenant half speaks the dialects it has specs for, so a provider
@@ -42,23 +44,60 @@ func TestFullStageSupported(t *testing.T) {
 	}
 }
 
-// The workflow seds the jump hosts and the SSA issuer out of the text files it
-// uploads; the suite has to carry the same values into the archives it
-// writes, raw and without the trailing slash the workflow also strips.
+// The workflow seds the jump hosts, the SSA issuer and the DSX API hosts out of
+// the text files it uploads; the suite has to carry the same values into the
+// archives it writes, raw, without the trailing slash the workflow also strips,
+// and as the host alone.
 func TestWithheldFromEnvironment(t *testing.T) {
 	t.Setenv("FORGE_JUMP_HOST", "jump.example.test/")
 	t.Setenv("DSX_DATAHALL_1_JUMP_HOST", "10.1.2.3")
 	t.Setenv("SSA_ISSUER", "https://issuer.example.test/")
+	t.Setenv("DSX_DATAHALL_3_CA_CERT", "-----BEGIN CERTIFICATE-----\nhall3\n-----END CERTIFICATE-----\n")
+	t.Setenv("DSX_DATAHALL_3_API", "https://api.hall3.example.test:443/")
+	t.Setenv("DSX_DATAHALL_3_SITE_ID", "hall3-site-not-withheld")
 	t.Setenv("JUMP_HOST_PASSWORD", "hunter2hunter2")
 	t.Setenv("FORGE_API_KEY", "not-withheld-by-this-list")
 
-	got := strings.Join(withheldFromEnvironment(), "\n")
-	for _, want := range []string{"jump.example.test/", "jump.example.test", "10.1.2.3", "https://issuer.example.test/", "https://issuer.example.test", "hunter2hunter2"} {
+	values := withheldFromEnvironment()
+	got := strings.Join(values, "\n")
+	for _, want := range []string{"jump.example.test/", "10.1.2.3", "https://issuer.example.test/", "hall3\n-----END CERTIFICATE-----", "hunter2hunter2", "https://api.hall3.example.test:443/"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("withheldFromEnvironment lacks %q:\n%s", want, got)
 		}
 	}
+	// Each derived form on its own, not as a substring of the raw value.
+	for _, form := range []string{"jump.example.test", "https://issuer.example.test", "https://api.hall3.example.test:443", "api.hall3.example.test", "issuer.example.test"} {
+		if !slices.Contains(values, form) {
+			t.Errorf("withheldFromEnvironment lacks %q on its own:\n%s", form, got)
+		}
+	}
 	if strings.Contains(got, "not-withheld-by-this-list") {
 		t.Errorf("withheldFromEnvironment carries the API key, which newStack names instead:\n%s", got)
+	}
+	if strings.Contains(got, "hall3-site-not-withheld") {
+		t.Errorf("withheldFromEnvironment carries a DSX id that is not an API host:\n%s", got)
+	}
+}
+
+// A FLAT datahall's tenant machines attach by autoNetwork and name no prefix,
+// control plane and workers alike; a datahall with a prefix keeps using it.
+func TestDSXTenantMachinesAttachTheWayTheDatahallDoes(t *testing.T) {
+	tray := dsx.InstanceType{Name: "tray", ID: "tray-type"}
+	pools := []nvke.NodePoolSpec{{DesiredNodeCount: 1}}
+	controlPlane := &nvke.ControlPlaneConfigSpec{DesiredCount: 1}
+
+	flat := dsx.Site{SSHKeyGroupID: "k", AutoNetwork: true}
+	worker := dsxNodePoolSpecs(pools, "worker", "w", flat, tray)[0]
+	cp := dsxControlPlaneConfig(controlPlane, flat, tray)
+	if !worker.AutoNetwork || len(worker.VpcPrefixIDs) != 0 || !cp.AutoNetwork || len(cp.VpcPrefixIDs) != 0 {
+		t.Errorf("FLAT datahall: worker %+v, control plane %+v, want autoNetwork and no prefix", worker, *cp)
+	}
+
+	prefixed := dsx.Site{SSHKeyGroupID: "k", VpcPrefixID: "p"}
+	worker = dsxNodePoolSpecs(pools, "worker", "w", prefixed, tray)[0]
+	cp = dsxControlPlaneConfig(controlPlane, prefixed, tray)
+	if worker.AutoNetwork || !slices.Equal(worker.VpcPrefixIDs, []string{"p"}) ||
+		cp.AutoNetwork || !slices.Equal(cp.VpcPrefixIDs, []string{"p"}) {
+		t.Errorf("datahall with a prefix: worker %+v, control plane %+v, want the prefix and no autoNetwork", worker, *cp)
 	}
 }

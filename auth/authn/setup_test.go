@@ -124,7 +124,7 @@ func TestSetupRefusesBothSources(t *testing.T) {
 }
 
 // The startup line names where the configuration was read from, which is how an
-// operator tells the chart-rendered section from an external ConfigMap.
+// operator tells the controller's apiAuth section from a file.
 func TestSetupLogsItsSource(t *testing.T) {
 	t.Parallel()
 
@@ -134,7 +134,7 @@ func TestSetupLogsItsSource(t *testing.T) {
 		want     string
 	}{
 		{name: "apiAuth in nvke-controller-config", want: `"source":"nvke-controller-config"`},
-		{name: "the file at AUTH_CONFIG_PATH", fromFile: true, want: `"source":"AUTH_CONFIG_PATH"`},
+		{name: "the file at ConfigPath", fromFile: true, want: `"source":"file"`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/logger v1.1.2
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/prometheus/client_model v0.6.3
@@ -69,6 +70,7 @@ require (
 	github.com/pandatix/go-abnf v0.5.3 // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
+	github.com/rogpeppe/go-internal v1.15.0 // indirect
 	github.com/spf13/pflag v1.1.0 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.7.3 // indirect

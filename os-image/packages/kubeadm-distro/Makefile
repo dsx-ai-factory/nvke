@@ -36,7 +36,7 @@ ARCH ?= amd64
 
 # Debian packaging revision. Bump when the package content changes but the
 # Kubernetes patch does not.
-DEB_REVISION ?= 1
+DEB_REVISION ?= 2
 
 # Downloaded upstream artifacts, reused across runs when they still verify.
 DIST_DIR ?= $(CURDIR)/dist

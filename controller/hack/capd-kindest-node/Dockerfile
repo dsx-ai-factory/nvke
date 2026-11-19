@@ -279,13 +279,20 @@ RUN set -eu; \
     echo "--- /etc/containerd/certs.d/registry.k8s.io/hosts.toml"; \
     cat /etc/containerd/certs.d/registry.k8s.io/hosts.toml
 
+# The etcd user the production node image creates; etcd-data-dir.service gives
+# it /var/lib/etcd at every boot.
+COPY systemd/etcd-data-dir.service /etc/systemd/system/
+RUN set -eux; \
+    useradd -r -s /bin/false -d /var/lib/etcd etcd; \
+    chmod 0644 /etc/systemd/system/etcd-data-dir.service
+
 # Install scripts cannot enable units without a running systemd; offline mode
 # creates /etc/systemd/system/multi-user.target.wants/ symlinks so first boot
 # preserves the same startup order we need for the local TPM-backed flow.
 RUN set -eux; \
     SYSTEMD_OFFLINE=1 systemctl daemon-reload; \
     SYSTEMD_OFFLINE=1 systemctl disable nke-attestation.service 2>/dev/null || true; \
-    SYSTEMD_OFFLINE=1 systemctl enable nvke-agent.service spire-agent.service; \
+    SYSTEMD_OFFLINE=1 systemctl enable nvke-agent.service spire-agent.service etcd-data-dir.service; \
     if [ "${CAPD_SPIRE_ATTESTATION_METHOD}" = tpm ]; then \
       SYSTEMD_OFFLINE=1 systemctl enable swtpm-local.service; \
     else \

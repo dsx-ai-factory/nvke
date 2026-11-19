@@ -34,7 +34,7 @@ import (
 
 // crdDirectory holds the generated CRDs, which controller-gen writes from the
 // types in this package.
-const crdDirectory = "../../deploy/charts/nvke-crds/bases/"
+const crdDirectory = "../../deploy/charts/controller/files/crds/"
 
 // resourceSchema is one generated CRD, ready to admit candidate resources.
 type resourceSchema struct {

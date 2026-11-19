@@ -444,6 +444,13 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	if err := validateMachineMetadata(req.ControlPlaneConfig.MachineAnnotations, req.ControlPlaneConfig.MachineLabels, s.machineAllowlistedAnnotationKeys, s.machineAllowlistedLabelKeys); err != nil {
 		return fmt.Errorf("controlPlaneConfig: %w", err)
 	}
+	if err := kubeadmconfig.ValidateExtraArgs(req.ControlPlaneKubernetesVersion, kubeadmconfig.ExtraArgs{
+		APIServer:         componentExtraArgsFromAPI(req.ControlPlaneConfig.APIServer),
+		ControllerManager: componentExtraArgsFromAPI(req.ControlPlaneConfig.ControllerManager),
+		Scheduler:         componentExtraArgsFromAPI(req.ControlPlaneConfig.Scheduler),
+	}); err != nil {
+		return fmt.Errorf("controlPlaneConfig: %w", err)
+	}
 	if err := s.validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
 		return err
 	}
@@ -704,6 +711,10 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 			}
 
 			dbCluster.KubernetesVersion = *req.Body.ControlPlaneKubernetesVersion
+			// Raised in the same write as the target, so nothing reads the new version
+			// as running before the control plane runs it. The control-plane reconciler
+			// updates the kubeadm ConfigMap and clears the condition once the rollout completes.
+			dbCluster.Conditions.ControlPlaneUpgrading = db.NewCondition(true, "upgrading control plane to "+dbCluster.KubernetesVersion)
 		}
 
 		if req.Body.EnableEtcdEncryption != nil && *req.Body.EnableEtcdEncryption {
@@ -1186,6 +1197,9 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		MachineAnnotations:          maps.Clone(cfg.MachineAnnotations),
 		MachineLabels:               maps.Clone(cfg.MachineLabels),
 		LaunchLayer:                 apiLaunchLayerControlPlaneProviderFromDB(cfg.LaunchLayer),
+		APIServer:                   apiComponentConfigFromDB(cfg.APIServerExtraArgs),
+		ControllerManager:           apiComponentConfigFromDB(cfg.ControllerManagerExtraArgs),
+		Scheduler:                   apiComponentConfigFromDB(cfg.SchedulerExtraArgs),
 	}
 }
 

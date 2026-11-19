@@ -13,7 +13,7 @@ In the Notes column, **Pinned** means NVKE builds, installs or stages exactly th
 | Management cluster | 1.36.3 | Set once, in the site spec's `cluster.k8sVersion` field, at bootstrap. `nvkectl generate sitespec` writes 1.36.3 unless you set it. The management cluster does not upgrade itself. |
 | Workload cluster | 1.36.3 | `controlPlaneKubernetesVersion` is required and has no default. The API accepts any `X.Y.Z`, but nodes run only a version their node image carries. |
 | Control-plane upgrade | One minor version up, or a later patch release | Range. Downgrades and requests for the current version are rejected. The cluster must have a `controlPlaneVIP`, and only one upgrade runs at a time. |
-| Worker node pool skew | Up to 3 minor versions behind the control plane | Range. Checked when you upgrade the control plane. A new node pool starts at the cluster's version. |
+| Worker node pool skew | Up to 3 minor versions behind the control plane | Range. Checked when you upgrade the control plane. A node pool update rejects a newer minor or major version than the control plane, and any version change while the control plane upgrades; it accepts an older version. A new node pool starts at the cluster's version. |
 | Upgrade target on NICo | The current release, with version injection | Changing the Kubernetes version does not change the release. New nodes use the release the cluster or node pool already has, so that release must set the Kubernetes version at provisioning time (`machine-init-kubernetes-version-injected: "true"`). |
 | OpenID Connect (OIDC) on a workload cluster | 1.30.0 or later | Range. Applies to `enableOidc` and `nvkeOIDCAuth`. |
 | Fleet-wide OIDC providers on a workload cluster | 1.34.0 or later | Range. Applies to `oidc.providers`. A cluster created on an earlier version gets none. |
@@ -43,7 +43,7 @@ The NVKE API and the site spec have no field to change a feature gate. The [Kube
 
 | Provider | Version | Notes |
 |---|---|---|
-| NVIDIA Infra Controller (NICo), through CAPNICo | CAPNICo v0.1.0 | Pinned. The default infrastructure provider for workload clusters; LaunchLayer is also supported once enabled, see [Infrastructure Providers](../site-bootstrap/infrastructure-providers.md#launchlayer). The install deploys this CAPNICo release with the reboot and repair settings NVKE uses. The local quickstart builds a development CAPNICo version from source instead. |
+| NVIDIA Infra Controller (NICo), through CAPNICo | CAPNICo v0.3.0-rc.1 | Pinned. The default infrastructure provider for workload clusters; LaunchLayer is also supported once enabled, see [Infrastructure Providers](../site-bootstrap/infrastructure-providers.md#launchlayer). The install deploys this CAPNICo release with the reboot and repair settings NVKE uses. The local quickstart builds a development CAPNICo version from source instead. |
 | Cluster API core, kubeadm bootstrap and kubeadm control plane | v1.13.6 | Pinned. One version covers `clusterctl`, the providers that `clusterctl init` installs on the management cluster, and the providers `nvkectl` installs in the seed cluster. |
 | cert-manager | The version Cluster API v1.13.6 installs | `clusterctl init` installs it. |
 | Provisioned infrastructure provider | Built from the same NVKE source as `nvkectl` | Runs only in the seed cluster during bootstrap, to form the management cluster. |

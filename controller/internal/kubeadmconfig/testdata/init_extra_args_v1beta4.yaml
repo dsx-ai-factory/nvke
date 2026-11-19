@@ -1,0 +1,153 @@
+apiVersion: kubeadm.k8s.io/v1beta4
+bootstrapTokens:
+- groups:
+  - system:bootstrappers:kubeadm:default-node-token
+  token: abcdef.0123456789abcdef
+  ttl: 24h0m0s
+  usages:
+  - signing
+  - authentication
+kind: InitConfiguration
+localAPIEndpoint:
+  advertiseAddress: 192.168.1.10
+  bindPort: 6443
+nodeRegistration:
+  criSocket: unix:///var/run/containerd/containerd.sock
+  imagePullPolicy: IfNotPresent
+  kubeletExtraArgs:
+  - name: node-ip
+    value: 192.168.1.10
+  name: node1
+  taints: null
+patches:
+  directory: /etc/kubernetes/patches
+timeouts:
+  controlPlaneComponentHealthCheck: 4m0s
+---
+apiServer:
+  extraArgs:
+  - name: audit-log-maxage
+    value: "30"
+  - name: audit-log-maxbackup
+    value: "10"
+  - name: audit-log-maxsize
+    value: "100"
+  - name: audit-log-path
+    value: /var/log/kubernetes_audit/audit.log
+  - name: audit-policy-file
+    value: /etc/kubernetes/policies/audit-policy.yaml
+  - name: authentication-config
+    value: /etc/kubernetes/oidc/auth-config.yaml
+  - name: bind-address
+    value: 0.0.0.0
+  - name: enable-admission-plugins
+    value: NodeRestriction,DenyServiceExternalIPs,OwnerReferencesPermissionEnforcement,PodNodeSelector,PodTolerationRestriction
+  - name: etcd-compaction-interval
+    value: 5m
+  - name: feature-gates
+    value: MaxUnavailableStatefulSet=true
+  - name: kubelet-certificate-authority
+    value: /etc/kubernetes/pki/ca.crt
+  - name: profiling
+    value: "false"
+  - name: runtime-config
+    value: resource.k8s.io/v1beta2=true
+  - name: service-account-extend-token-expiration
+    value: "false"
+  - name: shutdown-delay-duration
+    value: 10s
+  - name: shutdown-send-retry-after
+    value: "true"
+  - name: shutdown-watch-termination-grace-period
+    value: 20s
+  - name: tls-cipher-suites
+    value: TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256,TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256
+  extraVolumes:
+  - hostPath: /var/log/kubernetes_audit
+    mountPath: /var/log/kubernetes_audit
+    name: audit-logs
+    pathType: DirectoryOrCreate
+  - hostPath: /etc/kubernetes/policies
+    mountPath: /etc/kubernetes/policies
+    name: audit-policies
+    pathType: DirectoryOrCreate
+    readOnly: true
+  - hostPath: /etc/kubernetes/oidc
+    mountPath: /etc/kubernetes/oidc
+    name: oidc-auth-config
+    pathType: DirectoryOrCreate
+    readOnly: true
+apiVersion: kubeadm.k8s.io/v1beta4
+certificatesDir: /etc/kubernetes/pki
+clusterName: kubernetes
+controlPlaneEndpoint: cluster.local:6443
+controllerManager:
+  extraArgs:
+  - name: bind-address
+    value: 127.0.0.1
+  - name: concurrent-deployment-syncs
+    value: "10"
+  - name: feature-gates
+    value: MaxUnavailableStatefulSet=true
+  - name: large-cluster-size-threshold
+    value: "50"
+  - name: profiling
+    value: "false"
+  - name: secondary-node-eviction-rate
+    value: "0"
+  - name: terminated-pod-gc-threshold
+    value: "12500"
+dns: {}
+etcd:
+  local:
+    dataDir: /var/lib/etcd
+    extraArgs:
+    - name: auto-compaction-retention
+      value: "1"
+    - name: bootstrap-defrag-threshold-megabytes
+      value: "200"
+    - name: listen-metrics-urls
+      value: http://0.0.0.0:2381
+    - name: quota-backend-bytes
+      value: "17179869184"
+imageRepository: registry.k8s.io
+kind: ClusterConfiguration
+kubernetesVersion: v1.36.0
+networking:
+  dnsDomain: cluster.local
+  podSubnet: 10.244.0.0/16
+  serviceSubnet: 10.96.0.0/12
+proxy: {}
+scheduler:
+  extraArgs:
+  - name: bind-address
+    value: 127.0.0.1
+  - name: feature-gates
+    value: SchedulerAsyncAPICalls=true
+  - name: profiling
+    value: "false"
+---
+apiVersion: kubeproxy.config.k8s.io/v1alpha1
+kind: KubeProxyConfiguration
+metricsBindAddress: 0.0.0.0:10249
+---
+apiVersion: kubelet.config.k8s.io/v1beta1
+kind: KubeletConfiguration
+kubeReserved:
+  cpu: 1000m
+  ephemeral-storage: 1Gi
+  memory: 2Gi
+maxParallelImagePulls: 4
+podPidsLimit: 16384
+seccompDefault: true
+serializeImagePulls: false
+serverTLSBootstrap: true
+systemReserved:
+  memory: 16Gi
+tlsCipherSuites:
+- TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+- TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+- TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+- TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+- TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256
+- TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256

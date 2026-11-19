@@ -436,3 +436,16 @@ jobs:
           path: cli/cluster-diagnostics/
           if-no-files-found: ignore
           retention-days: 7
+
+      # The kube-bench scan of the site cluster (run.sh stage 4d), on every
+      # provisioned run: the step above uploads diagnostics only on failure.
+      # run.sh scans cli/cluster-diagnostics/ for credentials before this step
+      # and deletes it when that scan finds anything.
+      - name: Upload CIS benchmark scan
+        if: always() && matrix.suite == 'provisioned'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: nvkectl-bootstrap-e2e-kube-bench-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: cli/cluster-diagnostics/kube-bench/
+          if-no-files-found: ignore
+          retention-days: 7

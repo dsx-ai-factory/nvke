@@ -37,9 +37,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: test-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.1"
 spec:
+  kubernetes:
+    version: "1.36.1"
   machineImageRef:
     name: test-image
   machineInit:
@@ -56,9 +56,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: preview-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.2"
 spec:
+  kubernetes:
+    version: "1.36.2"
   machineImageRef:
     name: test-image
   machineInit:
@@ -99,7 +99,7 @@ spec:
       chain https://images.example.com/nvke/other.ipxe
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-new-release
 spec:
@@ -118,7 +118,7 @@ spec:
         - echo worker-new-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-sibling-release
 spec:
@@ -137,7 +137,7 @@ spec:
         - echo worker-sibling-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-no-image-release
 spec:
@@ -156,7 +156,7 @@ spec:
         - echo worker-no-image-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-deprecated-release
 spec:
@@ -177,7 +177,7 @@ spec:
     deprecated: true
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-ambiguous-a
 spec:
@@ -196,7 +196,7 @@ spec:
         - echo worker-ambiguous-a
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-ambiguous-b
 spec:

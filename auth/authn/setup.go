@@ -12,8 +12,9 @@ import (
 // Options is what a deployment configures. Config or ConfigPath decides whether
 // authentication runs at all; the other two apply only when it does.
 type Options struct {
-	// ConfigPath is the mounted YAML file holding the issuer registry, for a
-	// ConfigMap the chart does not render. Empty means no file.
+	// ConfigPath is a YAML file holding the issuer registry, for a server that
+	// takes it as a file, such as management-engine's public API. Empty means no
+	// file. The NVKE controller reads only Config.
 	ConfigPath string
 
 	// Permissive evaluates and logs every decision without acting on it, so no
@@ -32,7 +33,7 @@ type Options struct {
 // Where Setup read the issuer registry from, as its startup log names it.
 const (
 	sourceControllerConfig = "nvke-controller-config"
-	sourceConfigPath       = "AUTH_CONFIG_PATH"
+	sourceConfigPath       = "file"
 )
 
 // Setup builds the Authenticator for a deployment, or reports that

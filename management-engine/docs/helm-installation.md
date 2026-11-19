@@ -264,14 +264,22 @@ Chart version `0.2.0` alone does not identify a compatible manager image. Record
 the source commit and image digest in the site configuration. Cross-revision compatibility
 needs separate validation; artifact publication is a separate delivery step.
 The example image tags are placeholders for those reviewed installation inputs.
+For published packages and their matching image references, see the
+[publication guide](artifact-publication.md).
 
 The chart owns every schema in `config/crd/bases`: NVKECluster, ControlPlaneClass
 and ClusterReleaseChannel, and also MachineImage, ClusterRelease and
-NodePoolRelease. `state.crds.install=false` delegates all of them to an existing
+NodeProfile. `state.crds.install=false` delegates all of them to an existing
 installer. Their canonical files live in `config/crd/bases`; canonical manager
 RBAC lives in `config/rbac`. `make chart` packages generated copies for Helm.
 Kustomize consumes the canonical files directly. Wait for CRD establishment
 before creating release records.
+
+The chart also installs the admission policies in `config/admission`, under the
+same `state.crds.install` setting and with the same retention. After a new
+install, the API server can take up to a minute to start enforcing a policy
+whose `paramKind` is one of these CRDs, and until then it rejects every request
+that policy matches.
 
 `state.enabled=false` disables this chart's schemas and state RBAC/configuration
 together. `make manifests` regenerates canonical definitions, and `make chart`

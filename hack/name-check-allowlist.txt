@@ -135,10 +135,10 @@ token:^nke:
 token:nke-service|nke-e2e|nke-clients?($|[/:-])|nke-outsider|spiffe://[^ ]*/nke|/tenant/nke/|nke-infra|/nke/(controller|operators|admins|service)
 
 # API authentication: the config ConfigMaps and Secrets, the OIDC upstream CA,
-# and the chart values key behind the D19 guard. The ConfigMap keeps its name;
-# the legacy apiVersion one may still carry is dropped in v0.25.0
-# (authn.ConfigAPIVersionLegacy names its gate) and is matched by the
-# nke.nvidia.com entry above, not by this one.
+# and the chart values key behind the D19 guard. The controller no longer reads
+# nke-auth-config; nvkectl still reads its audience on sites running an older
+# controller and ignores the legacy apiVersion it may carry. That apiVersion is
+# matched by the nke.nvidia.com entry above, not by this one.
 token:nke-auth-|nkeOIDCAuth|NKE_OIDC_AUTH|nke-oidc|nke-spire-client
 
 # The pull secret is an NGC service account that keeps its name.

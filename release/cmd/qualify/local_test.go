@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/release/internal/artifact"
-	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
+	"github.com/dsx-ai-factory/nvke/release/pkg/qualification"
 )
 
 // The steps append, so a value resolved twice is read back as the last one,

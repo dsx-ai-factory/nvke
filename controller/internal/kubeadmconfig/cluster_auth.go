@@ -75,7 +75,8 @@ func BuildClusterAuthenticationConfig(ctx context.Context, c client.Client, in C
 
 // LoadOperatorJWTPolicy reserves the management SPIFFE trust domain and the User
 // subjects the RBAC manifest binds. With the manifest present, the trust domain
-// is required.
+// is required; with the trust domain set, the manifest is required, since the
+// chart renders it and a missing one would otherwise silently reserve nothing.
 func LoadOperatorJWTPolicy(ctx context.Context, reader client.Reader, trustDomain string, src nvkerbac.Source) (OperatorJWTPolicy, error) {
 	if reader == nil {
 		return OperatorJWTPolicy{}, errors.New("reading the RBAC manifest needs a management-cluster client")
@@ -84,6 +85,9 @@ func LoadOperatorJWTPolicy(ctx context.Context, reader client.Reader, trustDomai
 
 	manifest, err := nvkerbac.ReadManifest(ctx, reader, src)
 	if apierrors.IsNotFound(err) {
+		if trustDomain != "" {
+			return OperatorJWTPolicy{}, fmt.Errorf("the identities fleet-wide OIDC providers must not claim are unknown: %w", err)
+		}
 		return policy, nil
 	}
 	if err != nil {

@@ -4,121 +4,158 @@
 package main
 
 import (
-	"net/http"
-	"net/http/httptest"
+	"bytes"
+	"encoding/json"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
-	"github.com/dsx-ai-factory/nvke/release/internal/resolve"
 )
 
-func TestBuildResolversBuildsOnePerHalf(t *testing.T) {
-	reg := &qualification.Registry{Spec: qualification.RegistrySpec{
-		Sources: []qualification.Source{{Name: "images", Base: "oci://registry.example/org"}},
-		Components: []qualification.Component{
-			{Name: "controller", Resolve: qualification.Resolve{
-				Version:  &qualification.Rule{Strategy: "gitTag", With: map[string]string{"tagPrefix": "controller/"}},
-				Location: &qualification.Rule{Strategy: "ociArtifact", With: map[string]string{"source": "images", "repository": "nvke-controller"}},
-			}},
-			{Name: "kind", Resolve: qualification.Resolve{
-				Version: &qualification.Rule{Strategy: "makeVar", With: map[string]string{"var": "KIND_VERSION"}},
-			}},
-			// A version taken from another entry names no strategy, so there is
-			// nothing to build for that half.
-			{Name: "cli-amd64", Resolve: qualification.Resolve{
-				Version:  &qualification.Rule{From: "cli"},
-				Location: &qualification.Rule{Strategy: "ociArtifact", With: map[string]string{"source": "images", "repository": "nvkectl", "arch": "amd64"}},
-			}},
-		},
-	}}
+// --subject-spec names the subject's spec, so a subject kept apart from the
+// tree --root names is looked for where it was pointed, not under the root.
+func TestPlanReadsTheSubjectFromTheNamedFile(t *testing.T) {
+	// The shipped registry reads the NGC organisation from the environment.
+	t.Setenv("QUALIFY_E2E_NGC_ORG", "example-org")
+	missing := filepath.Join(t.TempDir(), "elsewhere", "qualification.yaml")
 
-	version, location, err := buildResolvers(reg, ".", resolve.Options{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(version) != 2 || version["controller"] == nil || version["kind"] == nil {
-		t.Errorf("version resolvers are %v, want controller and kind", version)
-	}
-	if len(location) != 2 || location["controller"] == nil || location["cli-amd64"] == nil {
-		t.Errorf("location resolvers are %v, want controller and cli-amd64", location)
+	cmd := planCmd()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{
+		"--subject", "other",
+		"--root", t.TempDir(),
+		"--policy", "../../policy.yaml",
+		"--registry", "../../registry.yaml",
+		"--subject-spec", missing,
+	})
+
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), missing) {
+		t.Errorf("err = %v, want it to name %s", err, missing)
 	}
 }
 
-// A component the registry names but no strategy can build is reported by name,
-// so the line to fix is the one in the registry.
-func TestBuildResolversNamesTheComponentThatFails(t *testing.T) {
-	reg := &qualification.Registry{Spec: qualification.RegistrySpec{Components: []qualification.Component{
-		{Name: "kube", Resolve: qualification.Resolve{Version: &qualification.Rule{Strategy: "debPackage"}}},
-	}}}
-
-	_, _, err := buildResolvers(reg, ".", resolve.Options{})
-	if err == nil || !strings.Contains(err.Error(), `component kube, version: "debPackage" is not one of`) {
-		t.Errorf("err = %v, want it to name the component", err)
+// gitIn runs git in dir, failing the test if it fails. Signing is off so a
+// developer's own git configuration cannot reach it.
+func gitIn(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", append([]string{
+		"-c", "user.name=test", "-c", "user.email=test@example.com",
+		"-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false",
+	}, args...)...)
+	cmd.Dir = dir
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, stderr.String())
 	}
+	return strings.TrimSpace(string(out))
 }
 
-// A component that names a source is built with the base the source stands for,
-// and one that names a source nobody listed is a registry error before this.
-func TestBuildResolversExpandsSources(t *testing.T) {
-	cdn := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
-	t.Cleanup(cdn.Close)
+const (
+	demoPolicy = `
+apiVersion: nvke.nvidia.com/v1alpha1
+kind: QualificationPolicy
+metadata:
+  name: demo
+spec:
+  scopes:
+    full:
+      selector: {arch: amd64}
+  streams:
+    - name: amd64
+      capabilities: {arch: amd64}
+`
+	demoRegistry = `
+apiVersion: nvke.nvidia.com/v1alpha1
+kind: QualificationRegistry
+metadata:
+  name: demo
+spec:
+  components:
+    - name: demo
+      resolve:
+        version: {strategy: gitTag, with: {tagPrefix: ""}}
+    - name: widget
+      resolve:
+        version: {strategy: gitTag, with: {tagPrefix: "widget/"}}
+`
+	demoSubjectSpec = `
+apiVersion: nvke.nvidia.com/v1alpha1
+kind: Qualification
+metadata:
+  name: demo
+spec:
+  subject: demo
+  components:
+    - {name: widget, selectors: [latest]}
+`
+)
 
-	reg := &qualification.Registry{Spec: qualification.RegistrySpec{
-		Sources: []qualification.Source{{Name: "artifacts", Base: cdn.URL}},
-		Components: []qualification.Component{
-			{Name: "loader", Resolve: qualification.Resolve{
-				Location: &qualification.Rule{Strategy: "url", With: map[string]string{"source": "artifacts"}},
-			}},
-		},
-	}}
+// A subject spec kept outside the tree --root names plans end to end. The
+// command assembles the resolvers, reads the spec from the file it is given,
+// describes the components at the commit the subject's tag marks, and writes
+// the plan.
+func TestPlanWritesAPlanForASubjectSpecOutsideRoot(t *testing.T) {
+	root := t.TempDir()
+	gitIn(t, root, "init", "-q")
+	gitIn(t, root, "commit", "-q", "--allow-empty", "-m", "init")
+	gitIn(t, root, "tag", "v1.0.0")
+	gitIn(t, root, "tag", "widget/v0.3.0")
+	head := gitIn(t, root, "rev-parse", "HEAD")
 
-	_, got, err := buildResolvers(reg, ".", resolve.Options{})
-	if err != nil {
+	// Nothing the plan reads sits under root.
+	files := t.TempDir()
+	write := func(name, content string) string {
+		path := filepath.Join(files, name)
+		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+
+	var out bytes.Buffer
+	cmd := planCmd()
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{
+		"--subject", "demo",
+		"--root", root,
+		"--policy", write("policy.yaml", demoPolicy),
+		"--registry", write("registry.yaml", demoRegistry),
+		"--subject-spec", write("qualification.yaml", demoSubjectSpec),
+	})
+	if err := cmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
-	out, err := got["loader"].Resolve(map[string]string{"value": "efi/x.efi"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if out["url"] != cdn.URL+"/efi/x.efi" {
-		t.Errorf("the loader resolved to %q, want the path under the source", out["url"])
-	}
-}
 
-// The option reaches the strategies that can act on it, so a plan made with
-// --check-exists asks and one made without does not.
-func TestBuildResolversPassesCheckExists(t *testing.T) {
-	// Answers 403 for everything, which is what the private bucket does for an
-	// object that is not there.
-	cdn := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusForbidden)
-	}))
-	t.Cleanup(cdn.Close)
-
-	reg := &qualification.Registry{Spec: qualification.RegistrySpec{
-		Sources: []qualification.Source{{Name: "artifacts", Base: cdn.URL}},
-		Components: []qualification.Component{
-			{Name: "loader", Resolve: qualification.Resolve{
-				Location: &qualification.Rule{Strategy: "url", With: map[string]string{"source": "artifacts"}},
-			}},
-		},
-	}}
-	inputs := map[string]string{"value": "efi/gone.efi"}
-
-	_, off, err := buildResolvers(reg, ".", resolve.Options{})
-	if err != nil {
-		t.Fatal(err)
+	var plan struct {
+		Subject      string
+		Version      string
+		Commit       string
+		Combinations []struct {
+			Components []struct{ Name, Version string }
+			Streams    []struct{ Name string }
+		}
 	}
-	if _, err := off["loader"].Resolve(inputs); err != nil {
-		t.Errorf("resolving asked whether the artifact exists: %v", err)
+	if err := json.Unmarshal(out.Bytes(), &plan); err != nil {
+		t.Fatalf("the output is not a plan: %v\n%s", err, out.String())
 	}
-
-	_, on, err := buildResolvers(reg, ".", resolve.Options{CheckExists: true})
-	if err != nil {
-		t.Fatal(err)
+	if plan.Subject != "demo" || plan.Version != "v1.0.0" || plan.Commit != head {
+		t.Errorf("plan is %s %s at %q, want demo v1.0.0 at %q", plan.Subject, plan.Version, plan.Commit, head)
 	}
-	if _, err := on["loader"].Resolve(inputs); err == nil || !strings.Contains(err.Error(), "HTTP 403") {
-		t.Errorf("err = %v, want it to report the 403", err)
+	if len(plan.Combinations) != 1 {
+		t.Fatalf("plan has %d combinations, want 1", len(plan.Combinations))
+	}
+	c := plan.Combinations[0]
+	if len(c.Components) != 1 || c.Components[0].Name != "widget" || c.Components[0].Version != "v0.3.0" {
+		t.Errorf("components are %+v, want the widget at v0.3.0, the tag without its prefix", c.Components)
+	}
+	if len(c.Streams) != 1 || c.Streams[0].Name != "amd64" {
+		t.Errorf("streams are %+v, want amd64", c.Streams)
 	}
 }

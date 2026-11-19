@@ -121,7 +121,7 @@ PRIVATE_MODULES :=
 #
 # The chart copies existed before this and nothing maintained them -- they were
 # committed by hand and happened to match. `licenses-check` now enforces it.
-LICENSE_DESTS := controller/deploy/charts/controller controller/deploy/charts/nvke-crds management-engine/chart
+LICENSE_DESTS := controller/deploy/charts/controller management-engine/chart
 
 # Redistributed binaries with generated third-party attribution.
 NOTICE_MODULES := agent controller cli os-image

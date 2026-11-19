@@ -37,9 +37,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: test-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.1"
 spec:
+  kubernetes:
+    version: "1.36.1"
   machineImageRef:
     name: test-image
   machineInit:
@@ -56,9 +56,9 @@ apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
 metadata:
   name: preview-release
-  annotations:
-    service.nvke.nvidia.com/machine-init-kubernetes-version: "1.36.2"
 spec:
+  kubernetes:
+    version: "1.36.2"
   machineImageRef:
     name: test-image
   machineInit:
@@ -84,7 +84,7 @@ spec:
       chain https://images.example.com/nvke/worker.ipxe
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-first-release
 spec:
@@ -103,7 +103,7 @@ spec:
         - echo worker-first-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-deprecated-release
 spec:
@@ -124,7 +124,7 @@ spec:
     deprecated: true
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-third-release
 spec:
@@ -143,7 +143,7 @@ spec:
         - echo worker-third-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
-kind: NodePoolRelease
+kind: NodeProfile
 metadata:
   name: worker-steady-release
 spec:

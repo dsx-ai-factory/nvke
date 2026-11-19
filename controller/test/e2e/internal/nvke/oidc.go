@@ -52,8 +52,7 @@ func ControllerSetting(data map[string]string, key string) (any, error) {
 
 // APIAuthEnabled reports apiAuth.enabled in data, the data of the controller's
 // nvke-controller-config ConfigMap. A controller older than the apiAuth section
-// has no such key, which is false: it can only authenticate through
-// AUTH_CONFIG_PATH.
+// has no such key, which reads as false.
 func APIAuthEnabled(data map[string]string) (bool, error) {
 	settings, err := parseControllerConfig(data)
 	if err != nil {

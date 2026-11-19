@@ -35,6 +35,13 @@ render() {
 checksum="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 
 render defaults
+render kube-vip-custom \
+  --set kubeVip.localASN=64512 \
+  --set kubeVip.staticPeerASN=4200000000
+render kube-vip-empty \
+  --set-string kubeVip.localASN= --set-string kubeVip.staticPeerASN=
+render kube-vip-null --set kubeVip.localASN=null --set kubeVip.staticPeerASN=null
+render kube-vip-null-section --set kubeVip=null
 render dev-without-vip --set allowControlPlaneWithoutVIP=true
 render readiness-custom \
   --set nodeAgent.readiness.workers=4 \
@@ -82,6 +89,12 @@ refuse() {
   fi
   [[ "${refusal}" == *"${want}"* ]] || { echo "$* failed for another reason: ${refusal}" >&2; exit 1; }
 }
+for field in localASN staticPeerASN; do
+  for invalid in 0 -1 4294967296 1.5 invalid true; do
+    refuse "kubeVip.${field} must be an integer between 1 and 4294967295" \
+      --set "kubeVip.${field}=${invalid}"
+  done
+done
 refuse "credentialMonitoring.warningDays must be positive" --set credentialMonitoring.warningDays=0
 refuse "credentialMonitoring.warningDays must be positive" \
   --set credentialMonitoring.enabled=false --set scheduledMaintenance.certRenewal.enabled=false \
@@ -201,16 +214,10 @@ render oidc \
   --set-string nvkeOIDCAuth.caBundleSecret.name=oidc-ca \
   --set-string nvkeOIDCAuth.caBundleSecret.key=ca.crt
 
-render api-auth-permissive \
-  --set apiAuth.enabled=true \
-  --set apiAuth.permissive=true
-
 # apiAuth rendered by the chart, which the controller reads from config.yaml.
 cat > "${values}/api-auth-inline.yaml" <<'YAML'
 apiAuth:
   enabled: true
-  configMap:
-    create: true
   config:
     audiences: ["https://nke.example.internal"]
     issuers:
@@ -226,6 +233,8 @@ apiAuth:
             - namespace: nke-clients
 YAML
 render api-auth-inline -f "${values}/api-auth-inline.yaml"
+render api-auth-permissive -f "${values}/api-auth-inline.yaml" \
+  --set apiAuth.permissive=true
 
 # apiAuthz with the chart's bundle, which TestRenderedChart loads.
 cat > "${values}/api-authz.yaml" <<'YAML'

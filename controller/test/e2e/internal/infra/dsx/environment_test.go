@@ -395,3 +395,19 @@ func TestResolveDoesNotRequireAMachine(t *testing.T) {
 		t.Errorf("should place on an instance type, got %+v", place)
 	}
 }
+
+// A FLAT datahall has no prefix: NiCO attaches the instance itself.
+func TestValidateAcceptsAFlatDatahallWithoutAPrefix(t *testing.T) {
+	site := completeSite()
+	site.Key = "flat"
+	site.VpcPrefixID = ""
+	site.AutoNetwork = true
+	if err := site.validate(); err != nil {
+		t.Errorf("a FLAT datahall should validate without a prefix, got %v", err)
+	}
+
+	site.VpcPrefixID = "prefix"
+	if err := site.validate(); err == nil || !strings.Contains(err.Error(), "autoNetwork") {
+		t.Errorf("autoNetwork with a prefix should be refused, got %v", err)
+	}
+}

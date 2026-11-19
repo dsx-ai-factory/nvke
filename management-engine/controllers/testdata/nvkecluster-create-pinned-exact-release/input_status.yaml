@@ -2,6 +2,6 @@
 # SPDX-License-Identifier: Apache-2.0
 
 id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
-resolvedRelease:
+currentRelease:
   name: first-release
   version: "1.34.4"

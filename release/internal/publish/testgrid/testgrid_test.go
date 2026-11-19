@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dsx-ai-factory/nvke/release/internal/qualification"
+	"github.com/dsx-ai-factory/nvke/release/pkg/qualification"
 )
 
 // testResultFinishedAt is the default FinishedAt testResult stamps -- the

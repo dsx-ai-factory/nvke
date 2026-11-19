@@ -11,6 +11,8 @@ import (
 // ClusterReleaseSpec is the published content of a control-plane release: the
 // machine image its nodes boot and the initialization applied to them.
 type ClusterReleaseSpec struct {
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="kubernetes is immutable"
+	Kubernetes ClusterReleaseKubernetes `json:"kubernetes"`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="machineImageRef is immutable"
 	MachineImageRef MachineImageReference `json:"machineImageRef"`
 	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="machineInit is immutable"
@@ -18,6 +20,13 @@ type ClusterReleaseSpec struct {
 	// +optional
 	// +kubebuilder:default={}
 	Lifecycle ReleaseLifecycle `json:"lifecycle"`
+}
+
+// ClusterReleaseKubernetes describes the Kubernetes the release boots.
+type ClusterReleaseKubernetes struct {
+	// Version is the exact Kubernetes version the release boots, such as 1.36.3.
+	// +kubebuilder:validation:MinLength=1
+	Version string `json:"version"`
 }
 
 // ClusterRelease is what an operator publishes to make a control-plane release

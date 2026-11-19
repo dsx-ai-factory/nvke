@@ -7,15 +7,12 @@
 # specs exercise the shipping authentication path rather than bypassing it.
 # backend-e2e.sh fails rather than skips when authentication is not enforced.
 #
-# The chart renders this configuration, so the controller reads it from apiAuth
-# in its settings ConfigMap; nvke-auth-config is still rendered for released
-# nvkectl. It matches the configuration deploy/k8s/nvke-auth-dev.yaml carries:
-# same audience, same admitted service account.
+# The chart renders this configuration into apiAuth in the controller's
+# settings ConfigMap. It matches the identities deploy/k8s/nvke-auth-dev.yaml
+# creates: same audience, same admitted service account.
 apiAuth:
   enabled: true
   permissive: false
-  configMap:
-    create: true
   config:
     audiences: ["https://nke.tilt.local"]
     issuers:

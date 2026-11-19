@@ -24,7 +24,7 @@ func TestSurfaces(t *testing.T) {
 	discovery := metav1.APIResourceList{GroupVersion: "service.nvke.nvidia.com/v1"}
 	for _, name := range []string{
 		"nvkeclusters", "clusterreleases", "machineimages",
-		"controlplaneclasses", "clusterreleasechannels", "nodepoolreleases",
+		"controlplaneclasses", "clusterreleasechannels", "nodeprofiles",
 	} {
 		data, err := os.ReadFile("../../config/crd/bases/service.nvke.nvidia.com_" + name + ".yaml")
 		require.NoError(t, err)

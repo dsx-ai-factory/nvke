@@ -61,7 +61,9 @@ With `--wait` it then retries each one for the whole budget before failing.
 | `--output` | `-` | Where to write the plan. `-` is stdout |
 | `--resolution` | `commitDescribe` | How to resolve the components, named for the strategy that answers. `commitDescribe` describes each at the commit the subject's version points at, which on a tagged commit is that tag, so every component resolves to the version being qualified. It is how a release, an RC and a beta are all qualified; an RC resolves to the beta it was cut from, whose artifacts it ships. Once the commit also carries a release tag, describe names the release, so a later qualification of its beta or RC resolves the release's artifacts, built from the same commit; check the resolved versions in the plan. `gitTag` takes the highest `v*` tag in the repository, which is not necessarily the version being qualified |
 | `--check-exists` | off | Ask for each location this resolves and require it to be published. Off leaves the question to `qualify verify` |
-| `--root`, `--policy`, `--registry` | the enclosing checkout and the files under `release/` | Where to read the repository and the two files from |
+| `--root` | the enclosing checkout | The tree the version resolvers read: git tags and history, and files such as `make/tool-versions.mk` |
+| `--subject-spec` | `release/qualification.yaml` for `nvke`, `<root>/<subject>/qualification.yaml` otherwise | The subject's qualification spec. Name it to plan a subject kept apart from the tree `--root` points at |
+| `--policy`, `--registry` | the files under `release/` | Where to read the release policy and the registry from |
 
 Without `--version` the subject resolves the way every component does, to the
 highest version of any kind. Pass `--version` to name a tag that exists.
@@ -223,8 +225,8 @@ replace them.
 | [`policy.yaml`](policy.yaml) | The streams that exist and the scopes over them |
 | [`qualification.yaml`](qualification.yaml) | What is qualified when NVKE is qualified as a whole: the components tested together, and the other versions a run needs |
 | [`cmd/qualify/`](cmd/qualify/) | The binary. `plan` resolves what to qualify, `verify` checks that it is published |
-| [`internal/qualification/`](internal/qualification/) | Reading and checking the three files, and turning them into a plan |
-| [`internal/resolve/`](internal/resolve/) | The resolution strategies. Of this repository it takes only `internal/artifact` |
+| [`pkg/qualification/`](pkg/qualification/) | Reading and checking the three files, and turning them into a plan. Importable from other modules |
+| [`pkg/resolve/`](pkg/resolve/) | The resolution strategies, which a caller can add to. Of this repository it takes only `internal/artifact` |
 | [`internal/artifact/`](internal/artifact/) | Asking whether a location holds something, over HTTPS or a registry, and waiting for one that is still publishing |
 | [`hack/next-tag.sh`](hack/next-tag.sh) | The version the next beta or release candidate tag gets, from the commits since the latest GA tag. [`test_next_tag.py`](hack/test_next_tag.py) tests it against fixture repositories |
 
