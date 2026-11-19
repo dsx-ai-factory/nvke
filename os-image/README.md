@@ -31,7 +31,7 @@ Common prerequisites for image builds:
 
 | Tool | Version | Install |
 |---|---|---|
-| [Packer](https://developer.hashicorp.com/packer) | 1.15.4 | https://developer.hashicorp.com/packer/install |
+| [Packer](https://developer.hashicorp.com/packer) | 1.15.4 | `make -C os-image/packer install-packer`, or https://developer.hashicorp.com/packer/install |
 | Python | >= 3.10, standard library only | via your package manager |
 | `curl` | any | via your package manager |
 | `qemu-system-x86_64` or `qemu-system-aarch64`, `qemu-img`, `cloud-localds`, `swtpm`, OVMF/AAVMF | any | via your package manager |
@@ -45,6 +45,9 @@ Package-builder prerequisites depend on the selected mode:
 - **Nix VM builds:** Nix with `nix-command` and `flakes` enabled. Preparing the
   VM requires a matching Linux builder or cached build outputs; see the
   [Nix setup instructions](nix/README.md). Go is provided inside the VM.
+- **Container builds (Apple-silicon macOS only):** podman or Docker. Go and the
+  ISO tools are provided inside the container; see
+  [Build on an Apple-silicon Mac](#build-on-an-apple-silicon-mac).
 
 Both variants boot the Ubuntu Server installer (not a prebuilt cloud image),
 so all of the above are needed even for a first build — see
@@ -115,10 +118,12 @@ Packer validates against `^tty[A-Za-z0-9]+$`. That is a boundary, not a typo
 check: the value reaches a shell command in the autoinstall late-commands.
 
 Image baking uses the existing package Make targets.
-`NKE_PACKAGE_BUILDER=auto|host|nix` picks the package builder: `auto` builds on
-a matching Linux host and otherwise uses the
+`NKE_PACKAGE_BUILDER=auto|host|nix|container` picks the package builder: `auto`
+builds on a matching Linux host and otherwise uses the
 [NixOS package-builder VM](nix/README.md), which returns the packages to the
-host before Packer uploads them to its separate Ubuntu guest.
+host before Packer uploads them to its separate Ubuntu guest. On an
+Apple-silicon Mac without Nix, `auto` uses the builder container instead (see
+[Build on an Apple-silicon Mac](#build-on-an-apple-silicon-mac)).
 
 `image-native` requires usable KVM. The generic `image` target and the existing
 `packer/` targets allow `ACCELERATOR=tcg` for development. Emulated builds are
@@ -155,14 +160,16 @@ compatible arm64 image. The production arm64 kernel is
 `linux-nvidia-64k-hwe-26.04` on 26.04 and `linux-nvidia-64k` on 24.04. Neither
 boots under HVF on Apple silicon, which has no 64K page granule; use an image
 baked with `linux-generic` (the HVF bake default). Compatibility with a
-particular Mac/QEMU combination still needs live validation. Apple Silicon macOS package builds use the NixOS VM; image baking still needs the
-host Packer/ISO tools. The boot scripts also need `cloud-localds`, SSH and, for
-smoke tests, `timeout`.
+particular Mac/QEMU combination still needs live validation. Apple Silicon macOS
+package builds use the NixOS VM when Nix is installed and the builder container
+otherwise; image baking runs Packer on the host. The boot scripts also need
+`cloud-localds`, SSH and, for smoke tests, `timeout`.
 Run `make -C os-image test-qemu` for the selection and build-entrypoint tests
 without booting a VM.
 
 The build checks package-builder prerequisites before starting Packer — Go for
-host builds, Nix for VM builds; `make -C os-image/packer check-deps ARCH=arm64`
+host builds, Nix for VM builds, a running podman or Docker for container builds;
+`make -C os-image/packer check-deps ARCH=arm64`
 runs that check on its own. The agent package uses nfpm, pinned in
 `make/tool-versions.mk`.
 
@@ -203,8 +210,9 @@ make os-image-fde ARCH=arm64
 ```
 
 Both variants build for arm64. Host package-builder mode requires an arm64
-Linux host and cgo toolchain. On Apple Silicon macOS and mismatched Linux hosts,
-`auto` selects the NixOS VM, which provides that toolchain. QEMU can emulate
+Linux host and cgo toolchain. On mismatched Linux hosts, and on Apple Silicon
+macOS with Nix installed, `auto` selects the NixOS VM, which provides that
+toolchain; on Apple Silicon macOS without Nix it selects the builder container. QEMU can emulate
 the image guest with `tcg`; package compilation happens separately. `ARCH` picks the right ISO URL,
 QEMU binary (`qemu-system-aarch64`), machine type (`virt`), and UEFI firmware
 (AAVMF instead of OVMF) automatically; nothing else needs to change per-arch.
@@ -223,6 +231,60 @@ preserves its basename, and verifies that the copied publication bytes are
 identical. By default, the Makefile exports `PACKER_CACHE_DIR` under the ignored
 `packer/iso-cache/` tree so Packer's build/download cache does not dirty the
 checkout; callers may override that directory without changing the recipe.
+
+### Build on an Apple-silicon Mac
+
+An Apple-silicon Mac bakes arm64 images under HVF. Packer and QEMU run on
+macOS. The two steps that need Linux run in a container: building the node
+packages, which runs the target architecture's `kubeadm`, and patching the
+installer ISO, which needs `xorriso` and `7z`. Nix is not required.
+
+Install the tools, start a podman machine, and install the Packer version the
+project pins:
+
+```bash
+brew install qemu podman
+podman machine init            # once
+podman machine start
+make -C os-image/packer install-packer
+```
+
+Docker Desktop works in place of podman; `CONTAINER_RUNTIME=docker` picks it
+when both are installed. Then, from a clean checkout:
+
+```bash
+make -C os-image/packer os-image-non-fde ARCH=arm64
+```
+
+`UBUNTU_RELEASE=24.04.5` builds the 24.04 flavor. The image lands in
+`os-image/packer/output-non-fde/`, and the installer's serial log and Packer's
+log in `os-image/packer/build-logs/`.
+
+What runs where:
+
+- `scripts/builder-container.sh` builds the image in `packer/builder/Containerfile`
+  as `localhost/nvke-os-image-builder:<digest>-<arch>`, on first use and
+  whenever the Containerfile changes. It mounts the checkout at its own path, so
+  the packages and the patched ISO land in the checkout as on Linux. Go's module
+  and build caches persist in `~/.cache/nvke/os-image-builder/<arch>`.
+- `check-deps` fails in seconds if podman or Docker is not running.
+- Packer runs on macOS under HVF, with the `linux-generic` kernel (see above).
+  This is a development image: it cannot boot the NVIDIA 64K-page kernel that
+  release images carry, and the Mac path covers arm64 only.
+
+If Nix is installed, `auto` keeps using the [NixOS VM](nix/README.md); set
+`NKE_PACKAGE_BUILDER=container` to use the container anyway. A Mac that has
+`xorriso` and `7z` installed patches the ISO on macOS.
+
+Disk use is all in the checkout and the cache: about three times the ISO for
+`packer/iso-cache/`, the packages in `packer/artifacts/`, and the build VM's
+disk while Packer runs. To reclaim it:
+
+```bash
+make -C os-image/packer clean
+rm -rf ~/.cache/nvke/os-image-builder
+podman images --filter reference=localhost/nvke-os-image-builder -q | xargs podman rmi
+```
 
 ### Direct Packer interface
 

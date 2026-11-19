@@ -8,6 +8,8 @@ SPDX-License-Identifier: Apache-2.0
 Nix prepares a Linux VM with the tools needed to build NVKE's Debian packages.
 Use this on Apple Silicon macOS or when your Linux host differs from the target
 architecture. Matching Linux hosts use the existing direct package build by default.
+An Apple Silicon Mac without Nix builds the packages in a container instead; see
+[Build on an Apple-silicon Mac](../README.md#build-on-an-apple-silicon-mac).
 
 ## Install Nix
 
