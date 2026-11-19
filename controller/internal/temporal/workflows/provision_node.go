@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"go.temporal.io/api/enums/v1"
 	"go.temporal.io/sdk/temporal"
 	"go.temporal.io/sdk/workflow"
 
@@ -21,20 +20,12 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
-type HookType string
-
 const (
 	ProvisionNodeWorkflowType = "ProvisionNode"
-
-	BeforeJoinNode   HookType = "before-join"
-	AfterJoinNode    HookType = "after-join"
-	BeforeRemoveNode HookType = "before-remove"
-	AfterRemoveNode  HookType = "after-remove"
 )
 
 type ProvisionNodeInput struct {
-	NodeID                         uuid.UUID
-	RebootNodeWaitForUptimeTimeout time.Duration
+	NodeID uuid.UUID
 	// SkipJoin leaves the host at ReadyToJoin without running kubeadm join.
 	// Control-plane nodes set this true so the control-plane controller can
 	// start JoinNode one node at a time. Workers leave it false (auto-join).
@@ -242,31 +233,11 @@ func provisionNode(ctx workflow.Context, input ProvisionNodeInput, labels nodeMe
 		return fmt.Errorf("failed to wait for node preflight to succeed: %w", err)
 	}
 
-	configProfile, err := getConfigProfile(ctx, input.NodeID)
-	if err != nil {
-		endHostPrep()
-		return fmt.Errorf("failed to get config profile: %w", err)
-	}
-
-	if err := runHooks(ctx, input.NodeID, BeforeJoinNode, configProfile); err != nil {
-		endHostPrep()
-		return fmt.Errorf("failed to run beforeJoinNode hooks: %w", err)
-	}
-
 	if err := configureCNIPrerequisites(ctx, input.NodeID); err != nil {
 		endHostPrep()
 		return fmt.Errorf("failed to configure CNI prerequisites: %w", err)
 	}
 	endHostPrep()
-
-	if configProfile.PreJoinNodeReboot {
-		rebootStart := workflow.Now(ctx)
-		if err := rebootNodeWaitForUptimeChildWorkflow(ctx, input.NodeID, input.RebootNodeWaitForUptimeTimeout); err != nil {
-			recordPhase("reboot", rebootStart, workflow.Now(ctx))
-			return fmt.Errorf("failed to reboot node: %w", err)
-		}
-		recordPhase("reboot", rebootStart, workflow.Now(ctx))
-	}
 
 	if err := markNodeAsReadyToJoin(ctx, input.NodeID); err != nil {
 		return fmt.Errorf("failed to mark node as ready to join: %w", err)
@@ -285,11 +256,6 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 		if !workflow.IsReplaying(ctx) {
 			metrics.RecordProvisionPhase(labels.ClusterName, labels.NodeType, phase, end.Sub(start))
 		}
-	}
-
-	configProfile, err := getConfigProfile(ctx, nodeID)
-	if err != nil {
-		return fmt.Errorf("failed to get config profile: %w", err)
 	}
 
 	if nodeCtx.ManagedByNodePool {
@@ -351,11 +317,6 @@ func joinProvisionedNode(ctx workflow.Context, nodeID uuid.UUID, nodeCtx activit
 			endPostJoin()
 			return fmt.Errorf("failed to verify control-plane role label: %w", err)
 		}
-	}
-
-	if err := runHooks(ctx, nodeID, AfterJoinNode, configProfile); err != nil {
-		endPostJoin()
-		return fmt.Errorf("failed to run afterJoinNode hooks: %w", err)
 	}
 
 	// If the node is the initial control plane node, we don't need to configure KubeVip, because the cluster creation process does it.
@@ -435,94 +396,6 @@ func waitForNodePreflight(ctx workflow.Context, nodeID uuid.UUID) error {
 		},
 	).Get(ctx, nil); err != nil {
 		return fmt.Errorf("failed to wait for node preflight to succeed: %w", err)
-	}
-
-	return nil
-}
-
-func rebootNodeWaitForUptimeChildWorkflow(ctx workflow.Context, nodeID uuid.UUID, timeout time.Duration) error {
-	workflowOptions := workflow.ChildWorkflowOptions{
-		WorkflowID: fmt.Sprintf("%s%s", constants.RebootNodeUptimeWorkflowPrefix, nodeID),
-		// child workflow options cannot specify WorkflowIDConflictPolicy.
-		// Hence, to prevent duplicates we use ALLOW_DUPLICATE_FAILED_ONLY to avoid multiple reboot workflows on the same node
-		WorkflowIDReusePolicy: enums.WORKFLOW_ID_REUSE_POLICY_ALLOW_DUPLICATE_FAILED_ONLY,
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval: 1 * time.Minute,
-			MaximumInterval: 5 * time.Minute,
-			MaximumAttempts: 0, // retry indefinitely
-		},
-	}
-
-	rebootNodeWaitForUptimeInput := RebootNodeWaitForUptimeInput{
-		NodeID:  nodeID,
-		Timeout: timeout,
-	}
-
-	err := workflow.ExecuteChildWorkflow(
-		workflow.WithChildOptions(ctx, workflowOptions),
-		RebootNodeWaitForUptime,
-		&rebootNodeWaitForUptimeInput,
-	).Get(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("failed to execute reboot node child workflow: %w", err)
-	}
-	return nil
-}
-
-func getConfigProfile(ctx workflow.Context, nodeID uuid.UUID) (activities.ConfigProfile, error) {
-	var a *activities.Activities
-
-	var configProfile activities.ConfigProfile
-	if err := workflow.ExecuteActivity(withDBOptions(ctx), a.GetNodeConfigProfile, activities.GetNodeConfigProfileInput{
-		NodeID: nodeID,
-	}).Get(ctx, &configProfile); err != nil {
-		return activities.ConfigProfile{}, fmt.Errorf("failed to get config profile: %w", err)
-	}
-
-	return configProfile, nil
-}
-
-func runHooks(ctx workflow.Context, nodeID uuid.UUID, hookType HookType, configProfile activities.ConfigProfile) error {
-	var a *activities.Activities
-
-	var hooks []*activities.HookSpec
-	switch hookType {
-	case BeforeJoinNode:
-		hooks = configProfile.Hooks.BeforeJoinNode
-	case AfterJoinNode:
-		hooks = configProfile.Hooks.AfterJoinNode
-	case BeforeRemoveNode:
-		hooks = configProfile.Hooks.BeforeRemoveNode
-	case AfterRemoveNode:
-		hooks = configProfile.Hooks.AfterRemoveNode
-	default:
-		return fmt.Errorf("invalid hook type: %s", hookType)
-	}
-
-	execRunbookActivityOptions := workflow.ActivityOptions{
-		StartToCloseTimeout: 35 * time.Minute,
-		HeartbeatTimeout:    defaultRunbookActivityHeartbeatTimeout(),
-		RetryPolicy: &temporal.RetryPolicy{
-			InitialInterval: 1 * time.Minute,
-			MaximumInterval: 5 * time.Minute,
-			MaximumAttempts: 0, // Retry indefinitely
-		},
-	}
-
-	for _, hook := range hooks {
-		if err := workflow.ExecuteActivity(
-			workflow.WithActivityOptions(ctx, execRunbookActivityOptions),
-			a.ExecuteNodeRunbookHook,
-			activities.ExecuteNodeRunbookHookInput{
-				NodeID:      nodeID,
-				RunbookName: hook.Runbook.Name,
-				RunbookEnv:  hook.Runbook.Env,
-
-				NodeProvisioningConditionMessage: fmt.Sprintf("Executing %s runbook %s", string(hookType), hook.Runbook.Name),
-			},
-		).Get(ctx, nil); err != nil {
-			return fmt.Errorf("failed to run %s runbook %s: %w", hookType, hook.Runbook.Name, err)
-		}
 	}
 
 	return nil
