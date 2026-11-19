@@ -63,6 +63,7 @@ controllerManager:
     large-cluster-size-threshold: "50"
     profiling: "false"
     secondary-node-eviction-rate: "0"
+    terminated-pod-gc-threshold: "12500"
 dns: {}
 etcd:
   local:

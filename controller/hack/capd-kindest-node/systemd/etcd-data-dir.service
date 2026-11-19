@@ -1,0 +1,17 @@
+# Own the etcd data directory as etcd:etcd, as the production node image does
+# (os-image/packer/scripts/provision.sh, CIS 1.1.12). Node containers mount a
+# tmpfs at /var/lib/etcd, which starts out root-owned on every boot, so the
+# owner is set here, before `nvke-agent` can run kubeadm. kubeadm reuses an
+# existing data directory and leaves its owner alone. etcd runs as root in its
+# static pod either way, so this changes what the node reports, not what etcd
+# can do.
+[Unit]
+Description=Own the etcd data directory as etcd:etcd
+Before=kubelet.service nvke-agent.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/install -d -m 0700 -o etcd -g etcd /var/lib/etcd
+
+[Install]
+WantedBy=multi-user.target

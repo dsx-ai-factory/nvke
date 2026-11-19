@@ -19,4 +19,5 @@
 !controller/test/e2e/internal/**/*.json
 !controller/test/e2e/internal/**/*.tmpl
 !controller/test/e2e/internal/**/*.sh
+!controller/test/e2e/internal/kubebench/exceptions.yaml
 !controller/test/e2e/testdata/**

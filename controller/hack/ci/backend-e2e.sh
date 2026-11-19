@@ -542,6 +542,9 @@ collect_diagnostics() {
         for artifact in tilt.log tilt-snapshot.json nico-sim.log e2e.log junit.xml; do
           docker cp "${RUNNER_NAME}:/state/${artifact}" "${STATE_DIR}/${artifact}" >/dev/null 2>&1 || true
         done
+        # What specs wrote under -e2e.artifacts-dir, such as kube-bench scan
+        # results. Copied before redaction, like everything above.
+        docker cp "${RUNNER_NAME}:/state/artifacts" "${STATE_DIR}/" >/dev/null 2>&1 || true
       fi
     fi
 
