@@ -3,25 +3,8 @@
 # SPDX-License-Identifier: Apache-2.0
 """Reconcile a node image's CycloneDX SBOM with the dpkg database it came from.
 
-syft catalogs the dpkg database but drops what dpkg knows about each package's
-state: a held package and a half-configured one look the same as an installed
-one, a never-installed stub comes out with version UNKNOWN, and a package
-removed down to its conffiles can go missing. This rewrites the SBOM in place
-so that:
-
-  * every deb component carries its dpkg Status ("want flag state") as the
-    nvke:dpkg:status property, so held, unpacked and half-configured packages
-    are reported as such;
-  * packages dpkg lists as not-installed or config-files are removed, because
-    dpkg does not count them as installed (a config-files package can still
-    leave its configuration files on the image);
-  * every deb component has a license, or an explicit NOASSERTION where its
-    copyright file names none, and the share that does is recorded as the
-    nvke:license-coverage metadata property;
-  * the deb components are exactly the dpkg entries that remain, matched on
-    name, architecture and version. Any difference is an error: an SBOM that
-    disagrees with the image's own package database answers "is <component>
-    in this image" wrongly.
+Adds each package's dpkg status, drops packages dpkg does not count as
+installed, and fails if the SBOM and dpkg disagree. See docs/artifact-publication.md.
 """
 
 import argparse

@@ -6,12 +6,8 @@
 #
 # Usage: extract-image-sbom.sh <disk.qcow2> <out.spdx.json> <out.cdx.json>
 #
-# The CycloneDX document is the one reconciled with dpkg: finish-image-sbom.py
-# records each package's dpkg state, marks a package whose copyright file
-# names no license as NOASSERTION, reports license coverage, and fails when
-# the document and the package database disagree. It is then validated
-# against the CycloneDX 1.6 schema. The SPDX document keeps its shape for the
-# consumers that already read it, and now carries licenses as well.
+# The CycloneDX document is reconciled with dpkg by finish-image-sbom.py, then
+# validated against the 1.6 schema.
 #
 # The document describes the disk that was just built, not this source tree:
 # the package set is read out of the image's own dpkg database. A node runs
@@ -47,9 +43,7 @@ LUKS_PASSPHRASE="${LUKS_PASSPHRASE:-}"
 # for a libvirt session, which no runner here has.
 export LIBGUESTFS_BACKEND="${LIBGUESTFS_BACKEND:-direct}"
 
-# cyclonedx-cli is a self-contained .NET binary, which aborts at startup on a
-# host without libicu unless globalization is switched off. Validation needs
-# no culture data.
+# cyclonedx-cli is a .NET binary that aborts without libicu unless this is set.
 export DOTNET_SYSTEM_GLOBALIZATION_INVARIANT="${DOTNET_SYSTEM_GLOBALIZATION_INVARIANT:-1}"
 
 for tool in guestfish syft tar jq python3 cyclonedx; do
@@ -175,9 +169,7 @@ gf download /usr/lib/os-release "${ROOT}/usr/lib/os-release"
 
 tar -xf "${WORK}/dpkg.tar" -C "${ROOT}/var/lib/dpkg"
 
-# syft reads each package's license from /usr/share/doc/<package>/copyright.
-# provision.sh strips the rest of /usr/share/doc, so this is the copyright
-# files and the symlinks between them, not the documentation.
+# syft reads licenses from /usr/share/doc/<package>/copyright, all provision.sh leaves there.
 if [[ "$(gf is-dir /usr/share/doc)" == "true" ]]; then
   gf tar-out /usr/share/doc "${WORK}/doc.tar"
   tar -xf "${WORK}/doc.tar" -C "${ROOT}/usr/share/doc"
@@ -211,10 +203,8 @@ if [[ "${packages}" -lt 2 ]]; then
 fi
 echo "Wrote ${OUT}: ${packages} packages from $(basename "${DISK}")"
 
-# A second scan, not a second --output on the first: without file metadata
-# the CycloneDX document lists packages, not every copyright and dpkg info
-# file as a component of its own, but the same setting would also zero the
-# file checksums in the SPDX document.
+# A second scan: no file metadata keeps files out of the CycloneDX components,
+# but would zero the SPDX document's file checksums.
 SYFT_FILE_METADATA_SELECTION=none syft scan "dir:${ROOT}" \
   --output "cyclonedx-json@1.6=${OUT_CDX}" \
   --source-name "$(basename "${DISK}")"
