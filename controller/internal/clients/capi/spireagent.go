@@ -12,9 +12,13 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// ValidateNodeAgentProfile accepts every profile: CAPI nodes support each
+// ValidateNodeAgentProfile accepts every profile except a SPIFFE-enabled
+// KubeVirt VM pool without external mTLS. CAPI nodes otherwise support each
 // SPIRE attestation method and transport.
-func (*Client) ValidateNodeAgentProfile(db.Node, db.NodePool) error {
+func (*Client) ValidateNodeAgentProfile(profile db.Node, nodePool db.NodePool) error {
+	if isKubeVirtNodePool(nodePool) {
+		return validateKubeVirtNodeAgentProfile(profile)
+	}
 	return nil
 }
 

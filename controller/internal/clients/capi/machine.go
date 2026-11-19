@@ -71,14 +71,31 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	if err := applyNicoMachineInstanceLabels(node, cluster, nodePool.ID, infraMachine); err != nil {
 		return err
 	}
+	// The node is pinned to the profile in force when it was created, which
+	// can differ from the one its pool was accepted under.
+	kubeVirtVM := isKubeVirtObject(infraMachine, kubeVirtMachineKind)
+	if kubeVirtVM {
+		if err := validateKubeVirtNodeAgentProfile(node); err != nil {
+			return fmt.Errorf("%w: node %s: %w", shared.ErrUnsupportedMachineConfig, node.ID, err)
+		}
+		var capiProvider db.CAPINodeProvider
+		if node.Capi != nil {
+			capiProvider = *node.Capi
+		}
+		capiProvider.KubeVirtVM = true
+		node.Capi = &capiProvider
+	}
 
 	if err := deps.K8sClient.Patch(ctx, infraMachine, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply infra machine %s: %w", infraMachine.GetName(), err)
 	}
 
-	spireJoinToken, spireAgentAlternateIDPath, err := deps.CreateSpireJoinToken(ctx, node)
-	if err != nil {
-		return err
+	var spireJoinToken, spireAgentAlternateIDPath string
+	if !kubeVirtVM {
+		spireJoinToken, spireAgentAlternateIDPath, err = deps.CreateSpireJoinToken(ctx, node)
+		if err != nil {
+			return err
+		}
 	}
 
 	userData, err := c.renderBootstrapUserData(ctx, deps, node, nodeSet, spireJoinToken)

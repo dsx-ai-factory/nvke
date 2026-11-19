@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -172,6 +173,18 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 		}
 	}
 
+	// The node agent Service is created before the node records that it is a
+	// KubeVirt VM, so the Machine is checked too.
+	kubeVirtVM := node.IsKubeVirtVM()
+	if !kubeVirtVM {
+		existing := &clusterv1.Machine{}
+		err := a.k8sClient.Get(ctx, client.ObjectKeyFromObject(machine), existing)
+		if err != nil && !apierrors.IsNotFound(err) {
+			return fmt.Errorf("failed to get machine %s: %w", machine.Name, err)
+		}
+		kubeVirtVM = err == nil && capi.IsKubeVirtMachineRef(existing.Spec.InfrastructureRef)
+	}
+
 	forgeInstanceID, forgeMachineID := forgeIdentityFromNode(node)
 	logger.Info("Deleting CAPI machine",
 		"nodeID", input.NodeID,
@@ -207,7 +220,26 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 		}
 	}
 
+	if kubeVirtVM {
+		cluster, err := a.GetCluster(ctx, node.ClusterID)
+		if err != nil {
+			return err
+		}
+		if err := a.kubeVirtAgentEndpoint().Delete(ctx, cluster, node); err != nil {
+			return err
+		}
+	}
+
 	return nil
+}
+
+func (a *Activities) kubeVirtAgentEndpoint() capi.KubeVirtAgentEndpoint {
+	return capi.KubeVirtAgentEndpoint{
+		ManagementClient: a.k8sClient,
+		Namespace:        a.cfg.ManagementNamespaceOrDefault(),
+		Config:           a.cfg,
+		FieldManagerName: a.cfg.FieldManagerName,
+	}
 }
 
 func (a *Activities) WaitForCAPIMachineReady(ctx context.Context, input WaitForCAPIMachineReadyInput) (string, error) {
@@ -284,6 +316,18 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		return "", fmt.Errorf("capi machine %s has no IP addresses in status or infrastructure ref", machine.Name)
 	}
 
+	var kubeVirtNode *db.CAPINodeProvider
+	if capi.IsKubeVirtMachineRef(machine.Spec.InfrastructureRef) {
+		dialAddress, err := a.kubeVirtAgentEndpoint().Ensure(ctx, cluster, node)
+		if err != nil {
+			return "", err
+		}
+		if dialAddress == "" {
+			return "", fmt.Errorf("node agent Service for KubeVirt machine %s has no load balancer address yet", machine.Name)
+		}
+		kubeVirtNode = &db.CAPINodeProvider{KubeVirtVM: true, AgentDialAddress: dialAddress}
+	}
+
 	// Record the type the infra provider settled on for templateless Nico nodes
 	// (which carry no controller-selected type). Only authoritative once ready, and must
 	// never block provisioning; CAPD and template-backed nodes are unaffected.
@@ -312,6 +356,9 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 			return nonRetryableIfNotFound("failed to get node", err)
 		}
 		nodeForUpdate.IP = ipAddress
+		if kubeVirtNode != nil {
+			nodeForUpdate.Capi = kubeVirtNode
+		}
 		// Sticky: only stamp the type when the node has no type yet, so we never
 		// clobber a controller-selected (Forge) type or an already-recorded value.
 		stampInstanceType := observedInstanceTypeID != uuid.Nil && nodeForUpdate.NicoInstanceTypeID() == uuid.Nil

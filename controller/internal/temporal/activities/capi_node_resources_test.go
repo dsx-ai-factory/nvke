@@ -5,10 +5,12 @@ package activities
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 
 	"github.com/google/uuid"
+	spirev1alpha1 "github.com/spiffe/spire-controller-manager/api/v1alpha1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -16,6 +18,7 @@ import (
 	"go.temporal.io/sdk/testsuite"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -1249,6 +1252,134 @@ func TestForgeIdentityFromNode(t *testing.T) {
 			instanceID, machineID := forgeIdentityFromNode(tt.node)
 			assert.Equal(t, tt.wantInstanceID, instanceID)
 			assert.Equal(t, tt.wantMachineID, machineID)
+		})
+	}
+}
+
+func TestActivities_WaitForCAPIMachineReady_KubeVirtVMRecordsAgentDialAddress(t *testing.T) {
+	ctx := context.Background()
+	nodeID := uuid.MustParse("71000000-0000-0000-0000-000000000021")
+	clusterID := uuid.MustParse("71000000-0000-0000-0000-000000000022")
+	node := db.Node{ID: nodeID, ClusterID: clusterID, ControlPlane: true, Name: "worker-0", NodeAgentTLSJWTEnabled: true}
+	infraCluster, err := json.Marshal(map[string]any{
+		"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
+		"kind":       "KubevirtCluster",
+		"metadata":   map[string]any{"name": "cluster-a"},
+	})
+	require.NoError(t, err)
+	cluster := db.Cluster{ID: clusterID, Name: "cluster-a", ProviderType: db.ProviderTypeCAPI, Capi: &db.CAPIClusterProvider{InfraCluster: infraCluster}}
+	cluster.ControlPlaneConfig.KubernetesVersion = "1.32.1"
+	cluster.ControlPlaneConfig.SetCapi(db.CAPIControlPlaneProvider{})
+
+	kubeVirtMachine := &unstructured.Unstructured{}
+	kubeVirtMachine.SetAPIVersion("infrastructure.cluster.x-k8s.io/v1alpha1")
+	kubeVirtMachine.SetKind("KubevirtMachine")
+	kubeVirtMachine.SetNamespace(constants.LegacyManagementNamespace)
+	kubeVirtMachine.SetName("worker-0")
+	machine := testCAPIMachineWithNicoInfraRef(clusterv1.MachineAddresses{{Type: clusterv1.MachineInternalIP, Address: "10.0.0.10"}})
+	machine.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
+		APIGroup: "infrastructure.cluster.x-k8s.io",
+		Kind:     "KubevirtMachine",
+		Name:     "worker-0",
+	}
+
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+	require.NoError(t, apiextensionsv1.AddToScheme(scheme))
+	require.NoError(t, spirev1alpha1.AddToScheme(scheme))
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithStatusSubresource(&corev1.Service{}).WithObjects(
+		machine, kubeVirtMachine,
+		&apiextensionsv1.CustomResourceDefinition{ObjectMeta: metav1.ObjectMeta{
+			Name:   "kubevirtmachines.infrastructure.cluster.x-k8s.io",
+			Labels: map[string]string{"cluster.x-k8s.io/v1beta2": "v1alpha1"},
+		}},
+	).Build()
+
+	mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
+	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+	mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil)
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+		return nodeForUpdate.Capi == nil
+	})).Return(node, nil).Maybe()
+	mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+		return nodeForUpdate.IP == "10.0.0.10" &&
+			nodeForUpdate.Capi != nil &&
+			*nodeForUpdate.Capi == db.CAPINodeProvider{KubeVirtVM: true, AgentDialAddress: "192.0.2.30"}
+	})).Return(node, nil).Once()
+
+	a := &Activities{db: mockDB, k8sClient: k8sClient, cfg: config.Config{FieldManagerName: "test-controller", NodeAgent: config.NodeAgentConfig{Port: "15005"}}}
+
+	_, err = executeWaitForCAPIMachineReadyActivity(t, a, WaitForCAPIMachineReadyInput{NodeID: nodeID})
+	require.ErrorContains(t, err, "has no load balancer address yet")
+
+	serviceKey := client.ObjectKey{Namespace: constants.LegacyManagementNamespace, Name: "nvke-node-agent-" + nodeID.String()}
+	service := &corev1.Service{}
+	require.NoError(t, k8sClient.Get(ctx, serviceKey, service))
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKey{Name: serviceKey.Name}, &spirev1alpha1.ClusterSPIFFEID{}))
+	service.Status.LoadBalancer.Ingress = []corev1.LoadBalancerIngress{{IP: "192.0.2.30"}}
+	require.NoError(t, k8sClient.Status().Update(ctx, service))
+
+	ipAddress, err := executeWaitForCAPIMachineReadyActivity(t, a, WaitForCAPIMachineReadyInput{NodeID: nodeID})
+	require.NoError(t, err)
+	assert.Equal(t, "10.0.0.10", ipAddress)
+	mockTx.AssertExpectations(t)
+}
+
+func TestDeleteCAPIMachineForNode_DeletesKubeVirtAgentEndpoint(t *testing.T) {
+	ctx := context.Background()
+	nodeID := uuid.MustParse("74000000-0000-0000-0000-000000000021")
+	clusterID := uuid.MustParse("74000000-0000-0000-0000-000000000022")
+	infraCluster, err := json.Marshal(map[string]any{"apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1", "kind": "KubevirtCluster"})
+	require.NoError(t, err)
+	cluster := db.Cluster{ID: clusterID, Name: "cluster-a", ProviderType: db.ProviderTypeCAPI, Capi: &db.CAPIClusterProvider{InfraCluster: infraCluster}}
+	name := "nvke-node-agent-" + nodeID.String()
+
+	tests := map[string]struct {
+		node    db.Node
+		machine *clusterv1.Machine
+	}{
+		"node recorded as a KubeVirt VM": {
+			node: db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0", Capi: &db.CAPINodeProvider{KubeVirtVM: true}},
+		},
+		"machine is a KubevirtMachine before the node records it": {
+			node: db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0"},
+			machine: &clusterv1.Machine{
+				ObjectMeta: metav1.ObjectMeta{Name: "worker-0", Namespace: constants.LegacyManagementNamespace},
+				Spec: clusterv1.MachineSpec{InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+					APIGroup: "infrastructure.cluster.x-k8s.io", Kind: "KubevirtMachine", Name: "worker-0",
+				}},
+			},
+		},
+	}
+	for testName, tt := range tests {
+		t.Run(testName, func(t *testing.T) {
+			scheme := runtime.NewScheme()
+			require.NoError(t, corev1.AddToScheme(scheme))
+			require.NoError(t, clusterv1.AddToScheme(scheme))
+			require.NoError(t, spirev1alpha1.AddToScheme(scheme))
+			objects := []client.Object{
+				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: constants.LegacyManagementNamespace}},
+				&spirev1alpha1.ClusterSPIFFEID{ObjectMeta: metav1.ObjectMeta{Name: name}},
+			}
+			if tt.machine != nil {
+				objects = append(objects, tt.machine)
+			}
+			k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objects...).Build()
+
+			mockDB := &testutil.MockDB{}
+			mockDB.On("GetNode", mock.Anything, nodeID).Return(tt.node, nil).Once()
+			mockDB.On("GetCluster", mock.Anything, clusterID).Return(cluster, nil).Once()
+			a := &Activities{db: mockDB, k8sClient: k8sClient}
+
+			env := (&testsuite.WorkflowTestSuite{}).NewTestActivityEnvironment()
+			env.RegisterActivity(a.DeleteCAPIMachineForNode)
+			_, err := env.ExecuteActivity(a.DeleteCAPIMachineForNode, DeleteCAPIMachineForNodeInput{NodeID: nodeID})
+			require.NoError(t, err)
+
+			require.True(t, apierrors.IsNotFound(k8sClient.Get(ctx, client.ObjectKey{Namespace: constants.LegacyManagementNamespace, Name: name}, &corev1.Service{})))
+			require.True(t, apierrors.IsNotFound(k8sClient.Get(ctx, client.ObjectKey{Name: name}, &spirev1alpha1.ClusterSPIFFEID{})))
+			mockDB.AssertExpectations(t)
 		})
 	}
 }

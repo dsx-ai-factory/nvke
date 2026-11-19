@@ -19,6 +19,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/utils"
 )
@@ -41,7 +42,12 @@ func testNodeAgentBootstrapFiles(cfg config.Config, controllerClientCABundle str
 			args = append(args, "--nvke-controller-client-ca-bundle="+config.NodeAgentControllerCAPath)
 		}
 		if node.NodeAgentTLSJWTEnabled {
-			args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
+			args = append(args, "--grpc-auth-mode=tls-jwt")
+			if node.IsKubeVirtVM() {
+				args = append(args, "--dsx-identity-metadata-url="+constants.DSXMetadataServiceURL)
+			} else {
+				args = append(args, "--dsx-identity-exchange-url="+cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
+			}
 		}
 		files = append(files, db.CloudInitFile{
 			Path:        config.NodeAgentConfigPath,
@@ -100,6 +106,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 		node                  *db.Node
 		provider              db.CAPINodePoolProvider
 		spireJoinToken        string
+		kubeVirtVM            bool
 		trustDomain           string
 		trustBundle           string
 		trustBundleError      error
@@ -233,6 +240,40 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 				assert.NotContains(t, userData, "sed -E")
 			},
 		},
+		"KubeVirt VM gets no SPIRE agent and reads its token from the metadata service": {
+			config: func() config.Config {
+				cfg := joinTokenSpiffeConfig
+				cfg.NodeAgent.TLSJWT = config.TLSJWTConfig{Enabled: true, DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange"}
+				return cfg
+			}(),
+			provider:         customBootstrap,
+			kubeVirtVM:       true,
+			trustBundleError: errors.New("a VM has no SPIRE agent to read a bundle for"),
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.NotContains(t, userData, "/etc/spire-agent/agent.conf")
+				assert.NotContains(t, userData, "/etc/spire-agent/initial-trust-bundle.pem")
+				assert.Contains(t, userData, "--grpc-auth-mode=tls-jwt --dsx-identity-metadata-url=http://169.254.169.254")
+				assert.NotContains(t, userData, "--dsx-identity-exchange-url")
+				assert.Contains(t, userData, "/etc/custom.conf")
+			},
+		},
+		"bare-metal TLS JWT node keeps the exchange": {
+			config: func() config.Config {
+				cfg := tpmSpiffeConfig
+				cfg.NodeAgent.TLSJWT = config.TLSJWTConfig{Enabled: true, DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange"}
+				return cfg
+			}(),
+			trustDomain:           "example.org",
+			trustBundle:           "bundle",
+			expectTrustBundleCall: true,
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Contains(t, userData, "/etc/spire-agent/agent.conf")
+				assert.Contains(t, userData, "--dsx-identity-exchange-url=https://identity.example.test/v1/exchange")
+				assert.NotContains(t, userData, "--dsx-identity-metadata-url")
+			},
+		},
 		"existing agent restart is followed by the final restart": {
 			config: config.Config{NodeAgent: config.NodeAgentConfig{Port: "15005", TLSJWT: config.TLSJWTConfig{Enabled: true, DSXIdentityExchangeURL: "https://identity.example.test/v1/exchange"}}},
 			provider: db.CAPINodePoolProvider{
@@ -297,6 +338,9 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 			node := nodeForBootstrapConfig(params.config)
 			if params.node != nil {
 				node = *params.node
+			}
+			if params.kubeVirtVM {
+				node.Capi = &db.CAPINodeProvider{KubeVirtVM: true}
 			}
 
 			userData, err := (&Client{}).renderBootstrapUserData(

@@ -78,6 +78,10 @@ func updateSpireServer(ctx workflow.Context, input UpdateSpireServerInput) error
 			logger.Info("skipping SPIRE server update on node without SPIFFE", "node", node.Name)
 			continue
 		}
+		if node.IsKubeVirtVM() {
+			logger.Info("skipping SPIRE server update on KubeVirt VM node, which runs no SPIRE agent", "node", node.Name)
+			continue
+		}
 		if node.IP == "" {
 			// It cannot be reached yet, so it still points at the old server.
 			logger.Error("SPIRE server update failed on node without an IP", "node", node.Name)

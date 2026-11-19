@@ -66,7 +66,8 @@ func appendMappingNode(node *yaml.Node, key string, style yaml.Style, value, tag
 }
 
 // renderBootstrapUserData renders the template-backed CAPI node's cloud-init
-// user data.
+// user data. A KubeVirt VM gets no SPIRE agent: its node agent authenticates
+// with the DSX token from the metadata service in the VM.
 func (*Client) renderBootstrapUserData(
 	ctx context.Context,
 	deps shared.MachineCreateDeps,
@@ -78,11 +79,12 @@ func (*Client) renderBootstrapUserData(
 	if err != nil {
 		return "", fmt.Errorf("failed to read node set capi provider: %w", err)
 	}
+	kubeVirtVM := node.IsKubeVirtVM()
 	controllerFiles, err := deps.NodeAgentBootstrapFiles(node)
 	if err != nil {
 		return "", err
 	}
-	if node.SpireAttestationMethod == db.SpireAttestationMethodJoinToken && spireJoinToken == "" {
+	if !kubeVirtVM && node.SpireAttestationMethod == db.SpireAttestationMethodJoinToken && spireJoinToken == "" {
 		return "", fmt.Errorf("spire join token is required when SPIRE attestation method is joinToken")
 	}
 
@@ -90,8 +92,9 @@ func (*Client) renderBootstrapUserData(
 	// read a bundle from, so a node gets neither the bundle nor a SPIRE agent
 	// config. Asking anyway blocks provisioning: the dial fails, the activity
 	// retries forever, and the cluster never leaves Provisioning.
+	spireAgent := node.SpiffeEnabled && !kubeVirtVM
 	var trustDomain, trustBundle string
-	if node.SpiffeEnabled {
+	if spireAgent {
 		trustDomain, trustBundle, err = deps.GetTrustDomainBundle(ctx, deps.Config)
 		if err != nil {
 			return "", fmt.Errorf("failed to get trust domain and bundle: %w", err)
@@ -107,7 +110,7 @@ func (*Client) renderBootstrapUserData(
 			Content:     file.Content,
 		})
 	}
-	if node.SpiffeEnabled {
+	if spireAgent {
 		dsxIMDSPluginChecksum := deps.Config.NodeAgent.DSXImds.PluginChecksum
 		if dsxIMDSPluginChecksum == "" {
 			dsxIMDSPluginChecksum = "${DSX_IMDS_PLUGIN_CHECKSUM}"

@@ -52,6 +52,7 @@ type Node struct {
 	Nico               *NicoNodeProvider        `bun:"nico,type:jsonb"`
 	NodeAgentLifecycle *NodeAgentLifecycle      `bun:"node_agent_lifecycle,type:jsonb"`
 	LaunchLayer        *LaunchLayerNodeProvider `bun:"launch_layer,type:jsonb"`
+	Capi               *CAPINodeProvider        `bun:"capi,type:jsonb"`
 	// CertificateInspection retains read-only public observations independently of lifecycle conditions.
 	CertificateInspection *CertificateInspection `bun:"type:jsonb,nullzero"`
 }
@@ -71,6 +72,31 @@ type LaunchLayerNodeProvider struct {
 	InstanceID string `json:"instance_id,omitempty"`
 	MachineID  string `json:"machine_id,omitempty"`
 	RackID     string `json:"rack_id,omitempty"`
+}
+
+// CAPINodeProvider records per-node state for infra (CAPI) provider nodes.
+type CAPINodeProvider struct {
+	// KubeVirtVM marks a node whose CAPI machine is a KubevirtMachine. Its
+	// node agent gets its TLS/JWT token from the DSX metadata service in the
+	// VM and runs no SPIRE agent.
+	KubeVirtVM bool `json:"kubevirt_vm,omitempty"`
+	// AgentDialAddress is the address the controller dials the node agent at
+	// when the machine address is not reachable from the controller, such as a
+	// per-VM LoadBalancer address. Empty means dial IP.
+	AgentDialAddress string `json:"agent_dial_address,omitempty"`
+}
+
+// IsKubeVirtVM reports whether the node is a KubeVirt VM created by the infra provider.
+func (n Node) IsKubeVirtVM() bool {
+	return n.Capi != nil && n.Capi.KubeVirtVM
+}
+
+// AgentDialHost returns the host the controller dials the node agent at.
+func (n Node) AgentDialHost() string {
+	if n.Capi != nil && n.Capi.AgentDialAddress != "" {
+		return n.Capi.AgentDialAddress
+	}
+	return n.IP
 }
 
 // ValidateSecurityProfile rejects node records whose immutable connection and
