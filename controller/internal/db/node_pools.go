@@ -99,10 +99,55 @@ func uuidPtrEqual(a, b *uuid.UUID) bool {
 
 // Equal reports whether two CAPINodePoolProvider values represent the same configuration.
 func (c CAPINodePoolProvider) Equal(other CAPINodePoolProvider) bool {
-	return bytes.Equal(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
+	return jsonEqual(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
 		c.SpireAttestationMethod == other.SpireAttestationMethod &&
 		cloudInitFilesEqual(c.BootstrapFiles, other.BootstrapFiles) &&
 		slices.Equal(c.PreKubeadmCommands, other.PreKubeadmCommands)
+}
+
+// jsonEqual compares JSON content independent of object key order and whitespace.
+// Numbers compare by exact value, including equivalent exponent notation.
+func jsonEqual(a, b json.RawMessage) bool {
+	if bytes.Equal(a, b) {
+		return true
+	}
+	decode := func(raw json.RawMessage) (any, error) {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		var value any
+		err := decoder.Decode(&value)
+		return value, err
+	}
+	left, err := decode(a)
+	if err != nil {
+		return false
+	}
+	right, err := decode(b)
+	if err != nil {
+		return false
+	}
+	var equal func(a, b any) bool
+	equal = func(a, b any) bool {
+		switch left := a.(type) {
+		case json.Number:
+			right, ok := b.(json.Number)
+			if !ok {
+				return false
+			}
+			x, xOK := new(big.Rat).SetString(string(left))
+			y, yOK := new(big.Rat).SetString(string(right))
+			return xOK && yOK && x.Cmp(y) == 0
+		case map[string]any:
+			right, ok := b.(map[string]any)
+			return ok && maps.EqualFunc(left, right, equal)
+		case []any:
+			right, ok := b.([]any)
+			return ok && slices.EqualFunc(left, right, equal)
+		default:
+			return reflect.DeepEqual(a, b)
+		}
+	}
+	return equal(left, right)
 }
 
 // Equal reports whether two LaunchLayerNodePoolProvider values represent the same configuration.
@@ -478,75 +523,6 @@ func (q *queriesImpl) ListNodePoolCounts(ctx context.Context, pools []NodePool) 
 		counts[group.NodePoolID] = count
 	}
 	return counts, nil
-}
-
-// NodePoolMatchesNodeSet reports whether the supplied NodeSet matches the pool's requested
-// configuration for observed counts, allowing PostgreSQL JSONB normalization.
-// It does not depend on the active generation's ID or affect rollout decisions.
-func NodePoolMatchesNodeSet(nodePool NodePool, current NodeSet) bool {
-	if nodePool.KubernetesVersion != current.KubernetesVersion ||
-		nodePool.SystemReservedMemory != current.SystemReservedMemory ||
-		nodePool.KubeReservedMemory != current.KubeReservedMemory ||
-		nodePool.TeleportEnabled != current.TeleportEnabled {
-		return false
-	}
-
-	switch {
-	case nodePool.Nico != nil:
-		return current.Nico != nil && nodePool.Nico.Equal(*current.Nico)
-	case nodePool.Capi != nil:
-		return current.Capi != nil &&
-			jsonEqual(nodePool.Capi.InfraMachineTemplate, current.Capi.InfraMachineTemplate) &&
-			nodePool.Capi.SpireAttestationMethod == current.Capi.SpireAttestationMethod &&
-			cloudInitFilesEqual(nodePool.Capi.BootstrapFiles, current.Capi.BootstrapFiles) &&
-			slices.Equal(nodePool.Capi.PreKubeadmCommands, current.Capi.PreKubeadmCommands)
-	case nodePool.LaunchLayer != nil:
-		return current.LaunchLayer != nil && nodePool.LaunchLayer.Equal(*current.LaunchLayer)
-	default:
-		return false
-	}
-}
-
-// jsonEqual compares JSON content independent of object key order and whitespace.
-// Numbers compare by exact value, including equivalent exponent notation.
-func jsonEqual(a, b json.RawMessage) bool {
-	if bytes.Equal(a, b) {
-		return true
-	}
-	decode := func(raw json.RawMessage) (any, error) {
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		var value any
-		err := decoder.Decode(&value)
-		return value, err
-	}
-	left, err := decode(a)
-	if err != nil {
-		return false
-	}
-	right, err := decode(b)
-	return err == nil && jsonValuesEqual(left, right)
-}
-
-func jsonValuesEqual(a, b any) bool {
-	switch left := a.(type) {
-	case json.Number:
-		right, ok := b.(json.Number)
-		if !ok {
-			return false
-		}
-		x, xOK := new(big.Rat).SetString(string(left))
-		y, yOK := new(big.Rat).SetString(string(right))
-		return xOK && yOK && x.Cmp(y) == 0
-	case map[string]any:
-		right, ok := b.(map[string]any)
-		return ok && maps.EqualFunc(left, right, jsonValuesEqual)
-	case []any:
-		right, ok := b.([]any)
-		return ok && slices.EqualFunc(left, right, jsonValuesEqual)
-	default:
-		return reflect.DeepEqual(a, b)
-	}
 }
 
 // ListNodePoolMetrics returns aggregated metrics for all node pools

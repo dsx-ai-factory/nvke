@@ -182,12 +182,6 @@ func TestNodePoolMatchesNodeSet(t *testing.T) {
 	reformatted.SetCapi(*snapshot.Capi)
 	reformatted.Capi.InfraMachineTemplate = json.RawMessage(`{ "image": "new", "kind": "DockerMachineTemplate" }`)
 	require.True(t, db.NodePoolMatchesNodeSet(pool, reformatted))
-	// Existing rollout decisions retain byte-for-byte template comparison.
-	pool.CurrentNodeSetID = &snapshot.ID
-	require.False(t, pool.Capi.Equal(*reformatted.Capi))
-	require.True(t, db.NodePoolNeedsNewNodeSet(pool, reformatted))
-	require.False(t, db.NodePoolNeedsNewNodeSet(pool, snapshot))
-	pool.CurrentNodeSetID = nil
 	// A match doesn't require an active-generation pointer.
 	require.True(t, db.NodePoolMatchesNodeSet(pool, snapshot))
 	require.True(t, db.NodePoolNeedsNewNodeSet(pool, snapshot))
@@ -221,7 +215,7 @@ func TestNodePoolMatchesNodeSet(t *testing.T) {
 	require.False(t, db.NodePoolMatchesNodeSet(pool, snapshot))
 }
 
-func TestNodePoolMatchesNodeSetJSON(t *testing.T) {
+func TestCAPINodePoolProviderEqualJSON(t *testing.T) {
 	for _, tt := range []struct {
 		name, desired, current string
 		want                   bool
@@ -238,10 +232,8 @@ func TestNodePoolMatchesNodeSetJSON(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			desired := db.CAPINodePoolProvider{InfraMachineTemplate: json.RawMessage(tt.desired)}
 			current := db.CAPINodePoolProvider{InfraMachineTemplate: json.RawMessage(tt.current)}
-			pool := db.NodePool{Capi: &desired}
-			nodeSet := db.NodeSet{Capi: &current}
-			require.Equal(t, tt.want, db.NodePoolMatchesNodeSet(pool, nodeSet))
-			require.Equal(t, tt.want, db.NodePoolMatchesNodeSet(db.NodePool{Capi: &current}, db.NodeSet{Capi: &desired}))
+			require.Equal(t, tt.want, desired.Equal(current))
+			require.Equal(t, tt.want, current.Equal(desired))
 		})
 	}
 }
