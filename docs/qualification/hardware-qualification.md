@@ -308,7 +308,7 @@ A run that fails once its stream is chosen still writes
 workflow's record step does. A dry run writes no `e2e-config.yaml` and no
 result.
 
-The jump hosts and the token issuer are scrubbed from the text files (the log,
+The jump hosts, the token issuer and the OpenSearch endpoint and password are scrubbed from the text files (the log,
 the JUnit and JSON reports, `tenant-diagnostics.json` and
 `site-cluster-state.txt`) before they are moved there. Nothing else is
 scrubbed: those files still carry node addresses, the Forge ids, the NGC org
@@ -555,6 +555,8 @@ Planning needs `QUALIFY_E2E_NGC_ORG` whatever the registry, because
 | `SITE_DEPLOY_PATH_REF` | The controller's commit | The commit the deploy path is exported from |
 | `NVKE_CONTROLLER_NAMESPACE`, `NVKE_CONTROLLER_SERVICE` | `nvke-controller` | The name the controller is installed under. A release cut before the rename uses `nke-controller`. |
 | `E2E_KAPS_BENCH_DIR` | None | Absolute path of a kaps-bench folder holding the `kaps-bench` binary, `bin/helm` and `run-specs`. kaps-bench installs the Prometheus its run specs need, which stays for the following runs. A stream that lists `kapsBenchRunSpecs`, such as perf, needs it; at stage `full`, the only stage that runs them, the suite checks it before a machine is taken. CI stages it for the perf stream. |
+| `KB_OPENSEARCH_URL` | None | OpenSearch endpoint kaps-bench publishes its results to. Secret. Unset keeps the results local. |
+| `KB_OPENSEARCH_USER`, `KB_OPENSEARCH_PASS` | None | Basic auth for that endpoint. Secret. Uploaded files keep the user name readable. |
 
 ### How it stays the same run as CI
 
@@ -704,7 +706,7 @@ bash $SCRIPT run
 go test -v -timeout 220m . -args -ginkgo.label-filter="site-controller && !nico-dsx" -ginkgo.timeout=150m -ginkgo.v -ginkgo.fail-on-empty -ginkgo.no-color -ginkgo.junit-report=qualify-e2e.junit.xml -ginkgo.json-report=qualify-e2e.report.json -e2e.config=$RUN/e2e-config.yaml -e2e.environment=forge -e2e.site-stage=full -e2e.versions="controller=<commit>,cli=<commit>,capi-provisioned=<commit>,os-image-bootloader-amd64=<url>,os-image-amd64=<url>,...,kube=1.36.3,cni-ovn=2.4.2,..." -e2e.capabilities=arch=amd64,gpu=l40s
 
 bash $SCRIPT withhold
-#    scrubs the jump hosts and the token issuer from the log, the reports,
+#    scrubs the jump hosts, the token issuer and the OpenSearch endpoint and password from the log, the reports,
 #    tenant-diagnostics.json and site-cluster-state.txt
 bash $SCRIPT artifacts
 #    lists what the suite wrote in controller/test/e2e/, which is moved to $RUN
@@ -789,6 +791,7 @@ tenant once its checks pass, where kaps-bench installs Prometheus in
 `monitoring` itself. The plan records them,
 and the stream's result says which it ran with. The job's timeout and the timeout of
 `go test` follow from the suite's, so they cannot be set to disagree.
+Each kaps-bench run gets `tenantWorkers` as its `NODE_COUNT` parameter.
 
 ## Stages
 

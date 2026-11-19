@@ -44,14 +44,16 @@ func TestFullStageSupported(t *testing.T) {
 	}
 }
 
-// The workflow seds the jump hosts, the SSA issuer and the DSX API hosts out of
-// the text files it uploads; the suite has to carry the same values into the
-// archives it writes, raw, without the trailing slash the workflow also strips,
-// and as the host alone.
+// The workflow seds the jump hosts, the SSA issuer, the DSX API hosts and the
+// OpenSearch endpoint out of the text files it uploads; the suite has to carry
+// the same values into the archives it writes, raw, without the trailing slash
+// the workflow also strips, and as the host alone.
 func TestWithheldFromEnvironment(t *testing.T) {
 	t.Setenv("FORGE_JUMP_HOST", "jump.example.test/")
 	t.Setenv("DSX_DATAHALL_1_JUMP_HOST", "10.1.2.3")
 	t.Setenv("SSA_ISSUER", "https://issuer.example.test/")
+	t.Setenv("KB_OPENSEARCH_URL", "https://opensearch.example.test:9200")
+	t.Setenv("KB_OPENSEARCH_PASS", "opensearch-pass")
 	t.Setenv("DSX_DATAHALL_3_CA_CERT", "-----BEGIN CERTIFICATE-----\nhall3\n-----END CERTIFICATE-----\n")
 	t.Setenv("DSX_DATAHALL_3_API", "https://api.hall3.example.test:443/")
 	t.Setenv("DSX_DATAHALL_3_SITE_ID", "hall3-site-not-withheld")
@@ -60,13 +62,13 @@ func TestWithheldFromEnvironment(t *testing.T) {
 
 	values := withheldFromEnvironment()
 	got := strings.Join(values, "\n")
-	for _, want := range []string{"jump.example.test/", "10.1.2.3", "https://issuer.example.test/", "hall3\n-----END CERTIFICATE-----", "hunter2hunter2", "https://api.hall3.example.test:443/"} {
+	for _, want := range []string{"jump.example.test/", "10.1.2.3", "https://issuer.example.test/", "hall3\n-----END CERTIFICATE-----", "hunter2hunter2", "https://api.hall3.example.test:443/", "https://opensearch.example.test:9200", "opensearch-pass"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("withheldFromEnvironment lacks %q:\n%s", want, got)
 		}
 	}
 	// Each derived form on its own, not as a substring of the raw value.
-	for _, form := range []string{"jump.example.test", "https://issuer.example.test", "https://api.hall3.example.test:443", "api.hall3.example.test", "issuer.example.test"} {
+	for _, form := range []string{"jump.example.test", "https://issuer.example.test", "https://api.hall3.example.test:443", "api.hall3.example.test", "issuer.example.test", "opensearch.example.test"} {
 		if !slices.Contains(values, form) {
 			t.Errorf("withheldFromEnvironment lacks %q on its own:\n%s", form, got)
 		}
@@ -76,6 +78,26 @@ func TestWithheldFromEnvironment(t *testing.T) {
 	}
 	if strings.Contains(got, "hall3-site-not-withheld") {
 		t.Errorf("withheldFromEnvironment carries a DSX id that is not an API host:\n%s", got)
+	}
+	// Each line of the OpenSearch password on its own, as the workflow matches it, and a one-line one once.
+	for _, tc := range []struct {
+		pass string
+		want []string
+	}{
+		{"opensearch-pass", []string{"opensearch-pass"}},
+		{"s3cr3t-value\n", []string{"s3cr3t-value\n", "s3cr3t-value"}},
+		{"first-half\nsecond-half", []string{"first-half\nsecond-half", "first-half", "second-half"}},
+	} {
+		t.Setenv("KB_OPENSEARCH_PASS", tc.pass)
+		var forms []string
+		for _, v := range withheldFromEnvironment() {
+			if strings.Contains(tc.pass, v) {
+				forms = append(forms, v)
+			}
+		}
+		if !slices.Equal(forms, tc.want) {
+			t.Errorf("withheldFromEnvironment with the password %q carries %q of it, want %q", tc.pass, forms, tc.want)
+		}
 	}
 }
 

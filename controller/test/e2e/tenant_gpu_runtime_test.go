@@ -174,6 +174,8 @@ type tenantToolRun struct {
 	dir, kubeconfig, data, recipe string
 	// stopGrace is how long a canceled command has from SIGTERM to SIGKILL, aicrKillGrace when zero.
 	stopGrace time.Duration
+	// env is the NAME=value entries this run's commands get on top of the environment try builds.
+	env []string
 }
 
 func newAICRToolRun(ctx context.Context, test *tenantTest, plan tenantGPURuntimePlan, lifetime time.Duration) *tenantToolRun {
@@ -240,7 +242,8 @@ func aicrTokenWarning(expiresAt time.Time, known bool, deadline time.Time, hasDe
 
 // try runs a command against the tenant and returns an error carrying the
 // end of its output. The environment is built rather than inherited: the
-// runner's carries the lane's secrets, which nothing run here needs.
+// runner's carries the lane's secrets, which nothing run here needs beyond
+// the entries a run names in env.
 func (r *tenantToolRun) try(ctx context.Context, dir, name string, args ...string) error {
 	out := &tailBuffer{limit: aicrOutputBytes}
 	command := exec.CommandContext(ctx, name, args...)
@@ -251,6 +254,7 @@ func (r *tenantToolRun) try(ctx context.Context, dir, name string, args ...strin
 		"TMPDIR=" + r.dir,
 		"KUBECONFIG=" + r.kubeconfig,
 	}
+	command.Env = append(command.Env, r.env...)
 	command.Stdout = io.MultiWriter(GinkgoWriter, out)
 	command.Stderr = command.Stdout
 	// deploy.sh starts helm and kubectl, which hold the output pipe. Killing

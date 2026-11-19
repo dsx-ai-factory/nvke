@@ -348,7 +348,7 @@ func TestShippedPolicyKeepsEachDSXScopeToItsStreams(t *testing.T) {
 }
 
 // TestShippedPolicyRunsKapsBenchOnThePerfStreamOnly checks that the perf stream
-// runs kaps-bench's smoke-prometheus spec and that no other stream runs kaps-bench.
+// runs kaps-bench's smoke-prometheus and cluster-density-v2 specs and that no other stream runs kaps-bench.
 func TestShippedPolicyRunsKapsBenchOnThePerfStreamOnly(t *testing.T) {
 	t.Log("Doing: loading the shipped policy")
 	p, err := LoadPolicy("../../policy.yaml")
@@ -356,11 +356,11 @@ func TestShippedPolicyRunsKapsBenchOnThePerfStreamOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	t.Log("Testing: the perf stream runs smoke/smoke-prometheus.yaml and no other stream runs a run spec")
+	t.Log("Testing: the perf stream runs smoke/smoke-prometheus.yaml, then baseline/cluster-density-v2.yaml, and no other stream runs a run spec")
 	for _, s := range p.Spec.Streams {
 		var want []string
 		if s.Capabilities["profile"] == "perf" {
-			want = []string{"smoke/smoke-prometheus.yaml"}
+			want = []string{"smoke/smoke-prometheus.yaml", "baseline/cluster-density-v2.yaml"}
 		}
 		if got := s.Parameters.KapsBenchRunSpecs; !reflect.DeepEqual(got, want) {
 			t.Errorf("%s runs kaps-bench run specs %q, want %q", s.Name, got, want)
