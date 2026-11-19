@@ -244,14 +244,17 @@ project pins:
 
 ```bash
 brew install qemu podman
-podman machine init            # once
+podman machine init --rootful --cpus 5 --memory 16384   # once
 podman machine start
 make -C os-image/packer install-packer
 ```
 
-It has to be podman: the OVN CNI package builds its image from source, and the
-builder container does that through the podman machine's own service. Then,
-from a clean checkout:
+That machine size and a rootful machine are what this path has been run with;
+podman's default 2 GiB of memory is untested and likely too small for the Go
+builds. An existing machine can be changed while stopped with
+`podman machine set --rootful --cpus 5 --memory 16384`. It has to be podman: the
+OVN CNI package builds its image from source, and the builder container does
+that through the podman machine's own service. Then, from a clean checkout:
 
 ```bash
 make -C os-image/packer os-image-non-fde ARCH=arm64
@@ -263,9 +266,9 @@ log in `os-image/packer/build-logs/`.
 
 What runs where:
 
-- `scripts/builder-container.sh` builds the image in `packer/builder/Containerfile`
+- `packer/scripts/builder-container.sh` builds the image in `packer/builder/Dockerfile`
   as `localhost/nvke-os-image-builder:<digest>-<arch>`, on first use and
-  whenever the Containerfile changes. It mounts the checkout at its own path, so
+  whenever that file changes. It mounts the checkout at its own path, so
   the packages and the patched ISO land in the checkout as on Linux. Go's module
   and build caches persist in `~/.cache/nvke/os-image-builder/<arch>`. Each
   package's `dist/` scratch is a podman volume named

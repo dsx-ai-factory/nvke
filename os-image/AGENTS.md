@@ -75,7 +75,7 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
   while Linux and Apple Silicon macOS hosts otherwise use the separate NixOS
   package-builder VM (`package-builder.sh` rejects Intel macOS). An Apple
   Silicon Mac without Nix uses the builder container instead
-  (`scripts/builder-container.sh`, `packer/builder/Containerfile`), which also
+  (`packer/scripts/builder-container.sh`, `packer/builder/Dockerfile`), which also
   patches the installer ISO when `xorriso`/`7z` are missing. Keep its base
   image's glibc no newer than the oldest target Ubuntu. The shared
   QEMU helper also supports HVF for boot tools on macOS, and image bakes accept

@@ -29,26 +29,26 @@ case "$arch" in amd64|arm64) ;; *) die "ARCH must be amd64 or arm64, not $arch" 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
 source_root=${SOURCE_ROOT:-$(cd "$script_dir/../../.." && pwd -P)}
 builder_dir="$source_root/os-image/packer/builder"
-containerfile="$builder_dir/Containerfile"
-[[ -f "$containerfile" ]] || die "no Containerfile at $containerfile"
+dockerfile="$builder_dir/Dockerfile"
+[[ -f "$dockerfile" ]] || die "no Dockerfile at $dockerfile"
 
 command -v podman >/dev/null || die "podman is required: install it and start its machine (see os-image/README.md)"
 
 sha256_of() {
   if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
 }
-# The tag follows the Containerfile's bytes, so an edited recipe builds a new
+# The tag follows the Dockerfile's bytes, so an edited recipe builds a new
 # image instead of reusing a stale one, and the architecture, so an arm64
 # image is never run for an amd64 build.
-digest=$(sha256_of "$containerfile")
+digest=$(sha256_of "$dockerfile")
 image="localhost/nvke-os-image-builder:${digest:0:12}-$arch"
 platform="linux/$arch"
 
 ensure_image() {
   podman info >/dev/null 2>&1 || die "podman is not answering; start its VM with: podman machine start"
   if ! podman image exists "$image" >/dev/null 2>&1; then
-    echo "building $image ($platform) from $containerfile"
-    podman build --platform "$platform" -t "$image" -f "$containerfile" "$builder_dir"
+    echo "building $image ($platform) from $dockerfile"
+    podman build --platform "$platform" -t "$image" -f "$dockerfile" "$builder_dir"
   fi
 }
 
@@ -68,6 +68,8 @@ run_in_container() {
     -w "$cwd"
     -e "GOMODCACHE=/var/cache/nvke-builder/gomod"
     -e "GOCACHE=/var/cache/nvke-builder/gobuild"
+    # Go marks its module cache read-only, which macOS `rm -rf` cannot delete.
+    -e GOFLAGS=-modcacherw
     -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e "GIT_CONFIG_VALUE_0=*"
     # The machine's SELinux policy would deny the container its runtime socket.
     --security-opt label=disable
@@ -103,7 +105,14 @@ run_in_container() {
       args+=(-e "$name=${!name}")
     fi
   done
-  podman "${args[@]}" "$image" "$@"
+  # A named container in the background, so Ctrl-C (or TERM) removes it at
+  # once: podman forwards SIGINT only to the container's PID 1, which waits
+  # for its own child, so a foreground run would finish the build first.
+  local container="nvke-os-image-builder-$$" pid
+  podman "${args[@]}" --name "$container" "$image" "$@" &
+  pid=$!
+  trap 'podman rm -f -t 0 "$container" >/dev/null 2>&1 || true; kill "$pid" 2>/dev/null || true; exit 130' INT TERM HUP
+  wait "$pid"
 }
 
 case "${1:-}" in

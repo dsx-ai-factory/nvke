@@ -6,11 +6,13 @@ import hashlib
 import json
 import os
 import shutil
+import signal
 import stat
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 PACKER_DIR = Path(__file__).resolve().parents[1]
@@ -370,6 +372,9 @@ if args[:1] == ["info"]:
     sys.exit(int(os.environ.get("INFO_STATUS", "0")))
 if args[:2] in (["image", "exists"], ["image", "inspect"]):
     sys.exit(0 if os.environ.get("IMAGE_PRESENT") else 1)
+if args[:1] == ["run"] and os.environ.get("RUN_SLEEP"):
+    import time
+    time.sleep(float(os.environ["RUN_SLEEP"]))
 '''
 
 
@@ -401,9 +406,9 @@ class BuilderContainerTest(unittest.TestCase):
         builder = root / "os-image/packer/builder"
         builder.mkdir(parents=True, exist_ok=True)
         if containerfile is None:
-            shutil.copy(PACKER_DIR / "builder/Containerfile", builder)
+            shutil.copy(PACKER_DIR / "builder/Dockerfile", builder)
         else:
-            (builder / "Containerfile").write_text(containerfile)
+            (builder / "Dockerfile").write_text(containerfile)
 
     def runtime(self, *names):
         for name in names:
@@ -425,7 +430,7 @@ class BuilderContainerTest(unittest.TestCase):
 
     def tag(self, root=None, arch="arm64"):
         root = root or self.checkout
-        digest = hashlib.sha256((root / "os-image/packer/builder/Containerfile").read_bytes()).hexdigest()
+        digest = hashlib.sha256((root / "os-image/packer/builder/Dockerfile").read_bytes()).hexdigest()
         return f"localhost/nvke-os-image-builder:{digest[:12]}-{arch}"
 
     @staticmethod
@@ -440,7 +445,7 @@ class BuilderContainerTest(unittest.TestCase):
         self.assertEqual(calls[0][:2], ["podman", "info"])
         builder = self.checkout / "os-image/packer/builder"
         self.assertIn(["podman", "build", "--platform", "linux/arm64", "-t", self.tag(),
-                       "-f", str(builder / "Containerfile"), str(builder)], calls)
+                       "-f", str(builder / "Dockerfile"), str(builder)], calls)
 
     def test_check_skips_build_when_image_present(self):
         self.runtime("podman")
@@ -482,6 +487,9 @@ class BuilderContainerTest(unittest.TestCase):
         self.assertTrue(self.has_pair(run, "-e", "ARCH=arm64"), run)
         self.assertTrue(self.has_pair(run, "-e", "K8S_VERSIONS=1.36.3"), run)
         self.assertTrue(self.has_pair(run, "-e", "GIT_CONFIG_VALUE_0=*"), run)
+        # Go makes its module cache read-only, which macOS `rm -rf` cannot
+        # delete; the README's clean step relies on a writable cache.
+        self.assertTrue(self.has_pair(run, "-e", "GOFLAGS=-modcacherw"), run)
         self.assertFalse([a for a in run if a.startswith("CALICO_VERSIONS")], run)
         self.assertEqual(run[-3:], [self.tag(), "./scripts/prepare-installer-iso.sh", "an arg"])
         cache = self.base / "cache/nvke/os-image-builder/arm64"
@@ -573,6 +581,56 @@ class BuilderContainerTest(unittest.TestCase):
         result = self.real_builder(package, script)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertEqual(result.stdout.split()[-1:], ["1"], result.stdout + result.stderr)
+
+    def interrupt_run(self, cwd, *command, env=None, root=None, settle=5.0):
+        """Start `run`, wait until the container is up, then send SIGINT."""
+        root = root or self.checkout
+        proc = subprocess.Popen(
+            [shutil.which("bash"), str(root / "os-image/packer/scripts/builder-container.sh"), "run", *command],
+            env=env, cwd=cwd, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
+        self.addCleanup(lambda: proc.poll() is None and proc.kill())
+        return proc
+
+    def test_interrupt_removes_the_container_and_exits(self):
+        # podman forwards SIGINT only to the container's PID 1, which waits for
+        # its own child, so Ctrl-C used to wait out the whole package build.
+        self.runtime("podman")
+        proc = self.interrupt_run(self.checkout, "true",
+                                  env=self.env | {"IMAGE_PRESENT": "1", "RUN_SLEEP": "60"})
+        deadline = time.monotonic() + 10
+        while not [c for c in self.calls() if c[1] == "run"] and time.monotonic() < deadline:
+            time.sleep(0.1)
+        run = next(c for c in self.calls() if c[1] == "run")
+        name = run[run.index("--name") + 1]
+        proc.send_signal(signal.SIGINT)
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.fail("builder-container.sh kept waiting after SIGINT")
+        self.assertEqual(proc.returncode, 130, proc.stderr.read())
+        self.assertIn(["podman", "rm", "-f", "-t", "0", name], self.calls())
+
+    @unittest.skipUnless(os.environ.get("NKE_TEST_BUILDER_RUNTIME"),
+                         "set NKE_TEST_BUILDER_RUNTIME=1 to run the real builder image under podman")
+    def test_builder_interrupt_stops_the_real_container(self):
+        proc = self.interrupt_run(REPO_ROOT, "sleep", "300", root=REPO_ROOT,
+                                  env=os.environ | {"ARCH": "arm64"})
+        name = f"nvke-os-image-builder-{proc.pid}"
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            listed = subprocess.run(["podman", "ps", "-q", "--filter", f"name=^{name}$"],
+                                    capture_output=True, text=True).stdout.strip()
+            if listed:
+                break
+            time.sleep(0.5)
+        self.assertTrue(listed, "the container never started")
+        proc.send_signal(signal.SIGINT)
+        proc.wait(timeout=60)
+        self.assertEqual(proc.returncode, 130)
+        left = subprocess.run(["podman", "ps", "-aq", "--filter", f"name=^{name}$"],
+                              capture_output=True, text=True).stdout.strip()
+        self.assertEqual(left, "")
 
     def test_run_hands_the_podman_service_to_the_container(self):
         self.runtime("podman")
