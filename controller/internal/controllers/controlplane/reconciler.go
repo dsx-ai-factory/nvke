@@ -215,6 +215,15 @@ const (
 	failureDomainRetryInterval = 30 * time.Second
 )
 
+// readFailureDomains discovers the cluster's control-plane failure domains. A
+// discovery error is returned with a nil snapshot.
+func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster) (*failuredomains.Snapshot, error) {
+	if r.k8sClient == nil {
+		return nil, fmt.Errorf("kubernetes client is not configured")
+	}
+	return failuredomains.Discover(ctx, r.k8sClient, r.cfg.ManagementNamespaceOrDefault(), cluster.Name)
+}
+
 // reconcileWithoutFailureDomains runs the steps that place no node -- remediation
 // and promotion of recorded deletes -- while the CAPI cluster has not published its
 // failure domains, so a dead node can still be removed. It returns nil and requeues rather than erroring
