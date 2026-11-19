@@ -28,29 +28,6 @@ This page describes how to add, scale and delete the worker node pools of an NVI
 
    `<NODE_POOL_ID>` is the pool's `ID` from step 1. Each line shows a node's ID, name and IP address, then whether it is provisioned, whether its kubelet reports `Ready`, and whether it is marked for replacement. Use `clusterName=<WORKLOAD_CLUSTER>&controlPlane=false` instead of `nodePoolID` to list every worker in the cluster.
 
-## Observed node counts
-
-Node pool create, get, list and update API responses include three read-only
-counts alongside `desiredNodeCount`:
-
-- `nodeCount`: observed CWE node records, including pending placeholders and
-  nodes being deleted. It can exceed the desired count during replacement or
-  after a scale-down request.
-- `readyNodeCount`: records whose observed Kubernetes `Ready` condition is
-  `True`. This does not additionally require provisioning completion or
-  schedulability; a deleting node can still have a recorded ready condition.
-- `updatedNodeCount`: records whose NodeSet configuration matches the requested
-  pool configuration, including Kubernetes version and provider image and
-  initialization settings. Pending and provisioning nodes can already be
-  updated. Configuration snapshots are compared directly, so a rollback can
-  match an older generation before the current-generation pointer advances.
-
-Counts are observations of the controller's database, not live infrastructure
-inventory or verification of running software. Ready and updated are independent
-subsets of the observed records. An empty pool reports explicit zeros; omitted
-fields from older servers mean unknown. Changes to external configuration behind
-an unchanged release/profile reference are not detected by these counts.
-
 ## Add a node pool
 
 A node pool is a group of worker nodes that share an NVIDIA Infra Controller (NICo) instance type, a node pool release and a Kubernetes version. A new pool takes the cluster's Kubernetes version.
