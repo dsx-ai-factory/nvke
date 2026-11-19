@@ -132,10 +132,11 @@ echo "boot-smoke: VM booted and completed cloud-init OK"
 timeout 30 ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=5 -o BatchMode=yes \
-    ubuntu@127.0.0.1 bash -s -- "${ROOT_FS_LABEL}" "${target_disk_bytes}" <<'EOF'
+    ubuntu@127.0.0.1 bash -s -- "${ROOT_FS_LABEL}" "${target_disk_bytes}" "${UBUNTU_SNAPSHOT_URI:-}" <<'EOF'
 set -euo pipefail
 root_fs_label=$1
 target_disk_bytes=$2
+expected_snapshot=${3:-}
 test "$(findmnt -n -o LABEL /)" = "${root_fs_label}"
 systemctl is-active lvm-growth-firstboot.service
 root_bytes=$(df -B1 --output=size / | tail -n 1 | tr -d ' ')
@@ -216,6 +217,25 @@ systemctl is-enabled openvswitch-switch.service
 # Enabled is not running: prove the daemons started and answer on their socket.
 systemctl is-active openvswitch-switch.service
 sudo ovs-vsctl show >/dev/null
+
+# Ubuntu packages come from one snapshot.ubuntu.com snapshot (#2206). After
+# cloud-init's first boot, no apt source names the live archive, and the
+# Ubuntu sources name a snapshot ID (the expected one, when the caller passes
+# UBUNTU_SNAPSHOT_URI). Comments do not count: 24.04's stub sources.list is
+# nothing but comments.
+apt_sources=$(cat /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null |
+    grep -v '^[[:space:]]*#' || true)
+if grep -Eq '(archive|ports|security)\.ubuntu\.com' <<<"${apt_sources}"; then
+    echo "an apt source names the live Ubuntu archive:" >&2
+    grep -E '(archive|ports|security)\.ubuntu\.com' <<<"${apt_sources}" >&2
+    exit 1
+fi
+grep -Eq '/[0-9]{8}T[0-9]{6}Z/?([[:space:]]|$)' <<<"${apt_sources}" ||
+    { echo "no apt source names an Ubuntu snapshot ID" >&2; exit 1; }
+if [[ -n "${expected_snapshot}" ]]; then
+    grep -Fq -- "${expected_snapshot%/}" <<<"${apt_sources}" ||
+        { echo "no apt source names ${expected_snapshot}" >&2; exit 1; }
+fi
 
 # The local apt repo has to offer what a node installs at cluster create.
 # These are staged rather than installed, so nothing above would notice them
