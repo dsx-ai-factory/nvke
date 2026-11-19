@@ -237,6 +237,23 @@ func TestKubeVirtAgentEndpoint_ManagementCluster(t *testing.T) {
 	require.NoError(t, endpoint.Delete(ctx, cluster, node), "deleting again is not an error")
 }
 
+func TestKubeVirtAgentEndpoint_WithoutTLSJWTNeedsNoClusterSPIFFEID(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	mgmt := fake.NewClientBuilder().WithScheme(scheme).Build()
+	endpoint := KubeVirtAgentEndpoint{
+		ManagementClient: mgmt, Namespace: "nke-system", Config: kubeVirtEndpointConfig(), FieldManagerName: "test-controller",
+	}
+	cluster := kubeVirtCluster(t, nil)
+	node := db.Node{ID: uuid.New(), Name: "cp-0"}
+
+	_, err := endpoint.Ensure(ctx, cluster, node)
+	require.NoError(t, err)
+	require.NoError(t, endpoint.Delete(ctx, cluster, node))
+}
+
 func TestKubeVirtAgentEndpoint_InfraClusterSecret(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

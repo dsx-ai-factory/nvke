@@ -91,7 +91,9 @@ func (e KubeVirtAgentEndpoint) Delete(ctx context.Context, cluster db.Cluster, n
 	}
 	objects := []client.Object{
 		&corev1.Service{ObjectMeta: metav1.ObjectMeta{Name: kubeVirtAgentObjectName(node), Namespace: vmNamespace}},
-		&spirev1alpha1.ClusterSPIFFEID{ObjectMeta: metav1.ObjectMeta{Name: kubeVirtAgentObjectName(node)}},
+	}
+	if node.NodeAgentTLSJWTEnabled {
+		objects = append(objects, &spirev1alpha1.ClusterSPIFFEID{ObjectMeta: metav1.ObjectMeta{Name: kubeVirtAgentObjectName(node)}})
 	}
 	for _, obj := range objects {
 		if err := infraClient.Delete(ctx, obj); err != nil && !apierrors.IsNotFound(err) {
