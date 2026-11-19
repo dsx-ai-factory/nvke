@@ -237,14 +237,16 @@ func TestRotateFailureDomain(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, tt.wantMoved, moved)
 
-			// Regression: a domain left without being marked is chosen again by the next placement.
-			if tt.wantMoved {
+			got := store.nodes[node.ID]
+
+			// Regression: a domain left without being marked, including by a finished
+			// interrupted move, is chosen again by the next placement.
+			if got.FailureDomain != node.FailureDomain {
 				assert.True(t, failuredomains.IsMarkedUnplaceable(store.cluster.Conditions.UnplaceableFailureDomains, node.FailureDomain, time.Now()))
 			} else {
 				assert.Equal(t, tt.marked, store.cluster.Conditions.UnplaceableFailureDomains)
 			}
 
-			got := store.nodes[node.ID]
 			assert.Equal(t, tt.wantDomain, got.FailureDomain)
 			assert.Equal(t, tt.wantTried, got.FailureDomainsTried)
 			assert.Equal(t, tt.wantSince, got.FailureDomainUnavailableSince != nil)
