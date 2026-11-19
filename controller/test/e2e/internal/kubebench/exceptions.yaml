@@ -150,7 +150,20 @@ exceptions:
   - {id: "5.1.11", title: RBAC and service accounts (5.1), reason: *workload-policy}
   - {id: "5.1.12", title: RBAC and service accounts (5.1), reason: *workload-policy}
   - {id: "5.1.13", title: RBAC and service accounts (5.1), reason: *workload-policy}
-  - {id: "5.2.1", title: Pod security admission (5.2), reason: *workload-policy}
+  - id: "5.2.1"
+    title: Policy control mechanism (5.2)
+    reason: >-
+      kube-bench leaves this check to a person. Pod Security Admission is on in
+      every cluster: Kubernetes enables it by default, and NVKE's API server
+      arguments add admission plugins without disabling any
+      (defaultEnabledAdmissionPlugins in
+      controller/internal/kubeadmconfig/render.go). It enforces a level only in
+      a namespace labelled with one. On a tenant cluster NVKE labels kube-system
+      and the CNI's namespace privileged
+      (controller/internal/temporal/activities/label_system_namespaces_for_psa.go)
+      and leaves every other namespace's level to the customer. Levels for
+      NVKE's own namespaces on the site cluster are part of the section 5
+      hardening follow-up.
   - id: "5.2.2"
     title: Privileged containers (5.2)
     reason: >-
@@ -163,15 +176,34 @@ exceptions:
   - {id: "5.2.7", title: Pod security admission (5.2), reason: *workload-policy}
   - {id: "5.2.8", title: Pod security admission (5.2), reason: *workload-policy}
   - {id: "5.2.9", title: Pod security admission (5.2), reason: *workload-policy}
-  - {id: "5.2.10", title: Pod security admission (5.2), reason: *workload-policy}
+  - id: "5.2.10"
+    title: Windows HostProcess containers (5.2)
+    reason: >-
+      kube-bench leaves this check to a person. HostProcess containers run only
+      on Windows nodes, and NVKE creates only Linux nodes, from the node OS
+      image in os-image/.
   - {id: "5.2.11", title: Pod security admission (5.2), reason: *workload-policy}
   - {id: "5.2.12", title: Pod security admission (5.2), reason: *workload-policy}
-  - {id: "5.3.1", title: Network policies (5.3), reason: *workload-policy}
+  - id: "5.3.1"
+    title: CNI support for network policies (5.3)
+    reason: >-
+      kube-bench leaves this check to a person. Both CNIs NVKE installs enforce
+      NetworkPolicy: OVN-Kubernetes, the default, and Calico, the legacy
+      alternative (cniPlugin in controller/api/openapi.yaml).
   - {id: "5.3.2", title: Network policies (5.3), reason: *workload-policy}
   - {id: "5.4.1", title: Secrets (5.4), reason: *workload-policy}
   - {id: "5.4.2", title: Secrets (5.4), reason: *workload-policy}
   - {id: "5.5.1", title: Image admission (5.5), reason: *workload-policy}
   - {id: "5.6.1", title: General workload policy (5.6), reason: *workload-policy}
-  - {id: "5.6.2", title: General workload policy (5.6), reason: *workload-policy}
+  - id: "5.6.2"
+    title: Seccomp profiles (5.6)
+    reason: >-
+      kube-bench leaves this check to a person. Every kubelet NVKE configures
+      runs a pod that names no seccomp profile under the container runtime's
+      default profile (SeccompDefault in
+      controller/internal/kubeadmconfig/render.go), which kube-bench's 4.2.14
+      confirms on every node. A pod can still ask for another profile, or
+      none, in its securityContext; on a tenant cluster that is the
+      customer's to decide.
   - {id: "5.6.3", title: General workload policy (5.6), reason: *workload-policy}
   - {id: "5.6.4", title: General workload policy (5.6), reason: *workload-policy}
