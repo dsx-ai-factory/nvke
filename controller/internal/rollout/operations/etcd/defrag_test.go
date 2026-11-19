@@ -389,6 +389,63 @@ func TestDefragOperationResumesWithoutConsultingEligibility(t *testing.T) {
 	assert.Empty(t, client.startReqs, "an operation already in flight must not be started again")
 }
 
+// The resolve call already carries the agent's verdict when the operation has
+// finished. Polling for it again would discard an answer in hand, and polls
+// failing from there to the deadline would report unknown state over it.
+func TestDefragOperationTerminalResolveIsReturnedWithoutPolling(t *testing.T) {
+	client := &fakeDefragClient{
+		recorded:    true,
+		statusQueue: []*nvkeproto.GetEtcdDefragStatusResponse{terminal(nvkeproto.GetEtcdDefragStatusResponse_OUTCOME_RECLAIMED)},
+		// Every call after the resolve fails, so a second read cannot be what
+		// produces the verdict.
+		statusErrs: []error{nil, status.Error(codes.Unavailable, "connection refused")},
+	}
+	op := newDefragOperationForTest(client)
+
+	outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+	require.NoError(t, err)
+	assert.Equal(t, rollout.OutcomeApplied, outcome)
+	assert.Len(t, client.defragReqs, 1, "a terminal resolve must not be followed by a poll")
+}
+
+// A resolve that finds the operation still running hands off to the poll loop
+// rather than treating a non-terminal phase as a verdict.
+func TestDefragOperationNonTerminalResolveKeepsPolling(t *testing.T) {
+	client := &fakeDefragClient{
+		recorded: true,
+		statusQueue: []*nvkeproto.GetEtcdDefragStatusResponse{
+			{Operation: &nvkeproto.NodeAgentOperationStatus{Phase: nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING}},
+			terminal(nvkeproto.GetEtcdDefragStatusResponse_OUTCOME_RECLAIMED),
+		},
+	}
+	op := newDefragOperationForTest(client)
+
+	outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+	require.NoError(t, err)
+	assert.Equal(t, rollout.OutcomeApplied, outcome)
+	assert.GreaterOrEqual(t, len(client.defragReqs), 2, "a RUNNING resolve must hand off to the poll loop")
+	assert.Empty(t, client.startReqs)
+}
+
+// A dial happens before the operation can be resolved, so it cannot tell a
+// first attempt from a retry whose earlier attempt has the member down. The
+// agent also listens independently of etcd and kube-apiserver, so failing to
+// reach it is not what a node mid-defragmentation looks like.
+func TestDefragOperationUnreachableAgentDoesNotClaimRestoration(t *testing.T) {
+	op := NewDefragOperation(WithDefragPollInterval(time.Millisecond), WithDefragTimeout(2*time.Second))
+	op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentDefragClient, func(), error) {
+		return nil, nil, errors.New("connection refused")
+	}
+
+	outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+	assert.Equal(t, rollout.OutcomeFailedNotRestored, outcome)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "dial agent on node cp-0")
+}
+
 // An agent that cannot be asked about the operation leaves the node's state
 // unknown, so the verdict must not be the clean halt that FailedRestored means.
 func TestDefragOperationUnreadableStateDoesNotClaimRestoration(t *testing.T) {
@@ -823,6 +880,8 @@ func TestDefragOperationIsSatisfied(t *testing.T) {
 	})
 }
 
+// Unlike an agent that cannot be reached, an operation wired without a dialer
+// provably emitted nothing, so this is the clean halt the other is not.
 func TestDefragOperationRequiresADialer(t *testing.T) {
 	op := NewDefragOperation()
 

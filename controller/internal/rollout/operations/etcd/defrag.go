@@ -67,6 +67,11 @@ var (
 	// distinguishes the node overrunning its budget from the caller running
 	// out of one.
 	errDefragNodeTimeout = errors.New("etcd defragmentation node timeout")
+
+	// errDefragDialerUnconfigured separates a programming error from a node
+	// that cannot be reached, which are opposite verdicts: the first provably
+	// touched nothing.
+	errDefragDialerUnconfigured = errors.New("node agent dialer is not configured")
 )
 
 // NewDefragOperation builds the defragmentation operation.
@@ -158,7 +163,16 @@ func (op *DefragOperation) ApplyToNode(ctx context.Context, node rollout.Node, p
 
 	client, cleanup, err := op.dial(ctx, node)
 	if err != nil {
-		return rollout.OutcomeFailedRestored, err
+		// An unreachable agent is unknown node state. The dial precedes the
+		// resolve, so nothing here can tell a first attempt from a retry that
+		// has the member down already, and the agent listens independently of
+		// etcd and kube-apiserver, so failing to reach it is not what a node
+		// mid-defragmentation looks like. A misconfigured dialer is the one
+		// case that provably emitted nothing.
+		if errors.Is(err, errDefragDialerUnconfigured) {
+			return rollout.OutcomeFailedRestored, err
+		}
+		return rollout.OutcomeFailedNotRestored, err
 	}
 	if cleanup != nil {
 		defer cleanup()
@@ -171,7 +185,13 @@ func (op *DefragOperation) ApplyToNode(ctx context.Context, node rollout.Node, p
 	// as an unreachable member and report a node that is out of service as
 	// restored.
 	operationID := artifact.OperationIDBase + "/" + node.Name()
-	switch _, probeErr := client.GetEtcdDefragStatus(ctx, &nvkeproto.GetEtcdDefragStatusRequest{OperationId: operationID}); {
+	resp, probeErr := client.GetEtcdDefragStatus(ctx, &nvkeproto.GetEtcdDefragStatusRequest{OperationId: operationID})
+	switch {
+	case probeErr == nil && isTerminalPhase(resp.GetOperation().GetPhase()):
+		// The verdict is already in hand. Polling for it again would discard
+		// it, and polls failing from there to the deadline would report
+		// unknown state over an answer the agent has already given.
+		return defragOutcome(ctx, resp, node)
 	case probeErr == nil:
 		slog.InfoContext(ctx, "resuming an etcd defragmentation already recorded by the agent", "node", node.Name(), "operationID", operationID)
 		return op.awaitDefrag(ctx, client, node, operationID)
@@ -368,7 +388,7 @@ func (op *DefragOperation) worthDefragmenting(
 
 func (op *DefragOperation) dial(ctx context.Context, node rollout.Node) (nodeAgentDefragClient, func(), error) {
 	if op.nodeAgentClientDialer == nil {
-		return nil, nil, errors.New("node agent dialer is not configured")
+		return nil, nil, errDefragDialerUnconfigured
 	}
 	client, cleanup, err := op.nodeAgentClientDialer(ctx, node)
 	if err != nil {
