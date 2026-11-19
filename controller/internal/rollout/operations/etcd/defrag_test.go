@@ -36,8 +36,22 @@ type fakeDefragClient struct {
 	etcdStatusErr error
 	etcdStatusHit int
 
-	startErr  error
+	// startErrs is consumed one entry per StartEtcdDefrag call. A nil entry or
+	// an exhausted slice means the start succeeds, so a test can fail the first
+	// attempt and let the retry through.
+	startErrs []error
 	startReqs []*nvkeproto.StartEtcdDefragRequest
+
+	// recorded mirrors the agent holding a record under the operation ID.
+	// Until a start publishes one, GetEtcdDefragStatus answers NotFound the way
+	// the agent's getNodeAgentOperation does. Setting it up front is a node
+	// whose defragmentation an earlier attempt already began.
+	recorded bool
+	// resolveErr replaces that NotFound, for an agent that cannot be asked.
+	resolveErr error
+	// blockResolve hangs the resolve probe until the context ends, which is
+	// what an agent that accepts a connection and never answers looks like.
+	blockResolve bool
 
 	statusQueue   []*nvkeproto.GetEtcdDefragStatusResponse
 	statusErrs    []error
@@ -63,27 +77,39 @@ func (c *fakeDefragClient) StartEtcdDefrag(
 	_ ...grpc.CallOption,
 ) (*nvkeproto.StartEtcdDefragResponse, error) {
 	c.startReqs = append(c.startReqs, req)
-	if c.startErr != nil {
-		return nil, c.startErr
+	if i := len(c.startReqs) - 1; i < len(c.startErrs) && c.startErrs[i] != nil {
+		return nil, c.startErrs[i]
 	}
+	c.recorded = true
 	return &nvkeproto.StartEtcdDefragResponse{}, nil
 }
 
 func (c *fakeDefragClient) GetEtcdDefragStatus(
-	_ context.Context,
+	ctx context.Context,
 	req *nvkeproto.GetEtcdDefragStatusRequest,
 	_ ...grpc.CallOption,
 ) (*nvkeproto.GetEtcdDefragStatusResponse, error) {
 	c.defragReqs = append(c.defragReqs, req)
+
+	if !c.recorded {
+		if c.blockResolve {
+			<-ctx.Done()
+			return nil, status.FromContextError(ctx.Err()).Err()
+		}
+		if c.resolveErr != nil {
+			return nil, c.resolveErr
+		}
+		return nil, status.Errorf(codes.NotFound, "operation %s of type etcd-defrag not found", req.GetOperationId())
+	}
+
 	i := c.defragStatusI
+	c.defragStatusI++
 	if i < len(c.statusErrs) && c.statusErrs[i] != nil {
-		c.defragStatusI++
 		return nil, c.statusErrs[i]
 	}
 	if i >= len(c.statusQueue) {
 		i = len(c.statusQueue) - 1
 	}
-	c.defragStatusI++
 	return c.statusQueue[i], nil
 }
 
@@ -318,9 +344,10 @@ func TestDefragOperationDerivesAPerNodeOperationID(t *testing.T) {
 	assert.Equal(t, "rollout-base/cp-1", second)
 }
 
-// The same node retried with the same payload must reuse its key, which is what
-// makes an activity retry resume rather than restart etcd twice.
-func TestDefragOperationOperationIDIsStableAcrossRetries(t *testing.T) {
+// The same node retried with the same payload resolves the key it already
+// used, so an activity retry follows the in-flight defragmentation instead of
+// restarting etcd a second time.
+func TestDefragOperationRetryResumesRatherThanRestarting(t *testing.T) {
 	client := &fakeDefragClient{
 		etcdStatus:  fragmentedStatus(),
 		statusQueue: []*nvkeproto.GetEtcdDefragStatusResponse{terminal(nvkeproto.GetEtcdDefragStatusResponse_OUTCOME_RECLAIMED)},
@@ -330,12 +357,54 @@ func TestDefragOperationOperationIDIsStableAcrossRetries(t *testing.T) {
 	node := controlPlaneNode("cp-0")
 
 	for range 2 {
-		_, err := op.ApplyToNode(context.Background(), node, payload)
+		outcome, err := op.ApplyToNode(context.Background(), node, payload)
 		require.NoError(t, err)
+		require.Equal(t, rollout.OutcomeApplied, outcome)
 	}
 
-	require.Len(t, client.startReqs, 2)
-	assert.Equal(t, client.startReqs[0].GetOperationId(), client.startReqs[1].GetOperationId())
+	require.Len(t, client.startReqs, 1, "a retry must resume the recorded operation, not start a second one")
+	assert.Equal(t, "rollout-base/cp-0", client.startReqs[0].GetOperationId())
+	for _, req := range client.defragReqs {
+		assert.Equal(t, "rollout-base/cp-0", req.GetOperationId(), "every call must address the key derived from the payload")
+	}
+}
+
+// The bug this guards: a retry used to read etcd's status first, which fails
+// precisely because the previous attempt has the member down, and reported the
+// node restored while kube-apiserver was parked behind it. Resolving the
+// operation first means the eligibility read is never reached.
+func TestDefragOperationResumesWithoutConsultingEligibility(t *testing.T) {
+	client := &fakeDefragClient{
+		etcdStatusErr: status.Error(codes.Unavailable, "etcd is restarting"),
+		recorded:      true,
+		statusQueue:   []*nvkeproto.GetEtcdDefragStatusResponse{terminal(nvkeproto.GetEtcdDefragStatusResponse_OUTCOME_RECLAIMED)},
+	}
+	op := newDefragOperationForTest(client)
+
+	outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+	require.NoError(t, err)
+	assert.Equal(t, rollout.OutcomeApplied, outcome)
+	assert.Zero(t, client.etcdStatusHit, "an operation already in flight must not be re-qualified")
+	assert.Empty(t, client.startReqs, "an operation already in flight must not be started again")
+}
+
+// An agent that cannot be asked about the operation leaves the node's state
+// unknown, so the verdict must not be the clean halt that FailedRestored means.
+func TestDefragOperationUnreadableStateDoesNotClaimRestoration(t *testing.T) {
+	client := &fakeDefragClient{
+		etcdStatus: fragmentedStatus(),
+		resolveErr: status.Error(codes.Unavailable, "connection refused"),
+	}
+	op := newDefragOperationForTest(client)
+
+	outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+	assert.Equal(t, rollout.OutcomeFailedNotRestored, outcome)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "read etcd defragmentation state")
+	assert.Zero(t, client.etcdStatusHit)
+	assert.Empty(t, client.startReqs)
 }
 
 func TestDefragOperationPollsUntilTerminal(t *testing.T) {
@@ -417,7 +486,7 @@ func TestDefragOperationFailedPhaseIsTerminal(t *testing.T) {
 	assert.Equal(t, rollout.OutcomeFailedNotRestored, outcome)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "etcd did not come back")
-	assert.Len(t, client.defragReqs, 1, "a FAILED phase must end the poll immediately")
+	assert.Len(t, client.defragReqs, 2, "the resolve probe, then one poll: a FAILED phase ends it immediately")
 }
 
 // One node must cost one dial: the pre-check and the restart share a
@@ -477,18 +546,21 @@ func TestDefragOperationTimeoutCascades(t *testing.T) {
 	assert.Contains(t, err.Error(), "did not finish within")
 }
 
-// StartEtcdDefrag can fail with the call already delivered and only the reply
-// lost, so the error alone does not say whether etcd is restarting. The agent
-// is asked about the deterministic operation ID before anything is concluded.
-func TestDefragOperationStartFailureIsClassifiedByProbingTheAgent(t *testing.T) {
-	notFound := status.Error(codes.NotFound, "operation base/cp-0 of type etcd-defrag not found")
+// A failed StartEtcdDefrag is classified by starting again rather than by
+// asking for status. The agent does not observe the RPC context, so a lost
+// reply leaves a handler still on its way to recording the operation, and a
+// status probe can be answered NotFound while that is true. A second start
+// serializes behind the handler, so it cannot.
+func TestDefragOperationStartFailureIsClassifiedByStartingAgain(t *testing.T) {
 	unavailable := status.Error(codes.Unavailable, "connection refused")
+	declined := status.Error(codes.FailedPrecondition, "control-plane node required, current role \"worker\"")
 
-	t.Run("agent never recorded it, so the node is untouched", func(t *testing.T) {
+	// An error only the handler can produce proves it ran and returned before
+	// touching the node, so there is nothing to establish and nothing to retry.
+	t.Run("an agent-produced refusal halts cleanly on the first attempt", func(t *testing.T) {
 		client := &fakeDefragClient{
 			etcdStatus: fragmentedStatus(),
-			startErr:   unavailable,
-			statusErrs: []error{notFound},
+			startErrs:  []error{declined},
 		}
 		op := newDefragOperationForTest(client)
 
@@ -497,15 +569,16 @@ func TestDefragOperationStartFailureIsClassifiedByProbingTheAgent(t *testing.T) 
 		assert.Equal(t, rollout.OutcomeFailedRestored, outcome)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "start etcd defragmentation")
+		assert.Len(t, client.startReqs, 1, "a refusal the agent authored needs no second attempt")
 	})
 
-	// The reply was lost but the agent is already restarting etcd. Reporting
-	// the node untouched here would tell the executor to halt cleanly while a
-	// control-plane member is out of service.
-	t.Run("agent did record it, so the defragmentation is followed", func(t *testing.T) {
+	// The reply was lost but the agent is already restarting etcd. The second
+	// start returns the operation the first one published, so the rollout
+	// follows it instead of reporting a parked node as untouched.
+	t.Run("an ambiguous failure retried into an existing operation is followed", func(t *testing.T) {
 		client := &fakeDefragClient{
 			etcdStatus:  fragmentedStatus(),
-			startErr:    unavailable,
+			startErrs:   []error{unavailable},
 			statusQueue: []*nvkeproto.GetEtcdDefragStatusResponse{terminal(nvkeproto.GetEtcdDefragStatusResponse_OUTCOME_RECLAIMED)},
 		}
 		op := newDefragOperationForTest(client)
@@ -514,15 +587,15 @@ func TestDefragOperationStartFailureIsClassifiedByProbingTheAgent(t *testing.T) 
 
 		require.NoError(t, err)
 		assert.Equal(t, rollout.OutcomeApplied, outcome)
+		assert.Len(t, client.startReqs, 2, "an ambiguous failure must be retried exactly once")
 	})
 
-	// Neither call got an answer, so the node's state is unknown. Cascading
-	// immediately beats polling a dead agent for the whole timeout.
-	t.Run("agent unreachable for both calls cascades without waiting", func(t *testing.T) {
+	// Neither attempt reached the agent, so the node's state is unknown.
+	// Cascading immediately beats polling a dead agent for the whole timeout.
+	t.Run("two ambiguous failures cascade without waiting", func(t *testing.T) {
 		client := &fakeDefragClient{
 			etcdStatus: fragmentedStatus(),
-			startErr:   unavailable,
-			statusErrs: []error{unavailable},
+			startErrs:  []error{unavailable, unavailable},
 		}
 		op := newDefragOperationForTest(client)
 
@@ -530,8 +603,25 @@ func TestDefragOperationStartFailureIsClassifiedByProbingTheAgent(t *testing.T) 
 
 		assert.Equal(t, rollout.OutcomeFailedNotRestored, outcome)
 		require.Error(t, err)
-		assert.Contains(t, err.Error(), "state could not be read")
-		assert.Len(t, client.defragReqs, 1, "an unreachable agent must be probed once, not polled")
+		assert.Contains(t, err.Error(), "state could not be established")
+		assert.Len(t, client.startReqs, 2)
+		assert.Len(t, client.defragReqs, 1, "only the resolve probe runs; a dead agent is not polled")
+	})
+
+	// The retry reaching an agent that authored a refusal is the same clean
+	// halt as the first attempt producing one.
+	t.Run("an ambiguous failure retried into a refusal halts cleanly", func(t *testing.T) {
+		client := &fakeDefragClient{
+			etcdStatus: fragmentedStatus(),
+			startErrs:  []error{unavailable, declined},
+		}
+		op := newDefragOperationForTest(client)
+
+		outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+		assert.Equal(t, rollout.OutcomeFailedRestored, outcome)
+		require.Error(t, err)
+		assert.Len(t, client.startReqs, 2)
 	})
 }
 
@@ -556,6 +646,62 @@ func TestDefragOperationCancellationIsNotReportedAsATimeout(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "was interrupted")
 	assert.NotContains(t, err.Error(), "did not finish within")
+}
+
+// A caller's own deadline expiring is not the node overrunning its budget.
+// Both surface as DeadlineExceeded on the derived context, so only the cause
+// attached to this operation's timeout tells them apart.
+func TestDefragOperationParentDeadlineIsNotReportedAsTheNodeTimeout(t *testing.T) {
+	client := &fakeDefragClient{
+		etcdStatus: fragmentedStatus(),
+		statusQueue: []*nvkeproto.GetEtcdDefragStatusResponse{{
+			Operation: &nvkeproto.NodeAgentOperationStatus{Phase: nvkeproto.NodeAgentOperationPhase_NODE_AGENT_OPERATION_PHASE_RUNNING},
+		}},
+	}
+	op := newDefragOperationForTest(client)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	outcome, err := op.ApplyToNode(ctx, controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+	assert.Equal(t, rollout.OutcomeFailedNotRestored, outcome)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "was interrupted")
+	assert.NotContains(t, err.Error(), "did not finish within")
+}
+
+// Nothing in the dialer contract imposes a deadline, so an agent that accepts
+// the connection and never answers would hang every call made before the poll
+// loop. The node timeout has to cover those too.
+func TestDefragOperationTimeoutCoversCallsBeforeThePollLoop(t *testing.T) {
+	client := &fakeDefragClient{etcdStatus: fragmentedStatus(), blockResolve: true}
+	op := NewDefragOperation(WithDefragPollInterval(time.Millisecond), WithDefragTimeout(50*time.Millisecond))
+	op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentDefragClient, func(), error) {
+		return client, func() {}, nil
+	}
+
+	// Asserting on elapsed time would hang for the package timeout if the
+	// bound were ever removed, so the deadline is enforced here instead.
+	type result struct {
+		outcome rollout.Outcome
+		err     error
+	}
+	payload := defragPayload(t, "base")
+	node := controlPlaneNode("cp-0")
+	done := make(chan result, 1)
+	go func() {
+		outcome, err := op.ApplyToNode(context.Background(), node, payload)
+		done <- result{outcome, err}
+	}()
+
+	select {
+	case got := <-done:
+		assert.Equal(t, rollout.OutcomeFailedNotRestored, got.outcome)
+		require.Error(t, got.err)
+		assert.Empty(t, client.startReqs)
+	case <-time.After(5 * time.Second):
+		t.Fatal("the node timeout must bound a call made before the poll loop")
+	}
 }
 
 func TestDefragOperationRejectsNonControlPlaneNodes(t *testing.T) {

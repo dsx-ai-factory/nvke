@@ -60,6 +60,13 @@ var (
 	_ rollout.Operation                 = (*DefragOperation)(nil)
 	_ rollout.ApplyToNodePayloadBuilder = (*DefragOperation)(nil)
 	_ rollout.SatisfactionChecker       = (*DefragOperation)(nil)
+
+	// errDefragNodeTimeout is the cause attached to this operation's own
+	// per-node deadline. A context derived with a timeout also reports
+	// DeadlineExceeded when the parent's deadline fires, so the cause is what
+	// distinguishes the node overrunning its budget from the caller running
+	// out of one.
+	errDefragNodeTimeout = errors.New("etcd defragmentation node timeout")
 )
 
 // NewDefragOperation builds the defragmentation operation.
@@ -128,6 +135,8 @@ func (op *DefragOperation) IsSatisfied(ctx context.Context, cluster rollout.Clus
 	return true, nil
 }
 
+// ApplyToNode defragments this node's etcd member, resuming an attempt already
+// in flight rather than starting a second one.
 func (op *DefragOperation) ApplyToNode(ctx context.Context, node rollout.Node, payload rollout.ApplyToNodePayload) (rollout.Outcome, error) {
 	if node == nil {
 		return rollout.OutcomeFailedRestored, errors.New("node is nil")
@@ -140,12 +149,34 @@ func (op *DefragOperation) ApplyToNode(ctx context.Context, node rollout.Node, p
 		return rollout.OutcomeFailedRestored, err
 	}
 
+	// The budget covers the dial and every agent call, not only the poll loop.
+	// Nothing in the dialer contract imposes a deadline of its own, so a call
+	// that hangs before the loop would otherwise run until the caller gave up
+	// and never reach the fail-closed verdict the timeout exists to produce.
+	ctx, cancel := context.WithTimeoutCause(ctx, op.timeout, errDefragNodeTimeout)
+	defer cancel()
+
 	client, cleanup, err := op.dial(ctx, node)
 	if err != nil {
 		return rollout.OutcomeFailedRestored, err
 	}
 	if cleanup != nil {
 		defer cleanup()
+	}
+
+	// Resolve before deciding. The operation ID is derived from a payload the
+	// framework delivers byte-identical to every retry, so an existing record
+	// under it means an earlier attempt already started this node and the
+	// member may be down right now. Checking eligibility first would read that
+	// as an unreachable member and report a node that is out of service as
+	// restored.
+	operationID := artifact.OperationIDBase + "/" + node.Name()
+	switch _, probeErr := client.GetEtcdDefragStatus(ctx, &nvkeproto.GetEtcdDefragStatusRequest{OperationId: operationID}); {
+	case probeErr == nil:
+		slog.InfoContext(ctx, "resuming an etcd defragmentation already recorded by the agent", "node", node.Name(), "operationID", operationID)
+		return op.awaitDefrag(ctx, client, node, operationID)
+	case status.Code(probeErr) != codes.NotFound:
+		return rollout.OutcomeFailedNotRestored, fmt.Errorf("read etcd defragmentation state for node %s: %w", node.Name(), probeErr)
 	}
 
 	// Ask before telling. The agent refuses an unhealthy member, a cluster too
@@ -162,41 +193,68 @@ func (op *DefragOperation) ApplyToNode(ctx context.Context, node rollout.Node, p
 		slog.InfoContext(ctx, "skipping etcd defragmentation", "node", node.Name(), "reason", reason)
 		return rollout.OutcomeUnchanged, nil
 	}
+	return op.startDefrag(ctx, client, node, operationID)
+}
 
-	operationID := artifact.OperationIDBase + "/" + node.Name()
-	if _, err := client.StartEtcdDefrag(ctx, &nvkeproto.StartEtcdDefragRequest{OperationId: operationID}); err != nil {
-		// A transport error does not mean the agent did not act: the call may
-		// have been delivered and the reply lost, leaving etcd restarting with
-		// kube-apiserver parked. The operation ID is deterministic, so ask
-		// rather than assume. NotFound is the only answer proving the agent
-		// never recorded it, and so the only one where the node is provably
-		// untouched.
-		_, probeErr := client.GetEtcdDefragStatus(ctx, &nvkeproto.GetEtcdDefragStatusRequest{OperationId: operationID})
-		switch {
-		case probeErr == nil:
-			slog.WarnContext(ctx, "start etcd defragmentation errored but the agent recorded the operation; following it",
-				"node", node.Name(), "err", err)
-			return op.awaitDefrag(ctx, client, node, operationID)
-		case status.Code(probeErr) == codes.NotFound:
-			return rollout.OutcomeFailedRestored, fmt.Errorf("start etcd defragmentation on node %s: %w", node.Name(), err)
-		default:
-			return rollout.OutcomeFailedNotRestored, fmt.Errorf("start etcd defragmentation on node %s failed and its state could not be read (%w): %w", node.Name(), probeErr, err)
-		}
+// startDefrag asks the agent to begin and follows the result, retrying the
+// start once when the first call fails ambiguously.
+//
+// The retry is not a transport retry. StartEtcdDefrag never observes its RPC
+// context, so a client-side failure does not stop the handler, and a status
+// probe can be answered NotFound by an agent whose handler is still on its way
+// to recording the operation. A second start cannot be: the agent serializes
+// starts on a single mutex and returns the existing operation for an ID it has
+// already published, so the retry blocks behind any in-flight handler and
+// observes whatever that handler did.
+func (op *DefragOperation) startDefrag(
+	ctx context.Context,
+	client nodeAgentDefragClient,
+	node rollout.Node,
+	operationID string,
+) (rollout.Outcome, error) {
+	_, err := client.StartEtcdDefrag(ctx, &nvkeproto.StartEtcdDefragRequest{OperationId: operationID})
+	switch {
+	case err == nil:
+		return op.awaitDefrag(ctx, client, node, operationID)
+	case agentDeclined(err):
+		return rollout.OutcomeFailedRestored, fmt.Errorf("start etcd defragmentation on node %s: %w", node.Name(), err)
 	}
-	return op.awaitDefrag(ctx, client, node, operationID)
+
+	slog.WarnContext(ctx, "start etcd defragmentation failed ambiguously, retrying to establish whether the agent acted",
+		"node", node.Name(), "err", err)
+
+	_, retryErr := client.StartEtcdDefrag(ctx, &nvkeproto.StartEtcdDefragRequest{OperationId: operationID})
+	switch {
+	case retryErr == nil:
+		return op.awaitDefrag(ctx, client, node, operationID)
+	case agentDeclined(retryErr):
+		return rollout.OutcomeFailedRestored, fmt.Errorf("start etcd defragmentation on node %s: %w", node.Name(), retryErr)
+	default:
+		return rollout.OutcomeFailedNotRestored, fmt.Errorf("start etcd defragmentation on node %s failed twice and its state could not be established (first attempt: %w): %w", node.Name(), err, retryErr)
+	}
+}
+
+// agentDeclined reports whether err is a refusal the agent itself produced,
+// which proves its handler ran and returned before taking the node out of
+// service.
+//
+// gRPC-Go synthesizes Canceled, DeadlineExceeded, Unavailable and Internal on
+// the client side, so those cannot distinguish a rejected request from one that
+// never arrived. InvalidArgument and FailedPrecondition have no client-side
+// source for a unary call: only the handler returns them.
+func agentDeclined(err error) bool {
+	code := status.Code(err)
+	return code == codes.InvalidArgument || code == codes.FailedPrecondition
 }
 
 // awaitDefrag polls until the agent reports a terminal phase, then maps its
-// verdict onto a rollout outcome.
+// verdict onto a rollout outcome. The caller owns the deadline.
 func (op *DefragOperation) awaitDefrag(
 	ctx context.Context,
 	client nodeAgentDefragClient,
 	node rollout.Node,
 	operationID string,
 ) (rollout.Outcome, error) {
-	ctx, cancel := context.WithTimeout(ctx, op.timeout)
-	defer cancel()
-
 	ticker := time.NewTicker(op.pollInterval)
 	defer ticker.Stop()
 
@@ -218,8 +276,8 @@ func (op *DefragOperation) awaitDefrag(
 			// etcd may be down with kube-apiserver parked behind it, and this
 			// operation can no longer tell. Cascading is the fail-closed read
 			// whether the budget ran out or the caller gave up.
-			if !errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return rollout.OutcomeFailedNotRestored, fmt.Errorf("etcd defragmentation on node %s was interrupted: %w", node.Name(), ctx.Err())
+			if !errors.Is(context.Cause(ctx), errDefragNodeTimeout) {
+				return rollout.OutcomeFailedNotRestored, fmt.Errorf("etcd defragmentation on node %s was interrupted: %w", node.Name(), context.Cause(ctx))
 			}
 			return rollout.OutcomeFailedNotRestored, fmt.Errorf("etcd defragmentation on node %s did not finish within %s: %w", node.Name(), op.timeout, ctx.Err())
 		case <-ticker.C:
