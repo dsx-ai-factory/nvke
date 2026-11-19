@@ -16,6 +16,10 @@ This is the operator's guide: how to start a run, follow it, and read what it
 leaves behind. [hardware-qualification-design.md](hardware-qualification-design.md) explains how
 the lane works inside, and [triage.md](triage.md) covers a failed run.
 
+The OS images resolved from `release/registry.yaml` are private internal
+artifacts. These qualification instructions assume access to them. For your
+own installation, [build and host a node OS image](../operate/build-node-images.md).
+
 ## Ways to run it
 
 | Route | Use it for | What it qualifies | What you need |

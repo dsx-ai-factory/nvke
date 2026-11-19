@@ -7,6 +7,12 @@ requirement of that source-release deliverable. Paths and shell commands below
 are relative to the repository root. The workflow behavior described here is
 not disabled by the source-only documentation scope.
 
+The OS-image publication details below are for internal maintainers with
+access to the private artifacts. Publishing QCOW2s to GHCR, NVCR or
+S3/CloudFront does not make them public downloads. External users should
+[build the OS image](../os-image/README.md#build-the-os-image) and
+[host it for their site](operate/build-node-images.md).
+
 ## Versioning
 
 NVKE uses [Semantic Versioning](https://semver.org/):

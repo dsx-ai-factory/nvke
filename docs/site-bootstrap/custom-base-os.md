@@ -1,6 +1,6 @@
 # Custom Base OS
 
-If you need to bootstrap a tier-0 cluster on a **vanilla Ubuntu image** (rather than a pre-built NVKE node image), you can add the necessary installation steps to your cloud-init configuration.
+If you need to bootstrap a tier-0 cluster on a **vanilla Ubuntu image** (rather than an [NVKE node image you build from source](../../os-image/README.md#build-the-os-image)), you can add the necessary installation steps to your cloud-init configuration.
 
 Before proceeding, write your [site spec file](configuration.md) so it can be placed on the init node by cloud-init.
 

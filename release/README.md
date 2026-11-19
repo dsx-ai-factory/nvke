@@ -11,6 +11,12 @@ qualification run would cover.
 > [`qualify-e2e` workflow](../.github/workflows/qualify-e2e.yml) runs all four
 > and qualifies one job per stream.
 
+The node-image locations in `registry.yaml`, including the release CloudFront
+CDN and OCI registries, refer to private internal artifacts. They support
+maintainer qualification and are not a public node-image download catalog.
+For an installation, [build the OS image](../os-image/README.md#build-the-os-image)
+and [host it for your site](../docs/operate/build-node-images.md).
+
 ## Usage
 
 `qualify plan` resolves what to qualify and writes it as JSON. Run it from the
