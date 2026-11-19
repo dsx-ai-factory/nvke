@@ -267,6 +267,14 @@ func TestValidateAuthConfig(t *testing.T) {
 			wantErr: "mutually exclusive",
 		},
 		{
+			name: "metadata service without external mTLS",
+			cfg: AgentConfig{
+				GRPCAuthMode:           authModeTLSJWT,
+				DSXIdentityMetadataURL: "http://169.254.169.254",
+			},
+			wantErr: "--dsx-identity-metadata-url requires --nvke-controller-client-ca-bundle",
+		},
+		{
 			name: "metadata service without tls-jwt",
 			cfg: AgentConfig{
 				GRPCAuthMode:           authModeSPIFFEMTLS,

@@ -146,6 +146,12 @@ func validateAuthConfig(cfg AgentConfig) error {
 		if cfg.DSXIdentityExchangeURL == "" && cfg.DSXIdentityMetadataURL == "" {
 			return fmt.Errorf("--grpc-auth-mode=%s requires --dsx-identity-exchange-url or --dsx-identity-metadata-url", authModeTLSJWT)
 		}
+		// A VM has no SPIRE agent, so without the CA bundle the agent would
+		// have no certificate to serve the controller.
+		if cfg.DSXIdentityMetadataURL != "" && cfg.ControllerClientCABundle == "" {
+			return errors.New("--dsx-identity-metadata-url requires --nvke-controller-client-ca-bundle: " +
+				"there is no SPIRE agent to provide the agent's server certificate")
+		}
 		return nil
 	default:
 		return fmt.Errorf("--grpc-auth-mode must be %q or %q, got %q",
@@ -529,7 +535,8 @@ func main() {
 		"dsx-identity-metadata-url",
 		envOr("NKE_DSX_IDENTITY_METADATA_URL", ""),
 		"DSX metadata service base URL. When set, --grpc-auth-mode=tls-jwt fetches the DSX identity token from it "+
-			"instead of the SPIRE workload API and --dsx-identity-exchange-url. Also set via NKE_DSX_IDENTITY_METADATA_URL. "+
+			"instead of the SPIRE workload API and --dsx-identity-exchange-url. Requires --nvke-controller-client-ca-bundle. "+
+			"Also set via NKE_DSX_IDENTITY_METADATA_URL. "+
 			"Example: http://169.254.169.254",
 	)
 	dsxIdentityTimeout := flag.Duration(
