@@ -518,6 +518,24 @@ class BuilderContainerTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("podman or docker", result.stderr)
 
+    @unittest.skipUnless(os.environ.get("NKE_TEST_BUILDER_RUNTIME"),
+                         "set NKE_TEST_BUILDER_RUNTIME=podman|docker to run the real builder image")
+    def test_builder_awk_supports_interval_expressions(self):
+        # The package bundles parse publisher checksum lists with
+        # /^[0-9a-fA-F]{64}$/. Bookworm's default mawk (1.3.4-20200120) has no
+        # interval expressions, so every digest line silently failed to match.
+        digest = "0" * 64
+        program = '$1 ~ /^[0-9a-fA-F]{64}$/ { print "match" }'
+        result = subprocess.run(
+            [shutil.which("bash"), str(PACKER_DIR / "scripts/builder-container.sh"), "run",
+             "sh", "-c", f'echo "{digest}  cni.tgz" | awk \'{program}\''],
+            env=os.environ | {"ARCH": "arm64",
+                              "CONTAINER_RUNTIME": os.environ["NKE_TEST_BUILDER_RUNTIME"]},
+            cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=1800,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("match", result.stdout.split(), result.stdout + result.stderr)
+
     def test_amd64_requests_amd64_platform(self):
         self.runtime("podman")
         self.assertEqual(self.invoke("check", ARCH="amd64").returncode, 0)
