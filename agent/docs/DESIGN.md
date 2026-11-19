@@ -418,9 +418,12 @@ the VIP back on `lo`. Manifest moves are the control mechanism (kubelet reacts t
 
 ### 9.6 Support & scripts
 - `GetSupportBundle` gathers `state.json`, `nvke-agent` journal, audit log, script
-  log, dpkg inventory, and caller-requested absolute files into a tgz.
+  log, dpkg inventory, and caller-requested absolute files into a tgz. It redacts
+  kubeadm join credentials and the etcd encryption key in the state file and logs.
+  Caller-requested files are copied unchanged.
 - `ExecuteScript`/`StreamExecuteScript` run scripts (from `/usr/local/nvke/user-scripts`
-  or an uploaded path); every call is logged to the script-execution log.
+  or an uploaded path); every call is logged to the script-execution log, with
+  credentials redacted.
 
 ---
 
