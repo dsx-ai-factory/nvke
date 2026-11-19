@@ -39,13 +39,13 @@ In-place update of running nodes and patch releases build on these artifacts and
 ## Consequences
 
 What gets easier:
-- A release rebuilds with the same package set for as long as its snapshot is retained, and a reviewer reads every change to the spec as a lock diff.
+- A release rebuilds with the same package set for as long as its snapshot or its published repository is kept, and a reviewer reads every change to the spec as a lock diff.
 - Verify answers "is this image, or this node, the release we shipped" at package level: a package the lock does not hold shows up as foreign, and a version it does not name shows up as drift.
 - The repository and pointer package are what BYO-OS phase 1 needs, and the same artifacts serve a later in-place update.
 - A downstream extends a spec instead of forking the Packer project.
 
 What gets harder, and what this gives up:
-- snapshot.ubuntu.com keeps snapshots for two years, so a release can be rebuilt for two years and no longer. Third-party sources have no snapshot service, so keeping their debs for that window falls to us.
+- snapshot.ubuntu.com keeps snapshots for at least two years, which bounds how long a lock can be re-resolved from upstream. Third-party sources have no snapshot service. The lock pins each package's SHA256, so a rebuild gets the same bytes or fails. Guaranteeing a rebuild for the whole support window means keeping the release's published repository, which already holds every deb the release installs.
 - A node must consume only the in-site repository, and every site has to host one. Adding another source leaves the verified path, by design.
 - apt's validity checks are off for our source so that frozen and air-gapped repositories never expire. An old signed suite can therefore be replayed; consumers name an explicit suite and verify against its lock.
 - The installer installs from its own ISO pool, so making Packer install only from the suite is new work, and NVKR's disk build changes with it.
@@ -59,3 +59,89 @@ What gets harder, and what this gives up:
 - **Resolve with aptly's dependency filter:** adds a second resolver beside apt, so verify has to predict apt and reports false drift when the two disagree.
 - **mkosi as the first builder:** a cleaner build, but it would change the disk path that NVKR and sites rely on at the same time as the package model. It can follow behind the builder contract.
 - **Build the OS inside `nvkr`:** one tool fewer, but NVKR orchestrates many producers, and downstream OS teams need the OS tool without adopting the rest of NVKR.
+
+## Example release spec
+
+The first milestone's spec, from the build design. It states intent only. The lock adds the snapshot ID and every package's version and SHA256, per architecture.
+
+```yaml
+apiVersion: nvke.dev/v1
+kind: Release
+metadata:
+  name: nvke-node
+  # no version field: the git tag names the release; git describe supplies it to render and publish
+  series: noble
+spec:
+  architectures: [amd64, arm64]
+
+  inputs:                     # read by lock and publish
+    ubuntu:
+      # no snapshot ID: the lock pins the snapshot it resolved against
+      pockets: [release, updates, security]
+    mirrors: []               # third-party inputs: none today. A future example, the
+                              # DOCA host packages the DSX CSC DPU stack needs:
+                              # - name: doca
+                              #   url: https://linux.mellanox.com/public/repo/doca/3.2.0/ubuntu24.04/
+                              #   suite: ./
+                              #   keyring: keyrings/mellanox.gpg
+    local:
+      - {name: nvke, path: out/debs}   # our own debs, built from the release's commit
+    locks:
+      - os-image/packages/spire-agent/lock
+      - os-image/packages/kubeadm-distro/lock   # lock/<arch>/v<patch>.lock, one per stream below
+      - os-image/packages/cni-calico/lock
+      - os-image/packages/cni-ovn/lock
+
+  kernel:                     # read by the image build
+    amd64: linux-nvidia
+    arm64: linux-nvidia-64k
+
+  pointer:                    # rendered into nvke-release
+    name: nvke-release
+    sources: {mirrorList: /etc/nvke/apt-mirrors.txt, components: [main, security, kubernetes]}
+    pins: [{component: kubernetes, priority: 90}]   # install on request only; dist-upgrade never moves it
+    keys: {current: keys/nvke-archive-2026.pub, next: keys/nvke-archive-2027.pub}
+    apt: {installRecommends: false, checkValidUntil: false, checkDate: false}
+
+  packages:                   # rendered into the metapackages
+    base:
+      name: nvke-node-base
+      depends: [ubuntu-server-minimal, nvke-agent, spire-agent,
+                nvke-node-sysconfig, nvke-node-boot, nvke-node-cloudinit,
+                lvm2, openssh-server, python3-apt, tpm2-tools,
+                openvswitch-switch, iptables, conntrack, socat, ethtool]
+      conflicts: [snapd, unattended-upgrades]
+    components:
+      storage: {provides: nvke-node-storage, default: nvke-node-storage-lvm,
+                alternatives: [nvke-node-storage-lvm-luks]}
+
+  kubernetes:                 # the catalog the kubernetes component carries and the image caches
+    streams: [1.36.3, 1.35.3, 1.34.2]   # nvke-kubeadm-distro-<patch>, each built from its input lock
+    cni:
+      calico: [3.30.1]                  # nvke-cni-calico-{manifests,images}-<stream>
+      ovn: [2.4.2]                      # nvke-cni-ovn-{images,charts}-<stream>
+    # nothing here is a Depends of the base: NVKE installs one stream by name, the pin keeps apt away
+
+  metapackages:               # each group renders nvke-node-<group>; the base depends on every group
+    kata: ["erofs-utils (>= 1.9)", "kata-containers (>= 3.12)"]
+
+  patch:                      # read by lock (the patch gate) and publish (the security filter)
+    exclude: ["linux-*", rdma-core, "libibverbs*", nvidia-container-toolkit]
+
+  verify:                     # read by verify
+    foreignPackages: fail
+    allowForeign: []
+    components:               # expected set = the lock + these
+      kubernetes: installed-stream   # the installed nvke-kubeadm-distro stream and its CNI debs
+```
+
+What each section decides:
+
+- `inputs`: where packages come from. Ubuntu pockets at a snapshot, third-party mirrors, our own debs, and the per-component locks that already pin SPIRE, the Kubernetes streams and the CNI debs.
+- `kernel`: the kernel package per architecture.
+- `pointer`: the contents of `nvke-release`, the sources, keyring and apt settings every node gets. The site supplies only the mirror list.
+- `packages`: `nvke-node-base` and its Depends and Conflicts, plus `storage`, a component behind a virtual name that a downstream can replace.
+- `kubernetes`: the streams and CNI debs published in the `kubernetes` component and cached in the image. The base depends on none of them.
+- `metapackages`: named groups, each a metapackage the base depends on. A package leaves a node only when no group holds it.
+- `patch.exclude`: packages only a full release may move, never a patch.
+- `verify`: how a manifest is compared with the lock, and what to do with a package the lock does not hold.
