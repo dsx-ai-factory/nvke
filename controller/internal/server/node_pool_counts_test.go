@@ -75,7 +75,7 @@ func TestNodePoolCountsRejectMissingObservation(t *testing.T) {
 	store := &testutil.MockDB{}
 	pool := db.NodePool{ID: uuid.New()}
 	store.On("ListNodePoolCounts", mock.Anything, []db.NodePool{pool}).Return(map[uuid.UUID]db.NodePoolCounts{}, nil).Once()
-	_, err := apiNodePoolsFromDB(t.Context(), store, []db.NodePool{pool})
+	_, err := nodePoolCountsFromDB(t.Context(), store, []db.NodePool{pool})
 	require.ErrorContains(t, err, "node pool counts missing")
 	store.AssertExpectations(t)
 }
@@ -150,31 +150,21 @@ func TestNodePoolWriteCounts(t *testing.T) {
 	}
 }
 
-// nodePoolResponseForTest exercises mapping-only fixtures through the batch API
-// with an explicit empty-node observation.
-func nodePoolResponseForTest(t *testing.T, pool *db.NodePool) api.NodePool {
-	t.Helper()
-	store := &testutil.MockDB{}
-	store.On("ListNodePoolCounts", mock.Anything, []db.NodePool{*pool}).Return(map[uuid.UUID]db.NodePoolCounts{pool.ID: {}}, nil).Once()
-	responses, err := apiNodePoolsFromDB(t.Context(), store, []db.NodePool{*pool})
-	require.NoError(t, err)
-	require.Len(t, responses, 1)
-	store.AssertExpectations(t)
-	return responses[0]
-}
-
-func TestAPINodePoolsFromDBBatch(t *testing.T) {
+func TestListNodePoolsBatchCounts(t *testing.T) {
 	pools := []db.NodePool{
 		{ID: uuid.New(), Name: "first", SystemReservedMemory: "16Gi"},
 		{ID: uuid.New(), Name: "second", SystemReservedMemory: "32Gi"},
 	}
 	store := &testutil.MockDB{}
+	store.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return(pools, nil).Once()
 	store.On("ListNodePoolCounts", mock.Anything, pools).Return(map[uuid.UUID]db.NodePoolCounts{
 		pools[0].ID: {NodeCount: 5, ReadyNodeCount: 3, UpdatedNodeCount: 2},
 		pools[1].ID: {NodeCount: 2, ReadyNodeCount: 1, UpdatedNodeCount: 0},
 	}, nil).Once()
-	responses, err := apiNodePoolsFromDB(t.Context(), store, pools)
+	service := NewNodePoolService(slog.Default(), store, config.TeleportConfig{}, nil)
+	response, err := service.ListNodePools(t.Context(), api.ListNodePoolsRequestObject{})
 	require.NoError(t, err)
+	responses := response.(api.ListNodePools200JSONResponse).NodePools
 	require.Len(t, responses, 2)
 	require.Equal(t, "first", responses[0].Name)
 	require.Equal(t, "second", responses[1].Name)
@@ -189,9 +179,15 @@ func TestAPINodePoolsFromDBBatch(t *testing.T) {
 	store.AssertExpectations(t)
 }
 
-func TestAPINodePoolsFromDBEmpty(t *testing.T) {
-	responses, err := apiNodePoolsFromDB(t.Context(), nil, nil)
+func TestListNodePoolsEmptyCounts(t *testing.T) {
+	store := &testutil.MockDB{}
+	store.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil).Once()
+	service := NewNodePoolService(slog.Default(), store, config.TeleportConfig{}, nil)
+	response, err := service.ListNodePools(t.Context(), api.ListNodePoolsRequestObject{})
 	require.NoError(t, err)
-	require.NotNil(t, responses)
-	require.Empty(t, responses)
+	pools := response.(api.ListNodePools200JSONResponse).NodePools
+	require.NotNil(t, pools)
+	require.Empty(t, pools)
+	store.AssertNotCalled(t, "ListNodePoolCounts", mock.Anything, mock.Anything)
+	store.AssertExpectations(t)
 }

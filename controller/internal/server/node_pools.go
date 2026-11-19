@@ -107,9 +107,13 @@ func (s *nodePoolService) ListNodePools(ctx context.Context, req api.ListNodePoo
 	if err != nil {
 		return nil, fmt.Errorf("failed to list node pools: %w", err)
 	}
-	apiNodePools, err := apiNodePoolsFromDB(ctx, s.db, dbNodePools)
+	counts, err := nodePoolCountsFromDB(ctx, s.db, dbNodePools)
 	if err != nil {
 		return nil, err
+	}
+	apiNodePools := make([]api.NodePool, len(dbNodePools))
+	for i := range dbNodePools {
+		apiNodePools[i] = apiNodePoolFromDB(&dbNodePools[i], counts[dbNodePools[i].ID])
 	}
 	return api.ListNodePools200JSONResponse{NodePools: apiNodePools}, nil
 }
@@ -142,7 +146,7 @@ func (s *nodePoolService) CreateNodePool(
 	}
 
 	var createdNodePool db.NodePool
-	var responsePools []api.NodePool
+	var counts map[uuid.UUID]db.NodePoolCounts
 	err = s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		cluster, err := tx.GetClusterForUpdate(ctx, req.Body.ClusterID)
 		if err != nil {
@@ -191,7 +195,7 @@ func (s *nodePoolService) CreateNodePool(
 			return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 		}
 
-		responsePools, err = apiNodePoolsFromDB(ctx, tx, []db.NodePool{createdNodePool})
+		counts, err = nodePoolCountsFromDB(ctx, tx, []db.NodePool{createdNodePool})
 		return err
 	})
 	if err != nil {
@@ -213,7 +217,7 @@ func (s *nodePoolService) CreateNodePool(
 		return nil, err
 	}
 
-	return api.CreateNodePool201JSONResponse(responsePools[0]), nil
+	return api.CreateNodePool201JSONResponse(apiNodePoolFromDB(&createdNodePool, counts[createdNodePool.ID])), nil
 }
 
 func clusterIsCAPIBacked(cluster db.Cluster) bool {
@@ -423,11 +427,11 @@ func (s *nodePoolService) GetNodePool(ctx context.Context, req api.GetNodePoolRe
 		return nil, fmt.Errorf("failed to get node pool: %w", err)
 	}
 
-	pools, err := apiNodePoolsFromDB(ctx, s.db, []db.NodePool{dbNodePool})
+	counts, err := nodePoolCountsFromDB(ctx, s.db, []db.NodePool{dbNodePool})
 	if err != nil {
 		return nil, err
 	}
-	return api.GetNodePool200JSONResponse(pools[0]), nil
+	return api.GetNodePool200JSONResponse(apiNodePoolFromDB(&dbNodePool, counts[dbNodePool.ID])), nil
 }
 
 func (s *nodePoolService) DeleteNodePool(
@@ -462,7 +466,7 @@ func (s *nodePoolService) UpdateNodePool(
 	req api.UpdateNodePoolRequestObject,
 ) (api.UpdateNodePoolResponseObject, error) {
 	var updatedNodePool db.NodePool
-	var responsePools []api.NodePool
+	var counts map[uuid.UUID]db.NodePoolCounts
 	err := s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		// Re-read the pool without a lock first, solely to learn its cluster, then
 		// lock the cluster before the node-pool row. This matches the global
@@ -562,7 +566,7 @@ func (s *nodePoolService) UpdateNodePool(
 			return fmt.Errorf("failed to update node pool: %w", err)
 		}
 
-		responsePools, err = apiNodePoolsFromDB(ctx, tx, []db.NodePool{updatedNodePool})
+		counts, err = nodePoolCountsFromDB(ctx, tx, []db.NodePool{updatedNodePool})
 		return err
 	})
 	if err != nil {
@@ -579,7 +583,7 @@ func (s *nodePoolService) UpdateNodePool(
 		return nil, err
 	}
 
-	return api.UpdateNodePool200JSONResponse(responsePools[0]), nil
+	return api.UpdateNodePool200JSONResponse(apiNodePoolFromDB(&updatedNodePool, counts[updatedNodePool.ID])), nil
 }
 
 func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req *api.UpdateNodePoolRequest) error {
@@ -938,70 +942,72 @@ func uuidSliceDedupe(s []uuid.UUID) []uuid.UUID {
 	return out
 }
 
-// apiNodePoolsFromDB maps stored pools and their observed counts into API responses.
-// Counts are fetched once for the entire batch. Write handlers call this inside
-// their transaction so a read failure rolls back the mutation.
-func apiNodePoolsFromDB(ctx context.Context, queries db.NodePoolQueries, pools []db.NodePool) ([]api.NodePool, error) {
-	responses := make([]api.NodePool, len(pools))
+// nodePoolCountsFromDB fetches observations once for the requested pools and
+// rejects missing observations rather than reporting an unobserved zero.
+// Write handlers call this inside their transaction so a read failure rolls back
+// the mutation.
+func nodePoolCountsFromDB(ctx context.Context, queries db.NodePoolQueries, pools []db.NodePool) (map[uuid.UUID]db.NodePoolCounts, error) {
 	if len(pools) == 0 {
-		return responses, nil
+		return map[uuid.UUID]db.NodePoolCounts{}, nil
 	}
 	counts, err := queries.ListNodePoolCounts(ctx, pools)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node pool counts: %w", err)
 	}
 	for i := range pools {
-		count, ok := counts[pools[i].ID]
-		if !ok {
+		if _, ok := counts[pools[i].ID]; !ok {
 			return nil, fmt.Errorf("node pool counts missing for %s", pools[i].ID)
 		}
-		dbNodePool := &pools[i]
-		var maxSurge *int
-		if dbNodePool.MaxSurge > 0 {
-			maxSurge = &dbNodePool.MaxSurge
-		}
-		var kubeReservedMemory *string
-		if dbNodePool.KubeReservedMemory != "" {
-			kubeReservedMemory = &dbNodePool.KubeReservedMemory
-		}
-		responses[i] = api.NodePool{
-			ID:                          dbNodePool.ID,
-			ClusterID:                   dbNodePool.ClusterID,
-			Name:                        dbNodePool.Name,
-			NodeNamePrefix:              dbNodePool.NodeNamePrefix,
-			Description:                 dbNodePool.Description,
-			KubernetesVersion:           dbNodePool.KubernetesVersion,
-			SystemReservedMemory:        &dbNodePool.SystemReservedMemory,
-			KubeReservedMemory:          kubeReservedMemory,
-			ControlPlane:                dbNodePool.ControlPlane,
-			NodeLabels:                  maps.Clone(dbNodePool.NodeLabels),
-			NodeTaints:                  apiNodeTaintsFromDB(dbNodePool.NodeTaints),
-			DesiredNodeCount:            dbNodePool.DesiredCount,
-			AutoProvisionDisabled:       dbNodePool.AutoProvisionDisabled,
-			AutoModeDisabled:            dbNodePool.AutoModeDisabled,
-			ProvisioningMonitorDisabled: dbNodePool.ProvisioningMonitorDisabled,
-			RecycleBudget:               dbNodePool.RecycleBudget,
-			MaxSurge:                    maxSurge,
-			CurrentNodeSetID:            dbNodePool.CurrentNodeSetID,
-			TeleportEnabled:             &dbNodePool.TeleportEnabled,
-
-			Nico:        apiNicoNodePoolProviderFromDB(dbNodePool.Nico),
-			Infra:       apiInfraNodePoolProviderFromDB(dbNodePool.Capi),
-			LaunchLayer: apiLaunchLayerNodePoolProviderFromDB(dbNodePool.LaunchLayer),
-
-			Conditions: api.NodePoolConditions{
-				Provisioning: apiConditionFromDB(dbNodePool.Conditions.Provisioning),
-				Provisioned:  apiConditionFromDB(dbNodePool.Conditions.Provisioned),
-				Deleting:     apiConditionFromDB(dbNodePool.Conditions.Deleting),
-			},
-			MachineAnnotations: maps.Clone(dbNodePool.MachineAnnotations),
-			MachineLabels:      maps.Clone(dbNodePool.MachineLabels),
-			NodeCount:          &count.NodeCount,
-			ReadyNodeCount:     &count.ReadyNodeCount,
-			UpdatedNodeCount:   &count.UpdatedNodeCount,
-		}
 	}
-	return responses, nil
+	return counts, nil
+}
+
+// apiNodePoolFromDB converts one stored pool and its observed counts into an API response.
+func apiNodePoolFromDB(dbNodePool *db.NodePool, count db.NodePoolCounts) api.NodePool {
+	var maxSurge *int
+	if dbNodePool.MaxSurge > 0 {
+		maxSurge = &dbNodePool.MaxSurge
+	}
+	var kubeReservedMemory *string
+	if dbNodePool.KubeReservedMemory != "" {
+		kubeReservedMemory = &dbNodePool.KubeReservedMemory
+	}
+	return api.NodePool{
+		ID:                          dbNodePool.ID,
+		ClusterID:                   dbNodePool.ClusterID,
+		Name:                        dbNodePool.Name,
+		NodeNamePrefix:              dbNodePool.NodeNamePrefix,
+		Description:                 dbNodePool.Description,
+		KubernetesVersion:           dbNodePool.KubernetesVersion,
+		SystemReservedMemory:        &dbNodePool.SystemReservedMemory,
+		KubeReservedMemory:          kubeReservedMemory,
+		ControlPlane:                dbNodePool.ControlPlane,
+		NodeLabels:                  maps.Clone(dbNodePool.NodeLabels),
+		NodeTaints:                  apiNodeTaintsFromDB(dbNodePool.NodeTaints),
+		DesiredNodeCount:            dbNodePool.DesiredCount,
+		AutoProvisionDisabled:       dbNodePool.AutoProvisionDisabled,
+		AutoModeDisabled:            dbNodePool.AutoModeDisabled,
+		ProvisioningMonitorDisabled: dbNodePool.ProvisioningMonitorDisabled,
+		RecycleBudget:               dbNodePool.RecycleBudget,
+		MaxSurge:                    maxSurge,
+		CurrentNodeSetID:            dbNodePool.CurrentNodeSetID,
+		TeleportEnabled:             &dbNodePool.TeleportEnabled,
+
+		Nico:        apiNicoNodePoolProviderFromDB(dbNodePool.Nico),
+		Infra:       apiInfraNodePoolProviderFromDB(dbNodePool.Capi),
+		LaunchLayer: apiLaunchLayerNodePoolProviderFromDB(dbNodePool.LaunchLayer),
+
+		Conditions: api.NodePoolConditions{
+			Provisioning: apiConditionFromDB(dbNodePool.Conditions.Provisioning),
+			Provisioned:  apiConditionFromDB(dbNodePool.Conditions.Provisioned),
+			Deleting:     apiConditionFromDB(dbNodePool.Conditions.Deleting),
+		},
+		MachineAnnotations: maps.Clone(dbNodePool.MachineAnnotations),
+		MachineLabels:      maps.Clone(dbNodePool.MachineLabels),
+		NodeCount:          &count.NodeCount,
+		ReadyNodeCount:     &count.ReadyNodeCount,
+		UpdatedNodeCount:   &count.UpdatedNodeCount,
+	}
 }
 
 func apiNicoNodePoolProviderFromDB(nicoNodePoolProvider *db.NicoNodePoolProvider) *api.NicoNodePoolProvider {
