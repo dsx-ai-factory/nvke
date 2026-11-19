@@ -224,6 +224,7 @@ class TriageRerunTest(unittest.TestCase):
     def test_a_re_run_that_cannot_be_started_fails_loudly_and_tells_no_one(self):
         r = self.run_script(row() + "\n", DRY_RUN="false", STUB_POST_FAILS="1")
         self.assertNotEqual(r.returncode, 0)
+        self.assertIn("Not re-run: GitHub refused the request to re-run the failed jobs", r.stdout)
         self.assertEqual(self.told(), ([], []))
 
     def test_a_message_that_cannot_be_sent_does_not_undo_the_re_run(self):

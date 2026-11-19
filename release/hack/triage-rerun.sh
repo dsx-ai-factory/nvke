@@ -136,7 +136,12 @@ if [[ "${dry}" == true ]]; then
     exit 0
 fi
 
-gh api -X POST "repos/${repo}/actions/runs/${run}/rerun-failed-jobs" >/dev/null
+# A refusal is written to the summary, not only to the log, so the reason is
+# where a person looks; it is a failure of the step, and no one is told.
+if ! gh api -X POST "repos/${repo}/actions/runs/${run}/rerun-failed-jobs" >/dev/null; then
+    echo "Not re-run: GitHub refused the request to re-run the failed jobs (${classes})."
+    exit 1
+fi
 echo "Re-ran the failed jobs once (attempt ${next}): ${classes}."
 
 # The thread is told after the re-run, not before: a message about a re-run that
