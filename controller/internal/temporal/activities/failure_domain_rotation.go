@@ -47,7 +47,7 @@ func (a *Activities) rotateFailureDomain(
 	}
 
 	if node.FailureDomain != current {
-		return false, a.recordFailureDomainMove(ctx, node, current, appendTried(node.FailureDomainsTried, node.FailureDomain))
+		return false, a.recordFailureDomainMove(ctx, cluster.ID, node, current, appendTried(node.FailureDomainsTried, node.FailureDomain))
 	}
 
 	switch {
@@ -73,13 +73,8 @@ func (a *Activities) rotateFailureDomain(
 	if err := a.k8sClient.Patch(ctx, machine, patch); err != nil {
 		return false, fmt.Errorf("moving CAPI machine %s from failure domain %q to %q: %w", machine.Name, current, next, err)
 	}
-	if err := a.recordFailureDomainMove(ctx, node, next, tried); err != nil {
+	if err := a.recordFailureDomainMove(ctx, cluster.ID, node, next, tried); err != nil {
 		return false, err
-	}
-
-	if err := a.markFailureDomainUnplaceable(ctx, cluster.ID, current); err != nil {
-		logger.Warn("Could not mark the failure domain unplaceable; later placements may choose it",
-			"clusterID", cluster.ID, "failureDomain", current, "error", err)
 	}
 
 	metrics.RecordControlPlaneFailureDomainRotation(cluster.ID.String(), cluster.Name)
@@ -147,25 +142,22 @@ func (a *Activities) setFailureDomainUnavailableSince(ctx context.Context, node 
 	})
 }
 
-// markFailureDomainUnplaceable stamps domain in the cluster's unplaceable failure
-// domains under the cluster row lock, so every placement path avoids it for
-// failuredomains.UnplaceableTTL.
-func (a *Activities) markFailureDomainUnplaceable(ctx context.Context, clusterID uuid.UUID, domain string) error {
+// recordFailureDomainMove records node's move to domain and marks the domain it
+// left unplaceable for the cluster, in one transaction. On failure the Machine and
+// row still disagree, so the next poll retries both writes.
+func (a *Activities) recordFailureDomainMove(ctx context.Context, clusterID uuid.UUID, node db.Node, domain string, tried []string) error {
 	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		// Cluster before node: the control-plane reconciler takes the locks in that order.
 		cluster, err := tx.GetClusterForUpdate(ctx, clusterID)
 		if err != nil {
 			return fmt.Errorf("loading cluster %s: %w", clusterID, err)
 		}
-		cluster.Conditions.UnplaceableFailureDomains = failuredomains.MarkUnplaceable(cluster.Conditions.UnplaceableFailureDomains, domain, time.Now())
-		if _, err := tx.UpdateCluster(ctx, &cluster); err != nil {
-			return fmt.Errorf("marking failure domain %q unplaceable for cluster %s: %w", domain, clusterID, err)
+		if node.FailureDomain != "" {
+			cluster.Conditions.UnplaceableFailureDomains = failuredomains.MarkUnplaceable(cluster.Conditions.UnplaceableFailureDomains, node.FailureDomain, time.Now())
+			if _, err := tx.UpdateCluster(ctx, &cluster); err != nil {
+				return fmt.Errorf("marking failure domain %q unplaceable for cluster %s: %w", node.FailureDomain, clusterID, err)
+			}
 		}
-		return nil
-	})
-}
-
-func (a *Activities) recordFailureDomainMove(ctx context.Context, node db.Node, domain string, tried []string) error {
-	return a.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		n, err := tx.GetNodeForUpdate(ctx, node.ID)
 		if err != nil {
 			return fmt.Errorf("loading node %s: %w", node.ID, err)
