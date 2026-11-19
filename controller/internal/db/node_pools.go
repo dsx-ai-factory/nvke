@@ -98,15 +98,15 @@ func uuidPtrEqual(a, b *uuid.UUID) bool {
 
 // Equal reports whether two CAPINodePoolProvider values represent the same configuration.
 func (c CAPINodePoolProvider) Equal(other CAPINodePoolProvider) bool {
-	return machineTemplateJSONEqual(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
+	return jsonEqual(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
 		c.SpireAttestationMethod == other.SpireAttestationMethod &&
 		cloudInitFilesEqual(c.BootstrapFiles, other.BootstrapFiles) &&
 		slices.Equal(c.PreKubeadmCommands, other.PreKubeadmCommands)
 }
 
-// machineTemplateJSONEqual ignores object key order and whitespace introduced
-// by PostgreSQL JSONB round trips. UseNumber preserves large numeric values.
-func machineTemplateJSONEqual(a, b json.RawMessage) bool {
+// jsonEqual compares JSON content independent of object key order and whitespace.
+// Numbers retain their original representations to preserve precision.
+func jsonEqual(a, b json.RawMessage) bool {
 	if bytes.Equal(a, b) {
 		return true
 	}
