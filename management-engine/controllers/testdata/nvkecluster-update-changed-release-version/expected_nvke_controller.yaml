@@ -36,6 +36,7 @@ clusters:
     systemReservedMemory: 1Gi
   controlPlaneKubernetesVersion: 1.35.2
   createdAt: "0001-01-01T00:00:00Z"
+  enableCPNodeRecycling: true
   etcdEncrypted: true
   id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
   infra:
@@ -89,3 +90,4 @@ requests:
   path: /api/clusters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
   update:
     controlPlaneKubernetesVersion: 1.35.2
+    enableCPNodeRecycling: true

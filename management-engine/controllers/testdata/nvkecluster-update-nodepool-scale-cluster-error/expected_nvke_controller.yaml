@@ -130,6 +130,7 @@ requests:
   path: /api/clusters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
   update:
     controlPlaneKubernetesVersion: 1.35.2
+    enableCPNodeRecycling: true
 - method: PATCH
   path: /api/nodePools/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
   updateNodePool:

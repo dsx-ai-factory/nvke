@@ -131,6 +131,7 @@ requests:
   path: /api/clusters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
   update:
     controlPlaneKubernetesVersion: 1.35.2
+    enableCPNodeRecycling: true
 - createNodePool:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     desiredNodeCount: 1

@@ -41,6 +41,7 @@ clusters:
     systemReservedMemory: 1Gi
   controlPlaneKubernetesVersion: 1.36.1
   createdAt: "0001-01-01T00:00:00Z"
+  enableCPNodeRecycling: true
   etcdEncrypted: false
   id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
   name: cluster-1-34bd578c-mgmt-eng
@@ -126,6 +127,7 @@ requests:
       maxSurge: 1
       systemReservedMemory: 1Gi
     controlPlaneKubernetesVersion: 1.36.1
+    enableCPNodeRecycling: true
 - method: PATCH
   path: /api/nodePools/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
   updateNodePool:
