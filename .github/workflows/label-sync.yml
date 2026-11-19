@@ -1,0 +1,108 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Makes the repository's labels match .github/labels.yml: creates a listed
+# label that is missing, and updates the colour and description of one that
+# differs. It never deletes or renames a label; a label that exists only in
+# the UI is logged and left alone. The logic is hack/label-sync.js.
+#
+# Advisory. Two jobs, so pull request code never holds a write token:
+# `validate` runs on a pull request with read access only, checks the file and
+# logs what a merge would change; `apply` runs on main and on a manual run,
+# and writes.
+
+name: Label Sync
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/labels.yml
+      - .github/workflows/label-sync.yml
+      - hack/label-sync.js
+  pull_request:
+    paths:
+      - .github/labels.yml
+      - .github/workflows/label-sync.yml
+      - hack/label-sync.js
+  workflow_dispatch: {}
+
+permissions: {}
+
+jobs:
+  validate:
+    name: Validate labels
+    if: github.repository_id == '1323115536' && github.event_name == 'pull_request'
+    concurrency:
+      group: Label Sync-validate-${{ github.ref }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            .github/labels.yml
+            hack/label-sync.js
+          sparse-checkout-cone-mode: false
+
+      # yq ships on the GitHub-hosted Ubuntu image.
+      - name: Convert labels.yml to JSON
+        run: yq -o=json '.' .github/labels.yml > "$RUNNER_TEMP/labels.json"
+
+      - name: Validate and show the changes a merge would make
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          LABELS_JSON: ${{ runner.temp }}/labels.json
+        with:
+          # Octokit retries 5xx and dropped connections; 4xx still fail at once.
+          retries: 3
+          script: |
+            const sync = require(`${process.env.GITHUB_WORKSPACE}/hack/label-sync.js`);
+            await sync({ github, context, core, apply: false });
+
+  apply:
+    name: Apply labels
+    if: >-
+      github.repository_id == '1323115536' &&
+      (github.event_name == 'workflow_dispatch' ||
+       (github.event_name == 'push' && github.ref == 'refs/heads/main'))
+    # One queue, never cancelled. GitHub keeps one running and one pending run
+    # in a group and replaces an older pending run with a newer one, and each
+    # run applies the whole file, so the newest commit is applied last.
+    concurrency:
+      group: Label Sync-apply
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    timeout-minutes: 10
+    steps:
+      # The current main, not the triggering commit: a re-run of an older
+      # push must not restore that commit's labels.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          sparse-checkout: |
+            .github/labels.yml
+            hack/label-sync.js
+          sparse-checkout-cone-mode: false
+
+      - name: Convert labels.yml to JSON
+        run: yq -o=json '.' .github/labels.yml > "$RUNNER_TEMP/labels.json"
+
+      - name: Apply labels
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          LABELS_JSON: ${{ runner.temp }}/labels.json
+        with:
+          retries: 3
+          script: |
+            const sync = require(`${process.env.GITHUB_WORKSPACE}/hack/label-sync.js`);
+            await sync({ github, context, core, apply: true });
