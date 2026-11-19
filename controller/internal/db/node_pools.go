@@ -449,6 +449,7 @@ func (q *queriesImpl) ListNodePools(ctx context.Context, filters NodePoolFilters
 // ListNodePoolCounts aggregates only the requested pools in one query. Snapshot
 // configuration and node counts are read together; configuration matching uses
 // the supplied pool versions (the same versions serialized by the API).
+// Pool-managed nodes reference an existing NodeSet, so the query uses an inner join.
 func (q *queriesImpl) ListNodePoolCounts(ctx context.Context, pools []NodePool) (map[uuid.UUID]NodePoolCounts, error) {
 	counts := make(map[uuid.UUID]NodePoolCounts, len(pools))
 	byID := make(map[uuid.UUID]NodePool, len(pools))
@@ -480,7 +481,7 @@ func (q *queriesImpl) ListNodePoolCounts(ctx context.Context, pools []NodePool) 
 			WHERE node_pool_id IN (?)
 			GROUP BY node_pool_id, node_set_id
 		) nc
-		LEFT JOIN node_sets ns ON ns.id = nc.node_set_id
+		INNER JOIN node_sets ns ON ns.id = nc.node_set_id
 	`, bun.List(ids)).Scan(ctx, &groups)
 	if err != nil {
 		return nil, fmt.Errorf("aggregate node pool counts: %w", err)
@@ -490,7 +491,7 @@ func (q *queriesImpl) ListNodePoolCounts(ctx context.Context, pools []NodePool) 
 		count := counts[group.NodePoolID]
 		count.NodeCount += group.NodeCount
 		count.ReadyNodeCount += group.ReadyNodeCount
-		if group.Snapshot.ID != uuid.Nil && group.Snapshot.NodePoolID == group.NodePoolID &&
+		if group.Snapshot.NodePoolID == group.NodePoolID &&
 			NodePoolMatchesNodeSet(byID[group.NodePoolID], group.Snapshot) {
 			count.UpdatedNodeCount += group.NodeCount
 		}
