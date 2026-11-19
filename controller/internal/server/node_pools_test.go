@@ -227,6 +227,18 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("ListNodePools", mock.Anything, tt.filters).Return(tt.dbNodePools, tt.dbError)
+			if tt.dbError == nil && len(tt.dbNodePools) > 0 {
+				counts := make(map[uuid.UUID]db.NodePoolCounts, len(tt.dbNodePools))
+				for _, pool := range tt.dbNodePools {
+					counts[pool.ID] = db.NodePoolCounts{}
+				}
+				mockDB.On("ListNodePoolCounts", mock.Anything, tt.dbNodePools).Return(counts, nil).Once()
+				for i := range tt.wantNodePool {
+					tt.wantNodePool[i].NodeCount = testutil.PtrTo(0)
+					tt.wantNodePool[i].ReadyNodeCount = testutil.PtrTo(0)
+					tt.wantNodePool[i].UpdatedNodeCount = testutil.PtrTo(0)
+				}
+			}
 
 			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
 
@@ -473,6 +485,13 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.MockTx = &mockTx{}
+			mockDB.MockTx.On("ListNodePoolCounts", mock.Anything, mock.Anything).Return(func(_ context.Context, pools []db.NodePool) map[uuid.UUID]db.NodePoolCounts {
+				counts := make(map[uuid.UUID]db.NodePoolCounts, len(pools))
+				for _, pool := range pools {
+					counts[pool.ID] = db.NodePoolCounts{}
+				}
+				return counts
+			}, nil).Maybe()
 
 			// Mock GetCluster on mockDB for validation (validation uses s.db, not the transaction)
 			mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
@@ -599,6 +618,12 @@ func TestNodePoolService_GetNodePool(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("GetNodePool", mock.Anything, tt.nodePoolID).Return(tt.dbNodePool, tt.dbError)
+			if tt.dbError == nil {
+				mockDB.On("ListNodePoolCounts", mock.Anything, []db.NodePool{tt.dbNodePool}).Return(map[uuid.UUID]db.NodePoolCounts{tt.dbNodePool.ID: {}}, nil).Once()
+				tt.wantNodePool.NodeCount = testutil.PtrTo(0)
+				tt.wantNodePool.ReadyNodeCount = testutil.PtrTo(0)
+				tt.wantNodePool.UpdatedNodeCount = testutil.PtrTo(0)
+			}
 
 			service := server.NewNodePoolService(&slog.Logger{}, mockDB, config.TeleportConfig{}, nil)
 
@@ -1141,6 +1166,13 @@ func TestNodePoolService_UpdateNodePool(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.MockTx = &mockTx{}
+			mockDB.MockTx.On("ListNodePoolCounts", mock.Anything, mock.Anything).Return(func(_ context.Context, pools []db.NodePool) map[uuid.UUID]db.NodePoolCounts {
+				counts := make(map[uuid.UUID]db.NodePoolCounts, len(pools))
+				for _, pool := range pools {
+					counts[pool.ID] = db.NodePoolCounts{}
+				}
+				return counts
+			}, nil).Maybe()
 			if tt.setupMockDB != nil {
 				tt.setupMockDB(mockDB, mockDB.MockTx)
 			}
@@ -1288,6 +1320,13 @@ func TestNodePoolService_UpdateNodePool_KubernetesVersion(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.MockTx = &mockTx{}
+			mockDB.MockTx.On("ListNodePoolCounts", mock.Anything, mock.Anything).Return(func(_ context.Context, pools []db.NodePool) map[uuid.UUID]db.NodePoolCounts {
+				counts := make(map[uuid.UUID]db.NodePoolCounts, len(pools))
+				for _, pool := range pools {
+					counts[pool.ID] = db.NodePoolCounts{}
+				}
+				return counts
+			}, nil).Maybe()
 			conditions := db.ClusterConditions{
 				ControlPlaneUpgrading: db.NewCondition(tt.controlPlaneUpgrading, "upgrading"),
 			}
@@ -1465,6 +1504,13 @@ func TestNodePoolService_UpdateNodePool_NVLinkLogicalPartition(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.MockTx = &mockTx{}
+			mockDB.MockTx.On("ListNodePoolCounts", mock.Anything, mock.Anything).Return(func(_ context.Context, pools []db.NodePool) map[uuid.UUID]db.NodePoolCounts {
+				counts := make(map[uuid.UUID]db.NodePoolCounts, len(pools))
+				for _, pool := range pools {
+					counts[pool.ID] = db.NodePoolCounts{}
+				}
+				return counts
+			}, nil).Maybe()
 			tt.setupMockDB(mockDB, mockDB.MockTx)
 			mockDB.MockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(db.NodePool{ID: nodePoolID, ClusterID: clusterID}, nil).Maybe()
 			mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Maybe().Return(db.Cluster{
@@ -1707,6 +1753,13 @@ func TestNodePoolService_DeleteNodePool(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.MockTx = &mockTx{}
+			mockDB.MockTx.On("ListNodePoolCounts", mock.Anything, mock.Anything).Return(func(_ context.Context, pools []db.NodePool) map[uuid.UUID]db.NodePoolCounts {
+				counts := make(map[uuid.UUID]db.NodePoolCounts, len(pools))
+				for _, pool := range pools {
+					counts[pool.ID] = db.NodePoolCounts{}
+				}
+				return counts
+			}, nil).Maybe()
 
 			if tt.setupMockCalls != nil {
 				tt.setupMockCalls(mockDB.MockTx)

@@ -2121,6 +2121,24 @@ components:
           minimum: 0
           description: Number of nodes.
           x-order: 20
+        nodeCount:
+          x-order: 28
+          type: integer
+          minimum: 0
+          readOnly: true
+          description: Observed CWE node records in the pool, including pending and deleting nodes. May exceed desiredNodeCount during a rollout or after a scale-down request. Omitted when not observed.
+        readyNodeCount:
+          x-order: 29
+          type: integer
+          minimum: 0
+          readOnly: true
+          description: Pool node records whose observed KubernetesReady condition is True. Does not additionally require provisioning completion or schedulability. Omitted when not observed.
+        updatedNodeCount:
+          x-order: 30
+          type: integer
+          minimum: 0
+          readOnly: true
+          description: Pool node records whose NodeSet matches the requested rollout configuration, including Kubernetes version and provider image and initialization settings. Includes pending, provisioning and deleting nodes when their configuration matches; does not require readiness or verify running software. Omitted when not observed.
         autoProvisionDisabled:
           type: boolean
           description: Disables automatic provisioning for the pool.

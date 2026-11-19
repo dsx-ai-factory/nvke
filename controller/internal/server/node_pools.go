@@ -107,9 +107,9 @@ func (s *nodePoolService) ListNodePools(ctx context.Context, req api.ListNodePoo
 	if err != nil {
 		return nil, fmt.Errorf("failed to list node pools: %w", err)
 	}
-	apiNodePools := make([]api.NodePool, len(dbNodePools))
-	for i := range dbNodePools {
-		apiNodePools[i] = apiNodePoolFromDB(&dbNodePools[i])
+	apiNodePools, err := apiNodePoolsWithCounts(ctx, s.db, dbNodePools)
+	if err != nil {
+		return nil, err
 	}
 	return api.ListNodePools200JSONResponse{NodePools: apiNodePools}, nil
 }
@@ -142,6 +142,7 @@ func (s *nodePoolService) CreateNodePool(
 	}
 
 	var createdNodePool db.NodePool
+	var responsePools []api.NodePool
 	err = s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		cluster, err := tx.GetClusterForUpdate(ctx, req.Body.ClusterID)
 		if err != nil {
@@ -190,7 +191,8 @@ func (s *nodePoolService) CreateNodePool(
 			return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 		}
 
-		return nil
+		responsePools, err = apiNodePoolsWithCounts(ctx, tx, []db.NodePool{createdNodePool})
+		return err
 	})
 	if err != nil {
 		var badRequestErr *badRequestError
@@ -211,7 +213,7 @@ func (s *nodePoolService) CreateNodePool(
 		return nil, err
 	}
 
-	return api.CreateNodePool201JSONResponse(apiNodePoolFromDB(&createdNodePool)), nil
+	return api.CreateNodePool201JSONResponse(responsePools[0]), nil
 }
 
 func clusterIsCAPIBacked(cluster db.Cluster) bool {
@@ -421,7 +423,11 @@ func (s *nodePoolService) GetNodePool(ctx context.Context, req api.GetNodePoolRe
 		return nil, fmt.Errorf("failed to get node pool: %w", err)
 	}
 
-	return api.GetNodePool200JSONResponse(apiNodePoolFromDB(&dbNodePool)), nil
+	pools, err := apiNodePoolsWithCounts(ctx, s.db, []db.NodePool{dbNodePool})
+	if err != nil {
+		return nil, err
+	}
+	return api.GetNodePool200JSONResponse(pools[0]), nil
 }
 
 func (s *nodePoolService) DeleteNodePool(
@@ -456,6 +462,7 @@ func (s *nodePoolService) UpdateNodePool(
 	req api.UpdateNodePoolRequestObject,
 ) (api.UpdateNodePoolResponseObject, error) {
 	var updatedNodePool db.NodePool
+	var responsePools []api.NodePool
 	err := s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		// Re-read the pool without a lock first, solely to learn its cluster, then
 		// lock the cluster before the node-pool row. This matches the global
@@ -555,7 +562,8 @@ func (s *nodePoolService) UpdateNodePool(
 			return fmt.Errorf("failed to update node pool: %w", err)
 		}
 
-		return nil
+		responsePools, err = apiNodePoolsWithCounts(ctx, tx, []db.NodePool{updatedNodePool})
+		return err
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrControlPlaneMutationBlocked) {
@@ -571,7 +579,7 @@ func (s *nodePoolService) UpdateNodePool(
 		return nil, err
 	}
 
-	return api.UpdateNodePool200JSONResponse(apiNodePoolFromDB(&updatedNodePool)), nil
+	return api.UpdateNodePool200JSONResponse(responsePools[0]), nil
 }
 
 func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req *api.UpdateNodePoolRequest) error {
@@ -928,6 +936,31 @@ func uuidSliceDedupe(s []uuid.UUID) []uuid.UUID {
 		}
 	}
 	return out
+}
+
+// apiNodePoolsWithCounts attaches observations without changing persisted pool state.
+// Write handlers call it inside their transaction so a read failure cannot turn
+// an already committed mutation into an error response.
+func apiNodePoolsWithCounts(ctx context.Context, queries db.NodePoolQueries, pools []db.NodePool) ([]api.NodePool, error) {
+	responses := make([]api.NodePool, len(pools))
+	if len(pools) == 0 {
+		return responses, nil
+	}
+	counts, err := queries.ListNodePoolCounts(ctx, pools)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node pool counts: %w", err)
+	}
+	for i := range pools {
+		count, ok := counts[pools[i].ID]
+		if !ok {
+			return nil, fmt.Errorf("node pool counts missing for %s", pools[i].ID)
+		}
+		responses[i] = apiNodePoolFromDB(&pools[i])
+		responses[i].NodeCount = &count.NodeCount
+		responses[i].ReadyNodeCount = &count.ReadyNodeCount
+		responses[i].UpdatedNodeCount = &count.UpdatedNodeCount
+	}
+	return responses, nil
 }
 
 func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {

@@ -1435,6 +1435,16 @@ type NodePool struct {
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
 	ProvisioningMonitorDisabled bool `json:"provisioningMonitorDisabled"`
 
+	// RecycleBudget Maximum number of nodes recycled at once.
+	RecycleBudget int `json:"recycleBudget"`
+
+	// MaxSurge Nodes allowed above desiredNodeCount during a rollout. 0 means sequential: each
+	// node is torn down before its replacement is provisioned.
+	MaxSurge *int `json:"maxSurge,omitempty"`
+
+	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this pool.
+	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
+
 	// Conditions Lifecycle conditions: provisioning, provisioned, deleting.
 	Conditions NodePoolConditions `json:"conditions"`
 
@@ -1453,18 +1463,17 @@ type NodePool struct {
 	// Nico NICo settings for the pool.
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
+	// NodeCount Observed CWE node records in the pool, including pending and deleting nodes. May exceed desiredNodeCount during a rollout or after a scale-down request. Omitted when not observed.
+	NodeCount *int `json:"nodeCount,omitempty"`
+
 	// NodeNamePrefix Node names are `<cluster>-<prefix>-<NNNN>` (four-digit suffix), at most 63 characters in total.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
 
-	// RecycleBudget Maximum number of nodes recycled at once.
-	RecycleBudget int `json:"recycleBudget"`
+	// ReadyNodeCount Pool node records whose observed KubernetesReady condition is True. Does not additionally require provisioning completion or schedulability. Omitted when not observed.
+	ReadyNodeCount *int `json:"readyNodeCount,omitempty"`
 
-	// MaxSurge Nodes allowed above desiredNodeCount during a rollout. 0 means sequential: each
-	// node is torn down before its replacement is provisioned.
-	MaxSurge *int `json:"maxSurge,omitempty"`
-
-	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this pool.
-	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
+	// UpdatedNodeCount Pool node records whose NodeSet matches the requested rollout configuration, including Kubernetes version and provider image and initialization settings. Includes pending, provisioning and deleting nodes when their configuration matches; does not require readiness or verify running software. Omitted when not observed.
+	UpdatedNodeCount *int `json:"updatedNodeCount,omitempty"`
 }
 
 // NodePoolConditions Lifecycle conditions of a node pool. Each is a Condition.

@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"reflect"
 	"slices"
 	"time"
 
@@ -97,10 +98,31 @@ func uuidPtrEqual(a, b *uuid.UUID) bool {
 
 // Equal reports whether two CAPINodePoolProvider values represent the same configuration.
 func (c CAPINodePoolProvider) Equal(other CAPINodePoolProvider) bool {
-	return bytes.Equal(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
+	return machineTemplateJSONEqual(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
 		c.SpireAttestationMethod == other.SpireAttestationMethod &&
 		cloudInitFilesEqual(c.BootstrapFiles, other.BootstrapFiles) &&
 		slices.Equal(c.PreKubeadmCommands, other.PreKubeadmCommands)
+}
+
+// machineTemplateJSONEqual ignores object key order and whitespace introduced
+// by PostgreSQL JSONB round trips. UseNumber preserves large numeric values.
+func machineTemplateJSONEqual(a, b json.RawMessage) bool {
+	if bytes.Equal(a, b) {
+		return true
+	}
+	decode := func(raw json.RawMessage) (any, error) {
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		var value any
+		err := decoder.Decode(&value)
+		return value, err
+	}
+	left, err := decode(a)
+	if err != nil {
+		return false
+	}
+	right, err := decode(b)
+	return err == nil && reflect.DeepEqual(left, right)
 }
 
 // Equal reports whether two LaunchLayerNodePoolProvider values represent the same configuration.
@@ -372,6 +394,7 @@ type NodePoolMetrics struct {
 }
 
 type NodePoolQueries interface {
+	ListNodePoolCounts(ctx context.Context, pools []NodePool) (map[uuid.UUID]NodePoolCounts, error)
 	ListNodePools(ctx context.Context, filters NodePoolFilters) ([]NodePool, error)
 	ListNodePoolMetrics(ctx context.Context) ([]NodePoolMetrics, error)
 	GetNodePool(ctx context.Context, id uuid.UUID) (NodePool, error)
