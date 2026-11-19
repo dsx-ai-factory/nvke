@@ -712,7 +712,7 @@ jobs:
       # Writing the site node's SSH key is for a workstation: on a runner it
       # would sit beside the files the artifacts step uploads.
       NODE_KEY_DIR: ""
-      # Only a stream with kaps-bench run specs names this folder, copied out of the pinned image.
+      # Only a stream with kaps-bench run specs names this folder, copied out of the kaps-bench image.
       E2E_KAPS_BENCH_DIR: ${{ matrix.kaps_bench_run_specs != '' && format('{0}/.kaps-bench', github.workspace) || '' }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
@@ -996,7 +996,8 @@ jobs:
           set -Eeuo pipefail
           image="$(make --no-print-directory print-KAPS_BENCH_IMAGE)"
           echo "kaps-bench image: ${image}"
-          container="$(docker create --platform linux/amd64 "${image}")"
+          container="$(docker create --pull always --platform linux/amd64 "${image}")"
+          echo "kaps-bench digest: $(docker image inspect --format '{{index .RepoDigests 0}}' "${image}")"
           trap 'docker rm "${container}" >/dev/null' EXIT
           rm -rf "${E2E_KAPS_BENCH_DIR}"
           docker cp "${container}:/kaps-bench" "${E2E_KAPS_BENCH_DIR}"
