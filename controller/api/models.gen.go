@@ -347,13 +347,25 @@ type ConfigProfile struct {
 	Name string `json:"name"`
 }
 
+// ControlPlaneComponentConfig Arguments for one control-plane component.
+type ControlPlaneComponentConfig struct {
+	// ExtraArgs Flags for this component, as a map from flag name without the leading "--" to its value. A flag NVKE sets on the component is rejected. feature-gates is merged with the gates NVKE sets, and a gate that contradicts NVKE's is rejected, as are AllAlpha and AllBeta. Flags and gates are not checked against the Kubernetes version. A caller can set any flag NVKE doesn't set, including authentication and authorization flags.
+	ExtraArgs map[string]string `json:"extraArgs,omitempty"`
+}
+
 // ControlPlaneConfig The control-plane configuration in effect, including the desired node-agent version.
 type ControlPlaneConfig struct {
+	// APIServer Arguments for one control-plane component.
+	APIServer *ControlPlaneComponentConfig `json:"apiServer,omitempty"`
+
 	// AutoScaleDownDisabled When true, automatic control-plane scale-down is disabled, so decreasing desiredCount leaves the surplus nodes in place. When scale-down is enabled it never reduces the control plane below the fault-tolerant floor of three nodes.
 	AutoScaleDownDisabled *bool `json:"autoScaleDownDisabled,omitempty"`
 
 	// ConfigurationID ID of the current configuration snapshot.
 	ConfigurationID openapi_types.UUID `json:"configurationId,omitempty"`
+
+	// ControllerManager Arguments for one control-plane component.
+	ControllerManager *ControlPlaneComponentConfig `json:"controllerManager,omitempty"`
 
 	// DesiredCount The desired number of cluster-level control plane nodes. Creating a cluster with or increasing this count above 1 requires controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredCount int `json:"desiredCount,omitempty"`
@@ -387,6 +399,9 @@ type ControlPlaneConfig struct {
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
+
+	// Scheduler Arguments for one control-plane component.
+	Scheduler *ControlPlaneComponentConfig `json:"scheduler,omitempty"`
 
 	// SystemReservedMemory Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
 	SystemReservedMemory string `json:"systemReservedMemory,omitempty"`
@@ -521,8 +536,14 @@ type ControlPlaneStatus struct {
 // `nico` carries the NICo settings for the control-plane nodes; it is required
 // for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
 type CreateClusterControlPlaneConfig struct {
+	// APIServer Arguments for one control-plane component.
+	APIServer *ControlPlaneComponentConfig `json:"apiServer,omitempty"`
+
 	// AutoScaleDownDisabled When true, automatic control-plane scale-down is disabled, so decreasing desiredCount leaves the surplus nodes in place. When scale-down is enabled it never reduces the control plane below the fault-tolerant floor of three nodes.
 	AutoScaleDownDisabled *bool `json:"autoScaleDownDisabled,omitempty"`
+
+	// ControllerManager Arguments for one control-plane component.
+	ControllerManager *ControlPlaneComponentConfig `json:"controllerManager,omitempty"`
 
 	// DesiredCount The desired number of cluster-level control plane nodes. Must be at least 1. Values above 1 require controlPlaneVIP on the cluster unless the development-only allowControlPlaneWithoutVIP setting is enabled.
 	DesiredCount int `json:"desiredCount"`
@@ -559,6 +580,9 @@ type CreateClusterControlPlaneConfig struct {
 
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not replaced automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
+
+	// Scheduler Arguments for one control-plane component.
+	Scheduler *ControlPlaneComponentConfig `json:"scheduler,omitempty"`
 
 	// SystemReservedMemory Memory reserved for system daemons. Nodes reserve 16Gi when omitted.
 	SystemReservedMemory string `json:"systemReservedMemory,omitempty"`

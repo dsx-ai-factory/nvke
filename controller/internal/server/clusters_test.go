@@ -2182,6 +2182,83 @@ func TestClusterService_CreateClusterRejectsCalicoBeforeTransaction(t *testing.T
 	mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
 }
 
+func TestClusterService_CreateClusterRejectsExtraArgsBeforeTransaction(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		config  func(*api.CreateClusterControlPlaneConfig)
+		wantErr string
+	}{
+		{
+			name:    "flag NVKE sets on kube-apiserver",
+			version: "1.36.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.APIServer = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"profiling": "true"}}
+			},
+			wantErr: `controlPlaneConfig: apiServer.extraArgs: flag "profiling" is set by NVKE and can't be overridden`,
+		},
+		{
+			name:    "flag NVKE sets on kube-controller-manager",
+			version: "1.36.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.ControllerManager = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"bind-address": "0.0.0.0"}}
+			},
+			wantErr: `controlPlaneConfig: controllerManager.extraArgs: flag "bind-address" is set by NVKE and can't be overridden`,
+		},
+		{
+			name:    "flag NVKE sets on kube-scheduler",
+			version: "1.36.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.Scheduler = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"bind-address": "0.0.0.0"}}
+			},
+			wantErr: `controlPlaneConfig: scheduler.extraArgs: flag "bind-address" is set by NVKE and can't be overridden`,
+		},
+		{
+			name:    "malformed flag name",
+			version: "1.36.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.APIServer = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"enable_admission_plugins": "AlwaysAdmit"}}
+			},
+			wantErr: `controlPlaneConfig: apiServer.extraArgs: flag name "enable_admission_plugins" must be lowercase words joined by hyphens, without the leading --`,
+		},
+		{
+			name:    "feature-gates that doesn't parse",
+			version: "1.36.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.Scheduler = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"feature-gates": "SchedulerAsyncAPICalls"}}
+			},
+			wantErr: `controlPlaneConfig: scheduler.extraArgs: feature-gates entry "SchedulerAsyncAPICalls" is not Name=true or Name=false`,
+		},
+		{
+			name:    "gate contradicting NVKE's",
+			version: "1.35.0",
+			config: func(c *api.CreateClusterControlPlaneConfig) {
+				c.APIServer = &api.ControlPlaneComponentConfig{ExtraArgs: map[string]string{"feature-gates": "ImageVolume=false"}}
+			},
+			wantErr: `controlPlaneConfig: apiServer.extraArgs: feature gate "ImageVolume" contradicts NVKE, which sets it to true on Kubernetes 1.35.0`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockDB := &mockDB{}
+			svc := server.NewClusterService(discardLogger(), mockDB, nil, config.TeleportConfig{}, false, nil, false, "")
+			req := baseNicoClusterCreateRequest()
+			req.CniPlugin = api.CreateClusterRequestCniPluginOvnKubernetes
+			req.ControlPlaneKubernetesVersion = tt.version
+			tt.config(req.ControlPlaneConfig)
+
+			resp, err := svc.CreateCluster(context.Background(), api.CreateClusterRequestObject{Body: req})
+
+			require.NoError(t, err)
+			badRequest, ok := resp.(api.CreateCluster400JSONResponse)
+			require.True(t, ok, "expected CreateCluster400JSONResponse, got %T", resp)
+			assert.Equal(t, tt.wantErr, badRequest.Message)
+			mockDB.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+		})
+	}
+}
+
 func TestValidateCreateClusterRequestFields_RequiresExactlyOneProvider(t *testing.T) {
 	svc := server.NewClusterService(discardLogger(), nil, nil, config.TeleportConfig{}, false, nil, false, "")
 

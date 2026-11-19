@@ -134,3 +134,22 @@ paths = [
 regexes = [
   '''forge-l40s-amd64''',
 ]
+
+[[allowlists]]
+description = """The kubeadm init golden files render the bootstrap token that
+validInitConfig in controller/internal/kubeadmconfig/init_test.go sets, so the
+rendered config is stable. generic-api-key reads "token: <value>" as a keyed
+secret. The value is synthetic -- the abcdef. prefix followed by a counting
+sequence -- and is never a token of any cluster: a real init generates its own.
+
+Scoped to that one literal in that package's testdata rather than to the files
+as a whole, so a real credential added beside it is still caught, as is the
+same literal anywhere else. The directory rather than named files, because
+every golden rendered from validInitConfig carries it."""
+condition = "AND"
+paths = [
+  '''^controller/internal/kubeadmconfig/testdata/[^/]+\.yaml$''',
+]
+regexes = [
+  '''abcdef\.0123456789abcdef''',
+]

@@ -444,6 +444,13 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 	if err := validateMachineMetadata(req.ControlPlaneConfig.MachineAnnotations, req.ControlPlaneConfig.MachineLabels, s.machineAllowlistedAnnotationKeys, s.machineAllowlistedLabelKeys); err != nil {
 		return fmt.Errorf("controlPlaneConfig: %w", err)
 	}
+	if err := kubeadmconfig.ValidateExtraArgs(req.ControlPlaneKubernetesVersion, kubeadmconfig.ExtraArgs{
+		APIServer:         componentExtraArgsFromAPI(req.ControlPlaneConfig.APIServer),
+		ControllerManager: componentExtraArgsFromAPI(req.ControlPlaneConfig.ControllerManager),
+		Scheduler:         componentExtraArgsFromAPI(req.ControlPlaneConfig.Scheduler),
+	}); err != nil {
+		return fmt.Errorf("controlPlaneConfig: %w", err)
+	}
 	if err := s.validateControlPlaneCapacityChange(req.ControlPlaneVIP, 0, req.ControlPlaneConfig.DesiredCount); err != nil {
 		return err
 	}
@@ -1190,6 +1197,9 @@ func apiControlPlaneConfigFromDB(cfg db.ControlPlaneConfig) *api.ControlPlaneCon
 		MachineAnnotations:          maps.Clone(cfg.MachineAnnotations),
 		MachineLabels:               maps.Clone(cfg.MachineLabels),
 		LaunchLayer:                 apiLaunchLayerControlPlaneProviderFromDB(cfg.LaunchLayer),
+		APIServer:                   apiComponentConfigFromDB(cfg.APIServerExtraArgs),
+		ControllerManager:           apiComponentConfigFromDB(cfg.ControllerManagerExtraArgs),
+		Scheduler:                   apiComponentConfigFromDB(cfg.SchedulerExtraArgs),
 	}
 }
 
