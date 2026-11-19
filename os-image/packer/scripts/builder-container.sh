@@ -87,6 +87,20 @@ run_in_container() {
      [[ "$common" != "$source_root" && "$common" != "$source_root"/* ]]; then
     args+=(-v "$common:$common")
   fi
+  # Package scratch (each package's dist/) goes on a Linux-native volume, one
+  # per architecture, package and checkout. On a mount backed by the macOS
+  # filesystem, container root is the host user and gets no override for a
+  # mode-0 file, which is how GNU tar stages a symlink whose target contains
+  # `..` (cni-ovn's source archive has several). Outputs go to OUT_DIR, which
+  # stays on the shared mount.
+  local checkout_id package
+  checkout_id=$(printf '%s' "$source_root" | { if command -v sha256sum >/dev/null; then sha256sum; else shasum -a 256; fi; })
+  checkout_id=${checkout_id:0:12}
+  for package in "$source_root"/os-image/packages/*/; do
+    [[ -f "${package}Makefile" ]] || continue
+    package=${package%/}
+    args+=(-v "nvke-os-image-builder-$arch-${package##*/}-$checkout_id:$package/dist")
+  done
   local name
   for name in ARCH NKE_TARGET_UBUNTU_SERIES ARTIFACTS_DIR SOURCE_ROOT NKE_BUILD_IN_PLACE \
     K8S_VERSIONS CALICO_VERSIONS OVN_STREAMS SPIRE_VERSION TPM_PLUGIN_VERSION DOCA_VERSION \

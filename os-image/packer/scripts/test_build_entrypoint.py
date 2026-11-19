@@ -499,6 +499,50 @@ class BuilderContainerTest(unittest.TestCase):
         git_dir = main / ".git"
         self.assertTrue(self.has_pair(run, "-v", f"{git_dir}:{git_dir}"), run)
 
+    def dist_volume(self, root, package, arch="arm64"):
+        checkout = hashlib.sha256(str(root).encode()).hexdigest()[:12]
+        return f"nvke-os-image-builder-{arch}-{package}-{checkout}"
+
+    def test_run_backs_package_dist_dirs_with_volumes(self):
+        # Package scratch must not live on a macOS-backed mount, where container
+        # root has no override for a mode-0 file (GNU tar's placeholder for a
+        # `..` symlink): a Linux-native volume per package and checkout instead.
+        for name, makefile in (("alpha", True), ("beta", True), ("common", False)):
+            package = self.checkout / "os-image/packages" / name
+            package.mkdir(parents=True)
+            if makefile:
+                (package / "Makefile").write_text("debs:\n")
+        self.runtime("podman")
+        result = self.invoke("run", "true", IMAGE_PRESENT="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run = next(c for c in self.calls() if c[1] == "run")
+        packages = self.checkout / "os-image/packages"
+        for name in ("alpha", "beta"):
+            self.assertTrue(self.has_pair(run, "-v", f"{self.dist_volume(self.checkout, name)}:{packages / name / 'dist'}"), run)
+        self.assertFalse([a for a in run if "common/dist" in a], run)
+
+    @unittest.skipUnless(os.environ.get("NKE_TEST_BUILDER_RUNTIME"),
+                         "set NKE_TEST_BUILDER_RUNTIME=podman|docker to run the real builder image")
+    def test_builder_extracts_dotdot_symlinks_into_package_dist(self):
+        # cni-ovn extracts a git archive whose symlinks point through `..`.
+        runtime = os.environ["NKE_TEST_BUILDER_RUNTIME"]
+        package = self.checkout / "os-image/packages/dotdot-probe"
+        package.mkdir(parents=True)
+        (package / "Makefile").write_text("debs:\n")
+        volume = self.dist_volume(self.checkout, "dotdot-probe")
+        self.addCleanup(subprocess.run, [runtime, "volume", "rm", "-f", volume], capture_output=True)
+        script = ("set -e; mkdir -p /tmp/a/sub; echo payload > /tmp/a/root.md; "
+                  "ln -s ../root.md /tmp/a/sub/link; tar -cf /tmp/t.tar -C /tmp/a .; "
+                  "mkdir -p dist/src; tar -x --no-same-owner -C dist/src -f /tmp/t.tar; cat dist/src/sub/link")
+        result = subprocess.run(
+            [shutil.which("bash"), str(self.checkout / "os-image/packer/scripts/builder-container.sh"),
+             "run", "sh", "-c", script],
+            env=os.environ | {"ARCH": "arm64", "CONTAINER_RUNTIME": runtime},
+            cwd=package, text=True, capture_output=True, check=False, timeout=1800,
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("payload", result.stdout.split())
+
     def test_runtime_selection(self):
         for present, override, expected in (
             (("podman", "docker"), None, "podman"),

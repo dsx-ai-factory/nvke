@@ -266,7 +266,11 @@ What runs where:
   as `localhost/nvke-os-image-builder:<digest>-<arch>`, on first use and
   whenever the Containerfile changes. It mounts the checkout at its own path, so
   the packages and the patched ISO land in the checkout as on Linux. Go's module
-  and build caches persist in `~/.cache/nvke/os-image-builder/<arch>`.
+  and build caches persist in `~/.cache/nvke/os-image-builder/<arch>`. Each
+  package's `dist/` scratch is a podman volume named
+  `nvke-os-image-builder-<arch>-<package>-<checkout>` instead: on a mount backed
+  by macOS, the container's root cannot open a file with no permissions, which
+  is how `tar` stages some symlinks while extracting.
 - `check-deps` fails in seconds if podman or Docker is not running.
 - Packer runs on macOS under HVF, with the `linux-generic` kernel (see above).
   This is a development image: it cannot boot the NVIDIA 64K-page kernel that
@@ -276,13 +280,15 @@ If Nix is installed, `auto` keeps using the [NixOS VM](nix/README.md); set
 `NKE_PACKAGE_BUILDER=container` to use the container anyway. A Mac that has
 `xorriso` and `7z` installed patches the ISO on macOS.
 
-Disk use is all in the checkout and the cache: about three times the ISO for
-`packer/iso-cache/`, the packages in `packer/artifacts/`, and the build VM's
-disk while Packer runs. To reclaim it:
+Disk use is in the checkout, the cache and the podman machine: about three
+times the ISO for `packer/iso-cache/`, the packages in `packer/artifacts/`, the
+build VM's disk while Packer runs, and the package scratch volumes. To reclaim
+it:
 
 ```bash
 make -C os-image/packer clean
 rm -rf ~/.cache/nvke/os-image-builder
+podman volume ls -q --filter name=nvke-os-image-builder | xargs podman volume rm
 podman images --filter reference=localhost/nvke-os-image-builder -q | xargs podman rmi
 ```
 
