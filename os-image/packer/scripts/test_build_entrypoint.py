@@ -2,6 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 """Exercise Make's Packer argv and early failures without downloading or booting."""
+import hashlib
 import json
 import os
 import shutil
@@ -210,6 +211,183 @@ Path(os.environ['PACKER_ARGS']).write_text(json.dumps(sys.argv[1:]))
             "run", f"{PACKER_DIR.parent}#build-packages-arm64", "--",
             "--source", str(PACKER_DIR.parent.parent), "--output", str(artifacts),
         ])
+
+
+RUNTIME_STUB = '''#!/usr/bin/env python3
+import json, os, sys
+with open(os.environ["RUNTIME_LOG"], "a") as log:
+    log.write(json.dumps([os.path.basename(sys.argv[0])] + sys.argv[1:]) + "\\n")
+args = sys.argv[1:]
+if args[:1] == ["info"]:
+    sys.exit(int(os.environ.get("INFO_STATUS", "0")))
+if args[:2] in (["image", "exists"], ["image", "inspect"]):
+    sys.exit(0 if os.environ.get("IMAGE_PRESENT") else 1)
+'''
+
+
+class BuilderContainerTest(unittest.TestCase):
+    """The Linux-only build steps run in a pinned container on macOS hosts."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name).resolve()
+        # A space in the checkout path proves every argv element is quoted.
+        self.checkout = self.base / "check out"
+        self.install_checkout(self.checkout)
+        self.stubs = self.base / "stubs"
+        self.stubs.mkdir()
+        self.log = self.base / "runtime.log"
+        self.env = {
+            "PATH": f"{self.stubs}:/usr/bin:/bin",
+            "HOME": str(self.base / "home"),
+            "XDG_CACHE_HOME": str(self.base / "cache"),
+            "RUNTIME_LOG": str(self.log),
+            "ARCH": "arm64",
+        }
+
+    def install_checkout(self, root, containerfile=None):
+        scripts = root / "os-image/packer/scripts"
+        scripts.mkdir(parents=True, exist_ok=True)
+        shutil.copy(PACKER_DIR / "scripts/builder-container.sh", scripts)
+        builder = root / "os-image/packer/builder"
+        builder.mkdir(parents=True, exist_ok=True)
+        if containerfile is None:
+            shutil.copy(PACKER_DIR / "builder/Containerfile", builder)
+        else:
+            (builder / "Containerfile").write_text(containerfile)
+
+    def runtime(self, *names):
+        for name in names:
+            stub = self.stubs / name
+            stub.write_text(RUNTIME_STUB)
+            stub.chmod(0o755)
+
+    def invoke(self, *args, root=None, cwd=None, **env):
+        root = root or self.checkout
+        return subprocess.run(
+            [shutil.which("bash"), str(root / "os-image/packer/scripts/builder-container.sh"), *args],
+            env=self.env | env, cwd=cwd or root, text=True, capture_output=True, check=False,
+        )
+
+    def calls(self):
+        if not self.log.exists():
+            return []
+        return [json.loads(line) for line in self.log.read_text().splitlines()]
+
+    def tag(self, root=None, arch="arm64"):
+        root = root or self.checkout
+        digest = hashlib.sha256((root / "os-image/packer/builder/Containerfile").read_bytes()).hexdigest()
+        return f"localhost/nvke-os-image-builder:{digest[:12]}-{arch}"
+
+    @staticmethod
+    def has_pair(argv, flag, value):
+        return any(argv[i] == flag and argv[i + 1] == value for i in range(len(argv) - 1))
+
+    def test_check_builds_missing_image_with_content_tag(self):
+        self.runtime("podman")
+        result = self.invoke("check")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        calls = self.calls()
+        self.assertEqual(calls[0][:2], ["podman", "info"])
+        builder = self.checkout / "os-image/packer/builder"
+        self.assertIn(["podman", "build", "--platform", "linux/arm64", "-t", self.tag(),
+                       "-f", str(builder / "Containerfile"), str(builder)], calls)
+
+    def test_check_skips_build_when_image_present(self):
+        self.runtime("podman")
+        result = self.invoke("check", IMAGE_PRESENT="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse([c for c in self.calls() if c[1] == "build"], self.calls())
+
+    def test_tag_changes_with_containerfile(self):
+        self.runtime("podman")
+        tags = []
+        for content in ("FROM a\n", "FROM b\n"):
+            root = self.base / f"fixture {content.strip()[-1]}"
+            self.install_checkout(root, containerfile=content)
+            self.log.unlink(missing_ok=True)
+            result = self.invoke("check", root=root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            build = next(c for c in self.calls() if c[1] == "build")
+            tags.append(build[build.index("-t") + 1])
+        self.assertNotEqual(tags[0], tags[1])
+
+    def test_check_fails_fast_when_runtime_unreachable(self):
+        self.runtime("podman")
+        result = self.invoke("check", INFO_STATUS="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("podman machine start", result.stderr)
+        self.assertFalse([c for c in self.calls() if c[1] == "build"])
+
+    def test_run_mounts_checkout_at_same_path_and_passes_env(self):
+        self.runtime("podman")
+        cwd = self.checkout / "os-image/packer"
+        result = self.invoke("run", "./scripts/prepare-installer-iso.sh", "an arg", cwd=cwd,
+                             IMAGE_PRESENT="1", K8S_VERSIONS="1.36.3")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run = next(c for c in self.calls() if c[1] == "run")
+        self.assertIn("--rm", run)
+        self.assertTrue(self.has_pair(run, "--platform", "linux/arm64"), run)
+        self.assertTrue(self.has_pair(run, "-v", f"{self.checkout}:{self.checkout}"), run)
+        self.assertTrue(self.has_pair(run, "-w", str(cwd)), run)
+        self.assertTrue(self.has_pair(run, "-e", "ARCH=arm64"), run)
+        self.assertTrue(self.has_pair(run, "-e", "K8S_VERSIONS=1.36.3"), run)
+        self.assertTrue(self.has_pair(run, "-e", "GIT_CONFIG_VALUE_0=*"), run)
+        self.assertFalse([a for a in run if a.startswith("CALICO_VERSIONS")], run)
+        self.assertEqual(run[-3:], [self.tag(), "./scripts/prepare-installer-iso.sh", "an arg"])
+        cache = self.base / "cache/nvke/os-image-builder/arm64"
+        self.assertTrue(cache.is_dir())
+        self.assertTrue(self.has_pair(run, "-v", f"{cache}:/var/cache/nvke-builder"), run)
+
+    def test_run_mounts_external_git_dir_for_worktrees(self):
+        # A linked worktree's .git file points into the main checkout, which
+        # git describe (the agent's version stamp) has to reach.
+        git = shutil.which("git")
+        main = self.base / "main repo"
+        main.mkdir()
+        quiet = {"capture_output": True, "check": True}
+        subprocess.run([git, "-C", str(main), "init", "-q"], **quiet)
+        subprocess.run([git, "-C", str(main), "-c", "user.name=t", "-c", "user.email=t@example.com",
+                        "commit", "-q", "--allow-empty", "-m", "init"], **quiet)
+        worktree = self.base / "linked tree"
+        subprocess.run([git, "-C", str(main), "worktree", "add", "-q", "--detach", str(worktree)], **quiet)
+        self.install_checkout(worktree)
+        self.runtime("podman")
+        result = self.invoke("run", "true", root=worktree, IMAGE_PRESENT="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run = next(c for c in self.calls() if c[1] == "run")
+        git_dir = main / ".git"
+        self.assertTrue(self.has_pair(run, "-v", f"{git_dir}:{git_dir}"), run)
+
+    def test_runtime_selection(self):
+        for present, override, expected in (
+            (("podman", "docker"), None, "podman"),
+            (("docker",), None, "docker"),
+            (("podman", "docker"), "docker", "docker"),
+        ):
+            with self.subTest(present=present, override=override):
+                for stub in self.stubs.iterdir():
+                    stub.unlink()
+                self.log.unlink(missing_ok=True)
+                self.runtime(*present)
+                extra = {"CONTAINER_RUNTIME": override} if override else {}
+                result = self.invoke("check", IMAGE_PRESENT="1", **extra)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual({c[0] for c in self.calls()}, {expected})
+        result = self.invoke("check", CONTAINER_RUNTIME="nerdctl")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("podman or docker", result.stderr)
+
+    def test_amd64_requests_amd64_platform(self):
+        self.runtime("podman")
+        self.assertEqual(self.invoke("check", ARCH="amd64").returncode, 0)
+        self.assertEqual(self.invoke("run", "true", ARCH="amd64", IMAGE_PRESENT="1").returncode, 0)
+        build = next(c for c in self.calls() if c[1] == "build")
+        run = next(c for c in self.calls() if c[1] == "run")
+        self.assertTrue(self.has_pair(build, "--platform", "linux/amd64"), build)
+        self.assertTrue(self.has_pair(run, "--platform", "linux/amd64"), run)
+        self.assertEqual(build[build.index("-t") + 1], self.tag(arch="amd64"))
 
 
 class GuestUpdaterTest(unittest.TestCase):

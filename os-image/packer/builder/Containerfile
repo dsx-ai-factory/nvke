@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# The Linux-only steps of an image build -- the node packages and the patched
+# installer ISO -- for hosts that cannot run them natively, such as an
+# Apple-silicon Mac. scripts/builder-container.sh builds and runs it; Packer
+# and QEMU stay on the host. See README.md, "Build on an Apple-silicon Mac".
+#
+# Bookworm, not the default golang tag: the agent links against this image's
+# glibc (2.36), and its .deb declares a bare `Depends: libc6`, so the builder's
+# glibc must not be newer than the oldest target image's (Ubuntu 24.04, 2.39).
+# The Go version matches go.work, and the digest matches
+# agent/internal-scripts/docker/Dockerfile.proto; move them together.
+FROM docker.io/library/golang:1.27.4-bookworm@sha256:4fa7c968ba93f1635670522dbb01a2c78150443e1385746924566079f36570ea
+
+# The package targets download their own pinned crane and nfpm. These are the
+# remaining tools fetch-artifacts.sh and prepare-installer-iso.sh call.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates curl dpkg-dev file git gnupg jq make p7zip-full python3 unzip xorriso xz-utils \
+    && rm -rf /var/lib/apt/lists/*
