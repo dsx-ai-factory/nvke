@@ -95,7 +95,9 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 		Name:      "node-local-dns",
 	}, &configMap))
 	require.Contains(t, configMap.Data["Corefile"], "health :8080")
-	require.NotContains(t, configMap.Data["Corefile"], "bind ")
+	for _, zone := range []string{"cluster.local:53", "in-addr.arpa:53", "ip6.arpa:53", ".:53"} {
+		require.Contains(t, configMap.Data["Corefile"], zone+" {\n    bind 0.0.0.0")
+	}
 	require.NotContains(t, configMap.Data["Corefile"], "169.254.20.10")
 
 	var daemonSet appsv1.DaemonSet
