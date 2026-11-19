@@ -259,8 +259,11 @@ database before it ships, so it lists exactly the packages dpkg has on the
 image:
 
 - Each package has a purl, a version, and the licenses its
-  `/usr/share/doc/<package>/copyright` names. A package whose copyright file
-  names none carries the license `NOASSERTION`, never an empty list. The image
+  `/usr/share/doc/<package>/copyright` names. A package that ships no copyright
+  file, or whose copyright file names no license, carries the license
+  `NOASSERTION`, never an empty list. Our own debs (`nvke-agent`, `spire-agent`,
+  `nvke-cni-calico-manifests-*`), the DOCA Open vSwitch debs and the
+  `linux-firmware-*` split packages ship none. The image
   keeps every copyright file for this, though it strips the rest of
   `/usr/share/doc`.
 - Each package carries its dpkg status as the property `nvke:dpkg:status`, for

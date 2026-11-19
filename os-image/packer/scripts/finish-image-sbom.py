@@ -66,12 +66,18 @@ def finish(sbom, entries):
     """Rewrite sbom in place from entries; return (covered, total, problems)."""
     by_identity = {(entry["package"], entry.get("architecture", "")): entry for entry in entries}
     kept, removed, problems = [], set(), []
+    seen = set()
     covered = 0
     for component in sbom.get("components", []):
         identity = deb_identity(component)
         if identity is None:
             kept.append(component)
             continue
+        if identity in seen:
+            problems.append(f"{identity[0]}:{identity[1]} appears more than once in the SBOM")
+            kept.append(component)
+            continue
+        seen.add(identity)
         entry = by_identity.get(identity)
         if entry is None:
             problems.append(f"{identity[0]}:{identity[1]} is in the SBOM but not in the dpkg database")
@@ -102,7 +108,7 @@ def finish(sbom, entries):
     for component in kept:
         identity = deb_identity(component)
         if identity is not None:
-            listed[identity] = component.get("version", "")
+            listed.setdefault(identity, component.get("version", ""))
     for identity, entry in sorted(by_identity.items()):
         if entry["state"] in ABSENT_STATES:
             continue

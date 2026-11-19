@@ -117,6 +117,12 @@ class FinishImageSBOMTest(unittest.TestCase):
             "drifted:amd64 is 2.0 in the dpkg database but 1.9 in the SBOM",
         ])
 
+    def test_reports_a_package_listed_twice(self):
+        stanzas = [stanza("bash", "install ok installed")]
+        _, covered, total, problems = self.finish(stanzas, [component("bash"), component("bash", version="0.9")])
+        self.assertEqual(problems, ["bash:amd64 appears more than once in the SBOM"])
+        self.assertEqual((covered, total), (1, 1))
+
     def test_leaves_components_that_are_not_debs_alone(self):
         os_component = {"bom-ref": "os", "type": "operating-system", "name": "ubuntu", "version": "24.04"}
         sbom, _, total, problems = self.finish([stanza("bash", "install ok installed")], [os_component, component("bash")])
