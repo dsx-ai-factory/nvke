@@ -126,14 +126,15 @@ spec:
 
     # The NVKE Scale Forge site, which sits in another org and offers CPU
     # machines only: the site node, the control plane and the workers all land
-    # on its high memory CPU type. The tenant has three workers, and the suite
+    # on its high memory CPU type. The tenant has three workers and one
+    # monitoring node, kept for the benchmark's Prometheus, and the suite
     # may run for 260 minutes, which the timeouts around it are derived from.
     # Its results go to their own TestGrid group, nvke-scale.
     # Of those minutes, 215 are the stream's own and up to 45 run kaps-bench's
     # smoke-prometheus run spec, within which kaps-bench installs Prometheus.
     - name: forge-cpu-amd64-ubuntu-24.04-kube-1.36-perf
       capabilities: {provider: forge, machineType: cpu, arch: amd64, ubuntu: "24.04", kube: "1.36", profile: perf}
-      parameters: {environment: forge-perf, tenantWorkers: 3, suiteTimeoutMinutes: 260, testGridGroup: nvke-scale, kapsBenchRunSpecs: [smoke/smoke-prometheus.yaml]}
+      parameters: {environment: forge-perf, tenantWorkers: 3, monitoringWorkers: 1, suiteTimeoutMinutes: 260, testGridGroup: nvke-scale, kapsBenchRunSpecs: [smoke/smoke-prometheus.yaml]}
 
     # The DSX datahall, which is amd64 throughout, on L40S. The gpu is matched
     # against the model the datahall's instance type provides in dsx.yaml.

@@ -64,6 +64,9 @@ type Parameters struct {
 	// TenantWorkers is how many workers the hardware tenant gets.
 	TenantWorkers int `json:"tenantWorkers,omitempty"`
 
+	// MonitoringWorkers is how many monitoring nodes the hardware tenant gets beside its workers.
+	MonitoringWorkers int `json:"monitoringWorkers,omitempty"`
+
 	// SuiteTimeoutMinutes is how long the suite may run before Ginkgo stops it
 	// and tears the machines down. The timeouts around it are derived from
 	// this one, so they cannot be set to disagree.
@@ -93,6 +96,9 @@ func (p Parameters) validate() error {
 	}
 	if p.TenantWorkers < 0 {
 		return fmt.Errorf("tenantWorkers is %d, and a tenant needs at least one worker", p.TenantWorkers)
+	}
+	if p.MonitoringWorkers < 0 {
+		return fmt.Errorf("monitoringWorkers is %d, which is not a number of nodes", p.MonitoringWorkers)
 	}
 	if p.SuiteTimeoutMinutes < 0 {
 		return fmt.Errorf("suiteTimeoutMinutes is %d, which is not a duration", p.SuiteTimeoutMinutes)

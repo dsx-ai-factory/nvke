@@ -771,7 +771,7 @@ job; `qualify local` runs the one stream you name.
 | `l40s` | Ubuntu 24.04 on L40S, amd64, at site-1 |
 | `dsx` | the DSX datahalls, except GB300 |
 | `dsx-gb300` | GB300 on the third DSX datahall |
-| `perf` | the performance stream on the NVKE Scale Forge site: CPU machines only, a three worker tenant |
+| `perf` | the performance stream on the NVKE Scale Forge site: CPU machines only, a three worker tenant with one monitoring node |
 | `full` | every Forge stream except the perf one: GB200 and L40S on Ubuntu 24.04 and 26.04 |
 
 The perf stream holds the NVKE Scale site for hours, so only a beta tag pushed
@@ -780,7 +780,9 @@ that takes its scope from the repository variable `QUALIFY_E2E_SCOPE` while it
 is `perf`, such as a `qualify-e2e` label run, runs it, and `full` leaves it
 out. A stream can also carry
 `parameters` in `release/policy.yaml`: the environment file it runs against,
-the workers its tenant gets, the suite's timeout, the TestGrid group it
+the workers its tenant gets, the monitoring nodes beside them
+(`monitoringWorkers`, one on the perf stream, kept for the benchmark's
+Prometheus), the suite's timeout, the TestGrid group it
 publishes to, which is `nvke-scale` for the perf stream, and the kaps-bench run
 specs (`kapsBenchRunSpecs`, such as `smoke/smoke-prometheus.yaml`) the suite runs on the
 tenant once its checks pass, where kaps-bench installs Prometheus in

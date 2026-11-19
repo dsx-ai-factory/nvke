@@ -225,6 +225,9 @@ func parameters(b *strings.Builder, p qualification.Parameters) {
 	if p.TenantWorkers != 0 {
 		parts = append(parts, "tenant workers "+code(strconv.Itoa(p.TenantWorkers)))
 	}
+	if p.MonitoringWorkers != 0 {
+		parts = append(parts, "monitoring workers "+code(strconv.Itoa(p.MonitoringWorkers)))
+	}
 	if p.SuiteTimeoutMinutes != 0 {
 		parts = append(parts, "suite timeout "+code(strconv.Itoa(p.SuiteTimeoutMinutes)+"m"))
 	}

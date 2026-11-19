@@ -125,6 +125,11 @@ func TestLoadPolicyRejects(t *testing.T) {
 			"tenantWorkers is -1",
 		},
 		{
+			"a negative monitoring worker count",
+			strings.Replace(validPolicy, `      capabilities: {kube: "1.34"}`, "      capabilities: {kube: \"1.34\"}\n      parameters: {monitoringWorkers: -1}", 1),
+			"monitoringWorkers is -1",
+		},
+		{
 			"a negative suite timeout",
 			strings.Replace(validPolicy, `      capabilities: {kube: "1.34"}`, "      capabilities: {kube: \"1.34\"}\n      parameters: {suiteTimeoutMinutes: -5}", 1),
 			"suiteTimeoutMinutes is -5",
@@ -218,7 +223,7 @@ spec:
       capabilities: {provider: forge, kube: "1.34"}
     - name: b
       capabilities: {provider: forge, profile: perf, kube: "1.34"}
-      parameters: {environment: forge-perf, tenantWorkers: 3, suiteTimeoutMinutes: 215, testGridGroup: nvke-scale, kapsBenchRunSpecs: [smoke/smoke.yaml]}
+      parameters: {environment: forge-perf, tenantWorkers: 3, monitoringWorkers: 1, suiteTimeoutMinutes: 215, testGridGroup: nvke-scale, kapsBenchRunSpecs: [smoke/smoke.yaml]}
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -226,7 +231,7 @@ spec:
 	if got := p.Spec.Streams[0].Parameters; !reflect.DeepEqual(got, Parameters{}) {
 		t.Errorf("a stream naming no parameters has %+v", got)
 	}
-	want := Parameters{Environment: "forge-perf", TenantWorkers: 3, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale", KapsBenchRunSpecs: []string{"smoke/smoke.yaml"}}
+	want := Parameters{Environment: "forge-perf", TenantWorkers: 3, MonitoringWorkers: 1, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale", KapsBenchRunSpecs: []string{"smoke/smoke.yaml"}}
 	if got := p.Spec.Streams[1].Parameters; !reflect.DeepEqual(got, want) {
 		t.Errorf("parameters = %+v, want %+v", got, want)
 	}
@@ -282,6 +287,27 @@ func TestShippedPolicyGivesOnlyThePerfStreamItsOwnTestGridGroup(t *testing.T) {
 		}
 		if got := s.Parameters.TestGridGroup; got != want {
 			t.Errorf("%s names TestGrid group %q, want %q", s.Name, got, want)
+		}
+	}
+}
+
+// TestShippedPolicyGivesOnlyThePerfStreamAMonitoringNode checks that the perf
+// stream's tenant gets one monitoring node and no other stream's tenant gets one.
+func TestShippedPolicyGivesOnlyThePerfStreamAMonitoringNode(t *testing.T) {
+	t.Log("Doing: loading the shipped policy")
+	p, err := LoadPolicy("../../policy.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Testing: the perf stream asks for one monitoring node and no other stream asks for any")
+	for _, s := range p.Spec.Streams {
+		want := 0
+		if s.Capabilities["profile"] == "perf" {
+			want = 1
+		}
+		if got := s.Parameters.MonitoringWorkers; got != want {
+			t.Errorf("%s asks for %d monitoring workers, want %d", s.Name, got, want)
 		}
 	}
 }

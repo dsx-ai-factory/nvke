@@ -125,6 +125,7 @@
           "parameters": {
             "environment": "forge-perf",
             "tenantWorkers": 3,
+            "monitoringWorkers": 1,
             "suiteTimeoutMinutes": 215,
             "kapsBenchRunSpecs": [
               "smoke/smoke.yaml",

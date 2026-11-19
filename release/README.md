@@ -353,8 +353,9 @@ it is whichever minors have streams, so adding one means adding streams and
 nothing else.
 
 A stream can also carry **parameters**: the settings of its run, which are the
-environment file it runs against, the workers its tenant gets, the suite's
-timeout in minutes, the TestGrid group it publishes to in place of the
+environment file it runs against, the workers its tenant gets, the monitoring
+nodes it gets beside them (`monitoringWorkers`), the suite's timeout in
+minutes, the TestGrid group it publishes to in place of the
 subject's (`testGridGroup`) and the kaps-bench run specs the suite runs on the
 tenant once its checks pass (`kapsBenchRunSpecs`). They configure the run and nothing selects on
 them, which is why they are not capabilities. Only those fields are accepted, so a misspelled

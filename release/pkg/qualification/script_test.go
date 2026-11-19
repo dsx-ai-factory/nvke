@@ -224,6 +224,7 @@ func TestStreamEnvEmitsTheStreamsParameters(t *testing.T) {
 		expect(t, l.values(), map[string]string{
 			"E2E_ENVIRONMENT":          "forge-perf",
 			"E2E_TENANT_WORKERS":       "3",
+			"E2E_MONITORING_WORKERS":   "1",
 			"SUITE_TIMEOUT_MINUTES":    "215",
 			"E2E_KAPS_BENCH_RUN_SPECS": "smoke/smoke.yaml,netperf/hostnet-stream.yaml",
 		})
@@ -233,6 +234,7 @@ func TestStreamEnvEmitsTheStreamsParameters(t *testing.T) {
 		expect(t, l.values(), map[string]string{
 			"E2E_ENVIRONMENT":          "",
 			"E2E_TENANT_WORKERS":       "",
+			"E2E_MONITORING_WORKERS":   "",
 			"SUITE_TIMEOUT_MINUTES":    "",
 			"E2E_KAPS_BENCH_RUN_SPECS": "",
 		})
@@ -254,6 +256,7 @@ func TestMatrixDerivesTheJobTimeout(t *testing.T) {
 				Stream                      string `json:"stream"`
 				Environment                 string `json:"environment"`
 				TenantWorkers               string `json:"tenant_workers"`
+				MonitoringWorkers           string `json:"monitoring_workers"`
 				JobTimeoutMinutes           int    `json:"job_timeout_minutes"`
 				JobTimeoutMinutesGPURuntime int    `json:"job_timeout_minutes_gpu_runtime"`
 			} `json:"include"`
@@ -262,16 +265,16 @@ func TestMatrixDerivesTheJobTimeout(t *testing.T) {
 			t.Fatalf("matrix is not JSON: %v\n%s", err, out)
 		}
 		type entry struct {
-			environment, workers string
-			timeout, gpuRuntime  int
+			environment, workers, monitoring string
+			timeout, gpuRuntime              int
 		}
 		want := map[string]entry{
-			"forge-l40s-amd64":     {"", "", 335, 400},
-			"dsx-cpu-arm64":        {"", "", 335, 400},
-			"forge-cpu-amd64-perf": {"forge-perf", "3", 400, 465},
+			"forge-l40s-amd64":     {"", "", "", 335, 400},
+			"dsx-cpu-arm64":        {"", "", "", 335, 400},
+			"forge-cpu-amd64-perf": {"forge-perf", "3", "1", 400, 465},
 		}
 		for _, e := range matrix.Include {
-			got := entry{e.Environment, e.TenantWorkers, e.JobTimeoutMinutes, e.JobTimeoutMinutesGPURuntime}
+			got := entry{e.Environment, e.TenantWorkers, e.MonitoringWorkers, e.JobTimeoutMinutes, e.JobTimeoutMinutesGPURuntime}
 			if got != want[e.Stream] {
 				t.Errorf("%s: %s matrix entry = %+v, want %+v", sh, e.Stream, got, want[e.Stream])
 			}
@@ -565,7 +568,7 @@ func dryRun(t *testing.T, sh, copied, workers, suite, gpuRuntime string, extra .
 		"SITE_NVKE_CONTROLLER_VERSION=v0.3.0", "CLI_VERSION=v0.3.0", "CAPI_PROVISIONED_VERSION=v0.3.0",
 		"OS_IMAGE_VERSIONS=os-image-amd64=https://cdn.example/image-amd64.qcow2", "CAPABILITIES=arch=amd64",
 		"NVKE_CONTROLLER_NAMESPACE=", "NVKE_CONTROLLER_SERVICE=",
-		"E2E_TENANT_WORKERS=" + workers, "SUITE_TIMEOUT_MINUTES=" + suite,
+		"E2E_TENANT_WORKERS=" + workers, "E2E_MONITORING_WORKERS=", "SUITE_TIMEOUT_MINUTES=" + suite,
 		"TENANT_GPU_RUNTIME=" + gpuRuntime,
 		"E2E_KAPS_BENCH_RUN_SPECS=", "E2E_KAPS_BENCH_DIR=",
 	}
@@ -576,23 +579,24 @@ func dryRun(t *testing.T, sh, copied, workers, suite, gpuRuntime string, extra .
 
 // TestRunDerivesTheTimeoutsAndPassesTheWorkers checks the suite arguments of a
 // dry run: the timeouts follow the suite timeout, the GPU runtime moves them out
-// by its 65 minutes, and the tenant workers and GPU runtime flags are passed only
-// when they are set.
+// by its 65 minutes, and the tenant workers, monitoring workers and GPU runtime
+// flags are passed only when they are set.
 func TestRunDerivesTheTimeoutsAndPassesTheWorkers(t *testing.T) {
 	copied := copiedScript(t)
 	for _, tc := range []struct {
-		name, workers, suite, gpuRuntime string
-		want                             []string
-		notWant                          string
+		name, workers, monitoring, suite, gpuRuntime string
+		want                                         []string
+		notWant                                      string
 	}{
-		{"a stream naming nothing", "", "", "false", []string{"-ginkgo.timeout=150m -timeout 220m"}, "-e2e.tenant"},
-		{"a perf stream", "3", "215", "false", []string{"-ginkgo.timeout=215m -timeout 285m", "  -e2e.tenant-workers=3\n"}, "-e2e.tenant-gpu-runtime"},
-		{"the GPU runtime", "", "", "true", []string{"-ginkgo.timeout=215m -timeout 285m", "  -e2e.tenant-gpu-runtime\n"}, ""},
-		{"the GPU runtime on a perf stream", "", "215", "true", []string{"-ginkgo.timeout=280m -timeout 350m"}, ""},
+		{"a stream naming nothing", "", "", "", "false", []string{"-ginkgo.timeout=150m -timeout 220m"}, "-e2e.tenant"},
+		{"a perf stream", "3", "", "215", "false", []string{"-ginkgo.timeout=215m -timeout 285m", "  -e2e.tenant-workers=3\n"}, "-e2e.tenant-gpu-runtime"},
+		{"a perf stream with a monitoring node", "3", "1", "215", "false", []string{"  -e2e.tenant-workers=3 -e2e.monitoring-workers=1\n"}, ""},
+		{"the GPU runtime", "", "", "", "true", []string{"-ginkgo.timeout=215m -timeout 285m", "  -e2e.tenant-gpu-runtime\n"}, ""},
+		{"the GPU runtime on a perf stream", "", "", "215", "true", []string{"-ginkgo.timeout=280m -timeout 350m"}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			for _, sh := range shells(t) {
-				out, err := dryRun(t, sh, copied, tc.workers, tc.suite, tc.gpuRuntime)
+				out, err := dryRun(t, sh, copied, tc.workers, tc.suite, tc.gpuRuntime, "E2E_MONITORING_WORKERS="+tc.monitoring)
 				if err != nil {
 					t.Fatalf("%s run: %v\n%s", sh, err, out)
 				}
@@ -680,7 +684,7 @@ func TestRunPassesTheStreamSettingsToGoTest(t *testing.T) {
 	}
 	for _, sh := range shells(t) {
 		out, err := dryRun(t, sh, copied, "3", "", "true", "DRY_RUN=false", "PATH="+bin+":"+os.Getenv("PATH"),
-			"E2E_KAPS_BENCH_RUN_SPECS=smoke/smoke.yaml", "E2E_KAPS_BENCH_DIR=/opt/kaps-bench")
+			"E2E_MONITORING_WORKERS=1", "E2E_KAPS_BENCH_RUN_SPECS=smoke/smoke.yaml", "E2E_KAPS_BENCH_DIR=/opt/kaps-bench")
 		if err != nil {
 			t.Fatalf("%s run: %v\n%s", sh, err, out)
 		}
@@ -690,7 +694,7 @@ func TestRunPassesTheStreamSettingsToGoTest(t *testing.T) {
 		}
 		args := strings.Split(string(b), "\n")
 		for _, want := range []string{
-			"-e2e.tenant-workers=3", "-e2e.tenant-gpu-runtime", "-ginkgo.timeout=215m",
+			"-e2e.tenant-workers=3", "-e2e.monitoring-workers=1", "-e2e.tenant-gpu-runtime", "-ginkgo.timeout=215m",
 			"-e2e.kaps-bench-run-specs=smoke/smoke.yaml", "-e2e.kaps-bench-dir=/opt/kaps-bench",
 		} {
 			if !slices.Contains(args, want) {

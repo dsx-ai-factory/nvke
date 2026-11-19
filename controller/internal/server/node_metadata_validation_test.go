@@ -135,6 +135,20 @@ func TestValidateNodeLabels_ConfiguredAllowlist(t *testing.T) {
 	)
 }
 
+func TestValidateNodeMetadata_MonitoringPool(t *testing.T) {
+	t.Parallel()
+
+	roleKeys := []string{"node-role.kubernetes.io/worker", "node-role.kubernetes.io/monitoring"}
+	for _, key := range roleKeys {
+		require.NoError(t, validateNodeLabels(map[string]string{key: ""}, roleKeys))
+		require.ErrorContains(t,
+			validateNodeLabels(map[string]string{key: ""}, nil),
+			`nodeLabels: key "`+key+`" is under reserved domain "kubernetes.io"; labels in this domain cannot be set`,
+		)
+	}
+	require.NoError(t, validateNodeTaints([]api.NodeTaint{{Key: "monitoring", Value: "true", Effect: api.NodeTaintEffectNoSchedule}}, false))
+}
+
 func TestValidateNodeTaints(t *testing.T) {
 	t.Parallel()
 

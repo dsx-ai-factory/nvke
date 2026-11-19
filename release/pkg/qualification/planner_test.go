@@ -71,7 +71,7 @@ func testPolicy() *Policy {
 				{
 					Name:         "arm64-1.34",
 					Capabilities: map[string]string{"arch": "arm64", "kube": "1.34"},
-					Parameters:   Parameters{TenantWorkers: 3, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale", KapsBenchRunSpecs: []string{"smoke/smoke.yaml"}},
+					Parameters:   Parameters{TenantWorkers: 3, MonitoringWorkers: 1, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale", KapsBenchRunSpecs: []string{"smoke/smoke.yaml"}},
 				},
 				{Name: "amd64-1.35", Capabilities: map[string]string{"arch": "amd64", "kube": "1.35"}},
 			},
@@ -278,7 +278,7 @@ func TestPlanCarriesStreamParameters(t *testing.T) {
 
 	want := map[string]Parameters{
 		"amd64-1.34": {},
-		"arm64-1.34": {TenantWorkers: 3, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale", KapsBenchRunSpecs: []string{"smoke/smoke.yaml"}},
+		"arm64-1.34": {TenantWorkers: 3, MonitoringWorkers: 1, SuiteTimeoutMinutes: 215, TestGridGroup: "nvke-scale", KapsBenchRunSpecs: []string{"smoke/smoke.yaml"}},
 	}
 	for _, s := range got.Combinations[0].Streams {
 		if !reflect.DeepEqual(s.Parameters, want[s.Name]) {
@@ -288,7 +288,8 @@ func TestPlanCarriesStreamParameters(t *testing.T) {
 }
 
 // TestPlanStreamWithoutKapsBenchRunSpecs checks that a stream setting no
-// kaps-bench run specs renders in plan.json as it did before the key existed.
+// kaps-bench run specs or monitoring workers renders in plan.json as it did
+// before the keys existed, and that each key shows only when set.
 func TestPlanStreamWithoutKapsBenchRunSpecs(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -300,6 +301,11 @@ func TestPlanStreamWithoutKapsBenchRunSpecs(t *testing.T) {
 			"other parameters",
 			Parameters{TenantWorkers: 3, SuiteTimeoutMinutes: 215},
 			`{"name":"a","capabilities":{"arch":"amd64"},"parameters":{"tenantWorkers":3,"suiteTimeoutMinutes":215}}`,
+		},
+		{
+			"monitoring workers",
+			Parameters{TenantWorkers: 3, MonitoringWorkers: 1},
+			`{"name":"a","capabilities":{"arch":"amd64"},"parameters":{"tenantWorkers":3,"monitoringWorkers":1}}`,
 		},
 		{
 			"run specs",

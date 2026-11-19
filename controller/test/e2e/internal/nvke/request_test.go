@@ -471,6 +471,30 @@ func TestBuildNicoNodePoolInterfaces(t *testing.T) {
 	}
 }
 
+func TestNodePoolBuildersCarryLabelsAndTaints(t *testing.T) {
+	labels := map[string]string{"node-role.kubernetes.io/monitoring": ""}
+	taints := []api.NodeTaint{{Key: "monitoring", Value: "true", Effect: api.NodeTaintEffectNoSchedule}}
+	spec := NodePoolSpec{Name: "monitoring", InstanceTypeID: uuid.NewString(), SubnetIDs: []string{uuid.NewString()}, NodeLabels: labels, NodeTaints: taints}
+	bare := spec
+	bare.NodeLabels, bare.NodeTaints = nil, nil
+
+	t.Log("Testing: the NICo builder sends the pool's labels and taints, and none when the pool has none")
+	pool, err := buildNicoNodePool("c", uuid.New(), spec, NodePayloads{})
+	require.NoError(t, err)
+	require.Equal(t, labels, pool.NodeLabels)
+	require.Equal(t, taints, pool.NodeTaints)
+	pool, err = buildNicoNodePool("c", uuid.New(), bare, NodePayloads{})
+	require.NoError(t, err)
+	require.Nil(t, pool.NodeLabels)
+	require.Nil(t, pool.NodeTaints)
+
+	t.Log("Testing: the CAPD builder sends them too")
+	pool, err = buildCAPDNodePool(spec, "capd-node:test")
+	require.NoError(t, err)
+	require.Equal(t, labels, pool.NodeLabels)
+	require.Equal(t, taints, pool.NodeTaints)
+}
+
 func TestBuildNicoControlPlaneConfigVpcPrefix(t *testing.T) {
 	prefix := uuid.NewString()
 	cfg, err := buildNicoControlPlaneConfig("c", uuid.New(), ClusterSpec{

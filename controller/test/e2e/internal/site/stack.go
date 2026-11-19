@@ -264,6 +264,9 @@ type Stack struct {
 
 	// ControllerEnv is appended to the controller's environment.
 	ControllerEnv map[string]string
+
+	// NodeMetadataAllowlistedLabelKeys are the reserved label keys node pools may set. Empty keeps the chart's default.
+	NodeMetadataAllowlistedLabelKeys []string
 }
 
 // DeployAssets are a ref's deploy path and the scripts that apply it,
@@ -564,16 +567,20 @@ func (d Stack) render(t DeployTarget, spireOverlay []byte) (map[string][]byte, e
 	// the deploy path gives the controller and Temporal an account of their own.
 	sqlPassword := map[string]any{"password": d.DatabasePassword}
 
+	controllerValues := map[string]any{
+		"image":        map[string]any{"repository": d.Controller.Repository, "tag": d.Controller.Tag},
+		"appDb":        map[string]any{"postgresPassword": d.DatabasePassword},
+		"nvkeOIDCAuth": map[string]any{"discoveryURL": fmt.Sprintf("https://%s:%d/.well-known/openid-configuration", vip, oidcPort)},
+		"spiffe":       map[string]any{"trustDomain": t.TrustDomain, "spire": map[string]any{"serverAddress": vip}},
+		"nodeAgent":    map[string]any{"spireAttestationMethod": "tpm"},
+		"profiles":     map[string]any{"image": map[string]any{"repository": d.Profiles.Repository, "tag": d.Profiles.Tag}},
+		"env":          env,
+	}
+	if len(d.NodeMetadataAllowlistedLabelKeys) > 0 {
+		controllerValues["nodeMetadata"] = map[string]any{"allowlistedLabelKeys": d.NodeMetadataAllowlistedLabelKeys}
+	}
 	docs := map[string]any{
-		valuesFile(releaseController): map[string]any{
-			"image":        map[string]any{"repository": d.Controller.Repository, "tag": d.Controller.Tag},
-			"appDb":        map[string]any{"postgresPassword": d.DatabasePassword},
-			"nvkeOIDCAuth": map[string]any{"discoveryURL": fmt.Sprintf("https://%s:%d/.well-known/openid-configuration", vip, oidcPort)},
-			"spiffe":       map[string]any{"trustDomain": t.TrustDomain, "spire": map[string]any{"serverAddress": vip}},
-			"nodeAgent":    map[string]any{"spireAttestationMethod": "tpm"},
-			"profiles":     map[string]any{"image": map[string]any{"repository": d.Profiles.Repository, "tag": d.Profiles.Tag}},
-			"env":          env,
-		},
+		valuesFile(releaseController): controllerValues,
 		valuesFile(releaseSpire): map[string]any{
 			"global": map[string]any{"spire": map[string]any{"trustDomain": t.TrustDomain, "clusterName": t.SiteName}},
 			"spire-server": map[string]any{

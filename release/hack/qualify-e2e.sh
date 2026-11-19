@@ -103,8 +103,8 @@ inputs() {
     run)
       echo KEEP_SITE KEEP_TENANT DRY_RUN SITE_TENANT_EXCLUDE SITE_STAGE SITE_NVKE_CONTROLLER_VERSION CLI_VERSION \
         CAPI_PROVISIONED_VERSION OS_IMAGE_VERSIONS CAPABILITIES SITE_ENVIRONMENT \
-        NVKE_CONTROLLER_NAMESPACE NVKE_CONTROLLER_SERVICE E2E_TENANT_WORKERS SUITE_TIMEOUT_MINUTES \
-        TENANT_GPU_RUNTIME E2E_KAPS_BENCH_RUN_SPECS E2E_KAPS_BENCH_DIR
+        NVKE_CONTROLLER_NAMESPACE NVKE_CONTROLLER_SERVICE E2E_TENANT_WORKERS E2E_MONITORING_WORKERS \
+        SUITE_TIMEOUT_MINUTES TENANT_GPU_RUNTIME E2E_KAPS_BENCH_RUN_SPECS E2E_KAPS_BENCH_DIR
       ;;
   esac
 }
@@ -167,6 +167,7 @@ matrix_entries() {
           controller_version_strategy: versionStrategy($all; "controller"),
           environment: ($s.parameters.environment // ""),
           tenant_workers: (($s.parameters.tenantWorkers // 0) | if . == 0 then "" else tostring end),
+          monitoring_workers: (($s.parameters.monitoringWorkers // 0) | if . == 0 then "" else tostring end),
           suite_timeout_minutes: (($s.parameters.suiteTimeoutMinutes // 0) | if . == 0 then "" else tostring end),
           kaps_bench_run_specs: (($s.parameters.kapsBenchRunSpecs // []) | join(",")),
           job_timeout_minutes: (($s.parameters.suiteTimeoutMinutes // $suite) + $overhead),
@@ -230,10 +231,11 @@ step_stream_env() {
   emit UBUNTU "$(field ubuntu)"
   emit CAPI_PROVISIONED_VERSION "$(field capi_provisioned)"
   # The stream's run settings. Empty leaves the run as it is for a stream that
-  # names none: the provider's environment, a one worker tenant, the default
-  # suite timeout and no kaps-bench.
+  # names none: the provider's environment, a one worker tenant with no
+  # monitoring node, the default suite timeout and no kaps-bench.
   emit E2E_ENVIRONMENT "$(field environment)"
   emit E2E_TENANT_WORKERS "$(field tenant_workers)"
+  emit E2E_MONITORING_WORKERS "$(field monitoring_workers)"
   emit SUITE_TIMEOUT_MINUTES "$(field suite_timeout_minutes)"
   emit E2E_KAPS_BENCH_RUN_SPECS "$(field kaps_bench_run_specs)"
 }
@@ -735,6 +737,7 @@ step_run() {
   fi
   local workers=()
   [ -z "${E2E_TENANT_WORKERS}" ] || workers=(-e2e.tenant-workers="${E2E_TENANT_WORKERS}")
+  [ -z "${E2E_MONITORING_WORKERS}" ] || workers+=(-e2e.monitoring-workers="${E2E_MONITORING_WORKERS}")
   local gpu_runtime=()
   [ "${TENANT_GPU_RUNTIME}" != "true" ] || gpu_runtime=(-e2e.tenant-gpu-runtime)
   local kaps_bench=()

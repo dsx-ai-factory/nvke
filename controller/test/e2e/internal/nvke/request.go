@@ -59,9 +59,10 @@ type NodePoolSpec struct {
 	Release               string
 	ConfigProfile         string
 	DiskSelectionStrategy string // "smallest" | "largest"
-	// NodeLabels are applied to the pool's nodes at creation. Only the CAPD
-	// builder sends them.
+	// NodeLabels are applied to the pool's nodes at creation by every builder but NICo VMs.
 	NodeLabels map[string]string
+	// NodeTaints are applied to the pool's nodes at creation by every builder but NICo VMs.
+	NodeTaints []api.NodeTaint
 }
 
 // ControlPlane describes the control-plane pools plus cluster-wide knobs.
@@ -436,6 +437,8 @@ func buildNicoNodePool(clusterName string, vpcID uuid.UUID, spec NodePoolSpec, p
 		ControlPlane:         spec.ControlPlane,
 		DesiredNodeCount:     spec.DesiredNodeCount,
 		SystemReservedMemory: spec.SystemReservedMemory,
+		NodeLabels:           spec.NodeLabels,
+		NodeTaints:           spec.NodeTaints,
 		Infra: &api.InfraNodePoolProvider{
 			PreKubeadmCommands: payloads.PreKubeadmCommands,
 			MachineTemplate: map[string]any{
@@ -588,6 +591,9 @@ func buildCAPDNodePool(spec NodePoolSpec, nodeImage string) (api.NodePoolCreateC
 	}
 	if len(spec.NodeLabels) > 0 {
 		pool.NodeLabels = spec.NodeLabels
+	}
+	if len(spec.NodeTaints) > 0 {
+		pool.NodeTaints = spec.NodeTaints
 	}
 	if pool.Infra == nil {
 		return api.NodePoolCreateConfig{}, fmt.Errorf("CAPD node pool skeleton is missing infra.machineTemplate")

@@ -966,6 +966,15 @@ a broken site does not wait out every later check.
 In either lane the tenant gets one worker, or N with `-e2e.tenant-workers=N`,
 and the site lane's capacity check asks for the same N.
 
+`-e2e.monitoring-workers=M`, 0 by default, adds a second pool, `monitoring`, of
+M nodes labeled `node-role.kubernetes.io/monitoring` and tainted
+`monitoring=true:NoSchedule`, so only Pods that tolerate the taint land there,
+and labels the workers `node-role.kubernetes.io/worker`. A site the suite
+builds then allowlists both label keys in its controller, and the capacity
+check asks for N + M workers. A site the suite did not build, as in the
+`nico-forge` and `nico-dsx` lanes, answers the create with a 400 unless its
+controller's `nodeMetadata.allowlistedLabelKeys` already lists both keys.
+
 `-e2e.tenant-gpu-runtime`, off by default, gives the tenant a GPU runtime so
 checks 36 and 37 run there too. Before the tenant checks, two specs labeled
 `gpu` and `gpu-runtime` install the runtime with [AICR](https://github.com/NVIDIA/aicr)

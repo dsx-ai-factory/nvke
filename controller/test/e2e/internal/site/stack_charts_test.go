@@ -83,6 +83,7 @@ func renderValues(t *testing.T, assets string) string {
 	}
 	d := testSBOM().withDefaults()
 	d.DatabasePassword = databasePassword
+	d.NodeMetadataAllowlistedLabelKeys = []string{"node-role.kubernetes.io/worker", "node-role.kubernetes.io/monitoring"}
 	files, err := d.render(sbomTarget, overlay)
 	if err != nil {
 		t.Fatal(err)
@@ -269,6 +270,9 @@ func TestSBOMAgainstDeployPath(t *testing.T) {
 			if got := dig(t, settings, strings.Split(key, ".")...); got != want {
 				t.Errorf("nvke-controller-config %s = %v, want %s", key, got, want)
 			}
+		}
+		if got := mustJSON(t, settings["nodeMetadataAllowlistedLabelKeys"]); got != `["node-role.kubernetes.io/worker","node-role.kubernetes.io/monitoring"]` {
+			t.Errorf("nvke-controller-config nodeMetadataAllowlistedLabelKeys = %s, want the two node-role keys", got)
 		}
 		if got, _ := env["DB_CONNECTION_STRING"].(string); !strings.Contains(got, "/"+controllerName()+"?") {
 			t.Errorf("DB_CONNECTION_STRING = %v, want database %s", got, controllerName())

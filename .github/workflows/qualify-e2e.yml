@@ -1362,6 +1362,7 @@ jobs:
             "perf jump host|FORGE_PERF_JUMP_HOST|||"
             "stream environment|E2E_ENVIRONMENT|||"
             "tenant workers|E2E_TENANT_WORKERS|||"
+            "monitoring workers|E2E_MONITORING_WORKERS|||"
             "suite timeout minutes|SUITE_TIMEOUT_MINUTES|||"
             "kaps-bench run specs|E2E_KAPS_BENCH_RUN_SPECS|||"
           )
