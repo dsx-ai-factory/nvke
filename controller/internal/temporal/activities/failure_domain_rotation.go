@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"go.temporal.io/sdk/log"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -71,6 +72,11 @@ func (a *Activities) rotateFailureDomain(
 	patch := client.MergeFromWithOptions(machine.DeepCopy(), client.MergeFromWithOptimisticLock{})
 	machine.Spec.FailureDomain = next
 	if err := a.k8sClient.Patch(ctx, machine, patch); err != nil {
+		if apierrors.IsConflict(err) {
+			machine.Spec.FailureDomain = current
+			logger.Debug("CAPI machine changed during failure-domain move; retrying on the next poll", "machine", machine.Name)
+			return false, nil
+		}
 		return false, fmt.Errorf("moving CAPI machine %s from failure domain %q to %q: %w", machine.Name, current, next, err)
 	}
 	if err := a.recordFailureDomainMove(ctx, cluster.ID, node, next, tried); err != nil {
