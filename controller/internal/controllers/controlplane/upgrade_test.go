@@ -360,3 +360,49 @@ func TestReconcileNodesNeedingRolloutSkipsWhenDeleteInFlight(t *testing.T) {
 		})
 	}
 }
+
+// Regression: releasing an in-flight rollout target's domain uncounted it twice and
+// placed the surge beside an active node instead of in the empty domain.
+func TestRolloutSurgeReleasesNextLiveTarget(t *testing.T) {
+	t.Parallel()
+
+	inFlight := func(name, domain string) db.Node {
+		n := db.Node{ID: uuid.New(), Name: name, FailureDomain: domain}
+		n.Conditions.DeleteRequested = db.NewCondition(true, "")
+		return n
+	}
+	active := func(name, domain string) db.Node {
+		return db.Node{ID: uuid.New(), Name: name, FailureDomain: domain}
+	}
+	snapshot := &failuredomains.Snapshot{Eligible: []string{"fd-a", "fd-b", "fd-c"}}
+
+	tests := []struct {
+		name      string
+		cpNodes   []db.Node
+		targets   []db.Node
+		wantSurge string
+	}{
+		{
+			name:      "in-flight target is skipped; its domain keeps its active node's count",
+			cpNodes:   []db.Node{inFlight("a1", "fd-a"), active("a2", "fd-a"), active("b1", "fd-b")},
+			targets:   []db.Node{inFlight("a1", "fd-a")},
+			wantSurge: "fd-c",
+		},
+		{
+			name:      "next live target's domain is released",
+			cpNodes:   []db.Node{inFlight("a1", "fd-a"), active("b1", "fd-b"), active("c1", "fd-c"), active("a2", "fd-a")},
+			targets:   []db.Node{inFlight("a1", "fd-a"), active("b1", "fd-b")},
+			wantSurge: "fd-b",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			allocator := failuredomains.NewControlPlaneAllocator(tt.cpNodes, snapshot)
+			if replaced, ok := nextRolloutTarget(tt.targets); ok {
+				allocator.Release(snapshot.DomainOf(replaced))
+			}
+			assert.Equal(t, tt.wantSurge, allocator.Take())
+		})
+	}
+}

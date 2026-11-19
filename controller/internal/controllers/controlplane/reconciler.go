@@ -216,6 +216,15 @@ const (
 	failureDomainRetryInterval = 30 * time.Second
 )
 
+// readFailureDomains discovers the cluster's control-plane failure domains. A
+// discovery error is returned with a nil snapshot.
+func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster) (*failuredomains.Snapshot, error) {
+	if r.k8sClient == nil {
+		return nil, fmt.Errorf("kubernetes client is not configured")
+	}
+	return failuredomains.Discover(ctx, r.k8sClient, r.cfg.ManagementNamespaceOrDefault(), cluster.Name)
+}
+
 // discoverPlacement reads the cluster's failure domains into cp and returns an
 // allocator seeded with the current spread. It reports false when discovery
 // failed, for any reason: the cluster's infrastructure not being provisioned yet,

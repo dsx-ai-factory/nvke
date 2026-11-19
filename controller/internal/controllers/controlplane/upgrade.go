@@ -60,7 +60,9 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 					"nodesNeedingRolloutCount", len(nodesNeedingRollout))
 				return false, nil
 			}
-			allocator.Release(cp.failureDomains.DomainOf(nodesNeedingRollout[0]))
+			if replaced, ok := nextRolloutTarget(nodesNeedingRollout); ok {
+				allocator.Release(cp.failureDomains.DomainOf(replaced))
+			}
 			created, err := r.scaleUp(ctx, cluster, deficit, "surge nodes during upgrade", allocator, newNodeProvider)
 			if err != nil {
 				return false, fmt.Errorf("failed to scale up control plane before recycling: %w", err)
@@ -290,4 +292,16 @@ func (r *reconciler) getControlPlaneNodes(ctx context.Context, clusterID uuid.UU
 		return nil, fmt.Errorf("failed to list control plane nodes: %w", err)
 	}
 	return nodes, nil
+}
+
+// nextRolloutTarget returns the first node needing rollout without a delete in
+// flight: the node a rollout surge created now will replace. The allocator
+// already leaves in-flight nodes uncounted.
+func nextRolloutTarget(nodesNeedingRollout []db.Node) (db.Node, bool) {
+	for _, node := range nodesNeedingRollout {
+		if !nodes.IsDeleteInFlight(node) {
+			return node, true
+		}
+	}
+	return db.Node{}, false
 }
