@@ -32,6 +32,7 @@ requests:
       provisioningMonitorDisabled: false
       systemReservedMemory: 1Gi
     controlPlaneKubernetesVersion: 1.36.1
+    enableCPNodeRecycling: true
     etcdEncrypted: true
     infra:
       cluster:

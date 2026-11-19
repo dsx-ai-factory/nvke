@@ -782,6 +782,8 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 		if update == (api.UpdateClusterRequest{}) {
 			return observedCluster, nil
 		}
+		// Recycling is initialized only on creation. Keep the
+		// existing gate even when a control-plane update requires replacement.
 		updatedCluster, err := r.NVKEController.Update(ctx, observedCluster.ID.String(), update)
 		if err != nil {
 			return observedCluster, fmt.Errorf("update nvke controller cluster %q: %w", name, err)
@@ -880,6 +882,7 @@ func (r *NVKEClusterReconciler) resolveNVKEControllerRequest(ctx context.Context
 
 	request.CniPlugin = api.CreateClusterRequestCniPluginOvnKubernetes
 	request.EtcdEncrypted = true
+	request.EnableCPNodeRecycling = new(true)
 	request.ControlPlaneKubernetesVersion = kubernetesVersion
 	if endpoint := cluster.Spec.APIServerEndpoint; endpoint != nil {
 		request.ControlPlaneVIP = endpoint.Address
