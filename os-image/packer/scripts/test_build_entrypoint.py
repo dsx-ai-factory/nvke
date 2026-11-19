@@ -228,6 +228,93 @@ output.mkdir(parents=True, exist_ok=True)
         self.assertTrue(BuilderContainerTest.has_pair(run, "-e", f"SOURCE_ROOT={REPO_ROOT}"), run)
         self.assertTrue(BuilderContainerTest.has_pair(run, "-e", "NKE_TARGET_UBUNTU_SERIES=26.04"), run)
 
+    def prepare_iso(self):
+        """Run only the ISO step, with the patch script replaced by a recorder."""
+        self.script_at(self.packer_dir / "scripts/prepare-installer-iso.sh",
+                       '#!/bin/sh\nprintf "%s|%s\\n" "$ISO_URL" "$OUT_DIR" > "$ISO_MARKER"\n')
+        self.env["ISO_MARKER"] = str(self.root / "iso.marker")
+        return self.make("prepare-installer-iso", "-o", "preflight",
+                         "ISO_URL=https://example.invalid/ubuntu-26.04.1-live-server-arm64.iso",
+                         "ISO_CHECKSUM=sha256:" + "a" * 64)
+
+    def script_at(self, path, text):
+        path.write_text(text)
+        path.chmod(0o755)
+
+    def test_iso_preparation_runs_on_host_when_tools_present(self):
+        self.macos_without_nix("podman")
+        for tool in ("xorriso", "7z"):
+            self.script(tool, "#!/bin/sh\nexit 0\n")
+        result = self.prepare_iso()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.root / "iso.marker").exists())
+        self.assertEqual(self.runtime_calls(), [])
+
+    def test_iso_preparation_runs_in_container_without_tools(self):
+        self.macos_without_nix("podman")
+        result = self.prepare_iso()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertFalse((self.root / "iso.marker").exists())
+        run = next(c for c in self.runtime_calls() if c[1] == "run")
+        self.assertEqual(run[-1], "./scripts/prepare-installer-iso.sh")
+        has = BuilderContainerTest.has_pair
+        self.assertTrue(has(run, "-w", str(self.packer_dir)), run)
+        self.assertTrue(has(run, "-e", "ISO_URL=https://example.invalid/ubuntu-26.04.1-live-server-arm64.iso"), run)
+        self.assertTrue(has(run, "-e", "ISO_CHECKSUM=sha256:" + "a" * 64), run)
+        self.assertTrue(has(run, "-e", f"OUT_DIR={self.packer_dir / 'iso-cache'}"), run)
+
+    def test_iso_preparation_stays_on_linux_hosts_without_tools(self):
+        # Container mode is for Apple-silicon Macs; Linux keeps the script's own
+        # missing-tool error rather than a runtime requirement it never had.
+        self.script("podman", RUNTIME_STUB)
+        self.env.update(PATH=f"{self.root}:/usr/bin:/bin:/usr/sbin:/sbin",
+                        RUNTIME_LOG=str(self.root / "runtime.log"))
+        result = self.prepare_iso()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertTrue((self.root / "iso.marker").exists())
+        self.assertEqual(self.runtime_calls(), [])
+
+    def test_install_packer_checks_digest(self):
+        import zipfile
+        archive = self.root / "packer.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("packer", "#!/bin/sh\necho fake packer\n")
+        digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+        self.script("uname", '#!/bin/sh\ncase "$1" in -m) echo arm64;; -s) echo Darwin;; esac\n')
+        self.script("curl", f'''#!/bin/sh
+while [ $# -gt 0 ]; do
+  case "$1" in -o) out=$2; shift 2;; *) printf '%s\\n' "$1" >> "{self.root}/curl.log"; shift;; esac
+done
+cp "{archive}" "$out"
+''')
+        installed = self.packer_dir / "bin/packer"
+        for sha, ok in (("0" * 64, False), (digest, True)):
+            with self.subTest(ok=ok):
+                result = subprocess.run(
+                    [os.environ.get("MAKE", "make"), "--no-print-directory", "-C", str(self.packer_dir),
+                     "install-packer", f"PACKER_SHA256_DARWIN_ARM64={sha}"],
+                    env=self.env, text=True, capture_output=True, check=False)
+                if ok:
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertTrue(os.access(installed, os.X_OK))
+                else:
+                    self.assertNotEqual(result.returncode, 0)
+                    self.assertIn("checksum", result.stderr)
+                    self.assertFalse(installed.exists())
+        self.assertIn("_darwin_arm64.zip", (self.root / "curl.log").read_text())
+
+    def test_packer_defaults_to_installed_binary(self):
+        def print_packer(*extra):
+            return subprocess.run(
+                [os.environ.get("MAKE", "make"), "--no-print-directory", "-C", str(self.packer_dir),
+                 "print-PACKER", *extra],
+                env=self.env, text=True, capture_output=True, check=True).stdout.strip()
+        self.assertEqual(print_packer(), "packer")
+        (self.packer_dir / "bin").mkdir()
+        self.script_at(self.packer_dir / "bin/packer", "#!/bin/sh\n")
+        self.assertEqual(print_packer(), str(self.packer_dir / "bin/packer"))
+        self.assertEqual(print_packer("PACKER=/x"), "/x")
+
     def test_check_deps_fails_when_the_guest_runner_cannot_be_realized(self):
         self.script("nix", '''#!/usr/bin/env python3
 import json, os, sys

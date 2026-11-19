@@ -1,13 +1,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-PACKER      ?= packer
 PYTHON      ?= python3
 ifneq ($(origin MAKEFILE_LIST),file)
   $(error MAKEFILE_LIST is internal and cannot be overridden)
 endif
 override PACKER_MAKEFILE := $(abspath $(lastword $(MAKEFILE_LIST)))
 override PACKER_ROOT := $(abspath $(dir $(PACKER_MAKEFILE)))
+# The pinned Packer that install-packer puts in bin/, when it is there; a
+# PACKER from the command line or the environment still wins.
+PACKER      ?= $(if $(wildcard $(PACKER_ROOT)/bin/packer),$(PACKER_ROOT)/bin/packer,packer)
 override PACKER_PROJECT := $(PACKER_ROOT)
 # UBUNTU_ISO_SHA256_* comes from make/tool-versions.mk, which owns every
 # committed digest in the repository. Included after PACKER_MAKEFILE is taken
@@ -210,7 +212,7 @@ KERNEL_PACKAGE ?= $(if $(filter hvf,$(ACCELERATOR)),linux-generic,)
 PACKER_BUILD = ARCH=$(ARCH) ACCELERATOR=$(ACCELERATOR) REQUIRE_ACCELERATION=$(REQUIRE_ACCELERATION) \
 	./scripts/run-packer-build.sh $(PACKER) build
 
-.PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-ssh-key prepare-image-build prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde check-acceleration
+.PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-ssh-key prepare-image-build prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde check-acceleration install-packer
 
 prepare-ssh-key:
 	@command -v ssh-keygen >/dev/null 2>&1 || { \
@@ -303,6 +305,35 @@ init-packer: preflight
 
 init-fde init-non-fde: init-packer
 
+# Install the Packer versions.pkr.hcl requires into bin/, which PACKER then
+# defaults to: for development hosts whose package manager carries another
+# version. Checked against the digests make/tool-versions.mk pins.
+install-packer:
+	@set -eu; \
+	case "$$(uname -s)/$$(uname -m)" in \
+		Darwin/arm64) platform=darwin_arm64; expected="$(PACKER_SHA256_DARWIN_ARM64)" ;; \
+		Linux/x86_64) platform=linux_amd64; expected="$(PACKER_SHA256_AMD64)" ;; \
+		Linux/aarch64) platform=linux_arm64; expected="$(PACKER_SHA256_ARM64)" ;; \
+		*) echo "no pinned Packer digest for $$(uname -s)/$$(uname -m)" >&2; exit 1 ;; \
+	esac; \
+	zip="packer_$(PACKER_VERSION)_$${platform}.zip"; \
+	tmp="$$(mktemp -d)"; \
+	trap 'rm -rf -- "$$tmp"' 0; \
+	trap 'exit 1' 1 2 15; \
+	curl -fsSL --retry 8 --retry-all-errors -o "$$tmp/$$zip" \
+		"https://releases.hashicorp.com/packer/$(PACKER_VERSION)/$$zip"; \
+	if command -v sha256sum >/dev/null 2>&1; then actual="$$(sha256sum "$$tmp/$$zip")"; \
+	else actual="$$(shasum -a 256 "$$tmp/$$zip")"; fi; \
+	actual="$${actual%% *}"; \
+	if [ "$$actual" != "$$expected" ]; then \
+		echo "checksum mismatch for $$zip: got $$actual, expected $$expected" >&2; \
+		exit 1; \
+	fi; \
+	unzip -q -d "$$tmp" "$$tmp/$$zip" packer; \
+	mkdir -p "$(PACKER_ROOT)/bin"; \
+	install -m 0755 "$$tmp/packer" "$(PACKER_ROOT)/bin/packer"; \
+	"$(PACKER_ROOT)/bin/packer" version
+
 validate-packer:
 	@command -v "$(PACKER)" >/dev/null 2>&1 || { echo "Packer is required to validate the directory project" >&2; exit 1; }
 	@command -v "$(PYTHON)" >/dev/null 2>&1 || { echo "Python is required to validate the material contract" >&2; exit 1; }
@@ -334,7 +365,17 @@ prepare-installer-iso: preflight
 		exit 1; \
 	fi
 	mkdir -p $(ISO_CACHE)
-	ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) ./scripts/prepare-installer-iso.sh
+	@# An Apple-silicon Mac without xorriso and 7z patches the ISO in the
+	@# builder container, as its package build does; elsewhere the script's own
+	@# missing-tool message stands.
+	@if [ "$$(uname -s)/$$(uname -m)" = Darwin/arm64 ] && \
+		! { command -v xorriso && command -v 7z; } >/dev/null 2>&1; then \
+		echo "xorriso or 7z is not installed: patching the installer ISO in the builder container"; \
+		ARCH=arm64 ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) \
+			./scripts/builder-container.sh run ./scripts/prepare-installer-iso.sh; \
+	else \
+		ISO_URL=$(ISO_URL) ISO_CHECKSUM=$(ISO_CHECKSUM) OUT_DIR=$(ISO_CACHE) ./scripts/prepare-installer-iso.sh; \
+	fi
 
 # Image builds run the Ubuntu installer under kvm, hvf (arm64 on Apple silicon)
 # or tcg; check-deps picks the host or VM package builder separately.

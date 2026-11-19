@@ -136,6 +136,9 @@ PACKER_VERSION      ?= 1.15.4
 # packer_<version>_linux_{amd64,arm64}.zip, from HashiCorp's SHA256SUMS.
 PACKER_SHA256_AMD64 ?= 15f97a6a99645c7d5308c609973b5280837b38e112beac413ccbce80da927cf1
 PACKER_SHA256_ARM64 ?= 23e6d2e596dd9e2527e0f7bea9aedd26059729375a0d17c462c2621f1b97b82d
+# packer_<version>_darwin_arm64.zip, from the same SHA256SUMS, for
+# `make -C os-image/packer install-packer` on an Apple-silicon Mac.
+PACKER_SHA256_DARWIN_ARM64 ?= d95ba177dd2ebb84d7d155493b4188ec2a519d2c3b041528db5b63a6aff9da80
 # The S3 client the OS-image bake reads its build cache with. The ARC runner
 # images carry no AWS CLI. s5cmd_<version>_Linux-{64bit,arm64}.tar.gz, from the
 # release's checksums.txt.
