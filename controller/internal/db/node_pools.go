@@ -405,7 +405,7 @@ type nodeSetCounts struct {
 	NodePoolID     uuid.UUID
 	NodeCount      int
 	ReadyNodeCount int
-	Snapshot       NodeSet `bun:"embed:snapshot_"`
+	NodeSet        NodeSet `bun:"embed:node_set_"`
 }
 
 type NodePoolQueries interface {
@@ -446,7 +446,7 @@ func (q *queriesImpl) ListNodePools(ctx context.Context, filters NodePoolFilters
 	return nodePools, err
 }
 
-// ListNodePoolCounts aggregates only the requested pools in one query. Snapshot
+// ListNodePoolCounts aggregates only the requested pools in one query. NodeSet
 // configuration and node counts are read together; configuration matching uses
 // the supplied pool versions (the same versions serialized by the API).
 // Pool-managed nodes reference an existing NodeSet, so the query uses an inner join.
@@ -466,13 +466,13 @@ func (q *queriesImpl) ListNodePoolCounts(ctx context.Context, pools []NodePool) 
 	var groups []nodeSetCounts
 	err := q.db.NewRaw(`
 		SELECT nc.node_pool_id, nc.node_count, nc.ready_node_count,
-		       ns.id AS snapshot_id, ns.node_pool_id AS snapshot_node_pool_id,
-		       ns.kubernetes_version AS snapshot_kubernetes_version,
-		       ns.system_reserved_memory AS snapshot_system_reserved_memory,
-		       ns.kube_reserved_memory AS snapshot_kube_reserved_memory,
-		       ns.teleport_enabled AS snapshot_teleport_enabled,
-		       ns.nico AS snapshot_nico, ns.capi AS snapshot_capi,
-		       ns.launch_layer AS snapshot_launch_layer
+		       ns.id AS node_set_id, ns.node_pool_id AS node_set_node_pool_id,
+		       ns.kubernetes_version AS node_set_kubernetes_version,
+		       ns.system_reserved_memory AS node_set_system_reserved_memory,
+		       ns.kube_reserved_memory AS node_set_kube_reserved_memory,
+		       ns.teleport_enabled AS node_set_teleport_enabled,
+		       ns.nico AS node_set_nico, ns.capi AS node_set_capi,
+		       ns.launch_layer AS node_set_launch_layer
 		FROM (
 			SELECT node_pool_id, node_set_id, COUNT(*) AS node_count,
 			       SUM(CASE WHEN conditions->'kubernetesReady'->>'status' = 'True'
@@ -491,8 +491,8 @@ func (q *queriesImpl) ListNodePoolCounts(ctx context.Context, pools []NodePool) 
 		count := counts[group.NodePoolID]
 		count.NodeCount += group.NodeCount
 		count.ReadyNodeCount += group.ReadyNodeCount
-		if group.Snapshot.NodePoolID == group.NodePoolID &&
-			NodePoolMatchesNodeSet(byID[group.NodePoolID], group.Snapshot) {
+		if group.NodeSet.NodePoolID == group.NodePoolID &&
+			NodePoolMatchesNodeSet(byID[group.NodePoolID], group.NodeSet) {
 			count.UpdatedNodeCount += group.NodeCount
 		}
 		counts[group.NodePoolID] = count
