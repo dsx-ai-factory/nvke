@@ -5,6 +5,7 @@ package activities
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -13,12 +14,14 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.temporal.io/sdk/log"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -260,6 +263,41 @@ func TestRotateFailureDomain(t *testing.T) {
 			assert.Equal(t, wantMachine, stored.Spec.FailureDomain)
 		})
 	}
+}
+
+func TestRotateFailureDomainPatchConflictWaitsForNextPoll(t *testing.T) {
+	t.Parallel()
+
+	clusterID := uuid.New()
+	pastGrace := time.Now().Add(-time.Hour)
+	node := db.Node{ID: uuid.New(), ClusterID: clusterID, Name: "cp-0", ControlPlane: true, FailureDomain: "fd-a", FailureDomainUnavailableSince: &pastGrace}
+	cluster := db.Cluster{ID: clusterID, Name: "cluster-a"}
+	store := &failureDomainStore{nodes: map[uuid.UUID]db.Node{node.ID: node}, cluster: cluster}
+	machine := &clusterv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{Name: node.Name, Namespace: fdTestNamespace, Labels: map[string]string{
+			clusterv1.ClusterNameLabel: "cluster-a", clusterv1.MachineControlPlaneLabel: "",
+		}},
+		Spec: clusterv1.MachineSpec{ClusterName: "cluster-a", FailureDomain: "fd-a"},
+	}
+	base := failureDomainTestClient(t, []string{"fd-a", "fd-b"}, machine)
+	k8sClient := interceptor.NewClient(base.(client.WithWatch), interceptor.Funcs{
+		Patch: func(_ context.Context, _ client.WithWatch, obj client.Object, _ client.Patch, _ ...client.PatchOption) error {
+			return apierrors.NewConflict(clusterv1.GroupVersion.WithResource("machines").GroupResource(), obj.GetName(), errors.New("object was modified"))
+		},
+	})
+	a := &Activities{db: store, k8sClient: k8sClient, cfg: config.Config{ManagementNamespace: fdTestNamespace}}
+	logger := log.NewStructuredLogger(slog.New(slog.DiscardHandler))
+
+	moved, err := a.rotateFailureDomain(context.Background(), logger, cluster, node, machine, true)
+
+	require.NoError(t, err)
+	assert.False(t, moved)
+	assert.Equal(t, "fd-a", machine.Spec.FailureDomain)
+	got := store.nodes[node.ID]
+	assert.Equal(t, "fd-a", got.FailureDomain)
+	assert.Empty(t, got.FailureDomainsTried)
+	assert.NotNil(t, got.FailureDomainUnavailableSince)
+	assert.Empty(t, store.cluster.Conditions.UnplaceableFailureDomains)
 }
 
 func failureDomainTestClient(t *testing.T, domains []string, machine *clusterv1.Machine) client.Client {
