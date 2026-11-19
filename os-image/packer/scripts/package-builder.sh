@@ -27,19 +27,16 @@ if [[ -n "$target_series" && -n "$host_series" ]] &&
 fi
 
 host_platform="$(uname -s)/$(uname -m)"
-have_container_runtime() {
-  [[ -n "${CONTAINER_RUNTIME:-}" ]] || command -v podman >/dev/null || command -v docker >/dev/null
-}
 mode=${NKE_PACKAGE_BUILDER:-auto}
 if [[ "$mode" == auto ]]; then
   if [[ "$native" == 1 && "$host_too_new" == 0 ]]; then
     mode=host
-  elif [[ "$host_platform" == Darwin/arm64 ]] && ! command -v nix >/dev/null && have_container_runtime; then
+  elif [[ "$host_platform" == Darwin/arm64 ]] && ! command -v nix >/dev/null && command -v podman >/dev/null; then
     # A Mac with Nix keeps the NixOS VM builder; one without it uses a container.
     mode=container
   elif [[ "$host_platform" == Darwin/arm64 ]] && ! command -v nix >/dev/null; then
     echo 'building packages on macOS needs a Linux builder, and none is installed. Either:' >&2
-    echo '  install podman (or Docker) to build them in a container;' >&2
+    echo '  install podman to build them in a container;' >&2
     echo '    see os-image/README.md#build-on-an-apple-silicon-mac' >&2
     echo '  or install Nix to build them in a NixOS VM; see os-image/nix/README.md.' >&2
     exit 1

@@ -205,6 +205,13 @@ output.mkdir(parents=True, exist_ok=True)
         self.assertIn("os-image/nix/README.md", result.stderr)
         self.assertIn("podman", result.stderr)
 
+    def test_auto_on_macos_with_only_docker_does_not_select_container(self):
+        self.macos_without_nix("docker")
+        result = self.make("check-deps", f"PYTHON={sys.executable}")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("podman", result.stderr)
+        self.assertNotIn("package builder: container", result.stdout)
+
     def test_container_mode_rejected_off_macos_arm64(self):
         self.script("podman", RUNTIME_STUB)
         result = self.make("check-deps", "NKE_PACKAGE_BUILDER=container")
@@ -358,6 +365,8 @@ with open(os.environ["RUNTIME_LOG"], "a") as log:
     log.write(json.dumps([os.path.basename(sys.argv[0])] + sys.argv[1:]) + "\\n")
 args = sys.argv[1:]
 if args[:1] == ["info"]:
+    if "--format" in args:
+        print(os.environ.get("SOCKET_PATH", "/run/podman/podman.sock"))
     sys.exit(int(os.environ.get("INFO_STATUS", "0")))
 if args[:2] in (["image", "exists"], ["image", "inspect"]):
     sys.exit(0 if os.environ.get("IMAGE_PRESENT") else 1)
@@ -521,62 +530,79 @@ class BuilderContainerTest(unittest.TestCase):
             self.assertTrue(self.has_pair(run, "-v", f"{self.dist_volume(self.checkout, name)}:{packages / name / 'dist'}"), run)
         self.assertFalse([a for a in run if "common/dist" in a], run)
 
+    def real_builder(self, cwd, script, root=None):
+        root = root or self.checkout
+        return subprocess.run(
+            [shutil.which("bash"), str(root / "os-image/packer/scripts/builder-container.sh"),
+             "run", "sh", "-c", script],
+            env=os.environ | {"ARCH": "arm64"},
+            cwd=cwd, text=True, capture_output=True, check=False, timeout=1800,
+        )
+
     @unittest.skipUnless(os.environ.get("NKE_TEST_BUILDER_RUNTIME"),
-                         "set NKE_TEST_BUILDER_RUNTIME=podman|docker to run the real builder image")
+                         "set NKE_TEST_BUILDER_RUNTIME=1 to run the real builder image under podman")
     def test_builder_extracts_dotdot_symlinks_into_package_dist(self):
         # cni-ovn extracts a git archive whose symlinks point through `..`.
-        runtime = os.environ["NKE_TEST_BUILDER_RUNTIME"]
         package = self.checkout / "os-image/packages/dotdot-probe"
         package.mkdir(parents=True)
         (package / "Makefile").write_text("debs:\n")
         volume = self.dist_volume(self.checkout, "dotdot-probe")
-        self.addCleanup(subprocess.run, [runtime, "volume", "rm", "-f", volume], capture_output=True)
+        self.addCleanup(subprocess.run, ["podman", "volume", "rm", "-f", volume], capture_output=True)
         script = ("set -e; mkdir -p /tmp/a/sub; echo payload > /tmp/a/root.md; "
                   "ln -s ../root.md /tmp/a/sub/link; tar -cf /tmp/t.tar -C /tmp/a .; "
                   "mkdir -p dist/src; tar -x --no-same-owner -C dist/src -f /tmp/t.tar; cat dist/src/sub/link")
-        result = subprocess.run(
-            [shutil.which("bash"), str(self.checkout / "os-image/packer/scripts/builder-container.sh"),
-             "run", "sh", "-c", script],
-            env=os.environ | {"ARCH": "arm64", "CONTAINER_RUNTIME": runtime},
-            cwd=package, text=True, capture_output=True, check=False, timeout=1800,
-        )
+        result = self.real_builder(package, script)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("payload", result.stdout.split())
 
-    def test_runtime_selection(self):
-        for present, override, expected in (
-            (("podman", "docker"), None, "podman"),
-            (("docker",), None, "docker"),
-            (("podman", "docker"), "docker", "docker"),
-        ):
-            with self.subTest(present=present, override=override):
-                for stub in self.stubs.iterdir():
-                    stub.unlink()
-                self.log.unlink(missing_ok=True)
-                self.runtime(*present)
-                extra = {"CONTAINER_RUNTIME": override} if override else {}
-                result = self.invoke("check", IMAGE_PRESENT="1", **extra)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual({c[0] for c in self.calls()}, {expected})
-        result = self.invoke("check", CONTAINER_RUNTIME="nerdctl")
+    @unittest.skipUnless(os.environ.get("NKE_TEST_BUILDER_RUNTIME"),
+                         "set NKE_TEST_BUILDER_RUNTIME=1 to run the real builder image under podman")
+    def test_builder_builds_and_saves_an_image_through_podman(self):
+        # cni-ovn builds its image from source with OCI_BIN and saves a
+        # docker-archive; in the container that goes to the machine's podman.
+        package = self.checkout / "os-image/packages/oci-probe"
+        package.mkdir(parents=True)
+        (package / "Makefile").write_text("debs:\n")
+        volume = self.dist_volume(self.checkout, "oci-probe")
+        ref = "localhost/nvke-builder-oci-probe:test"
+        self.addCleanup(subprocess.run, ["podman", "volume", "rm", "-f", volume], capture_output=True)
+        self.addCleanup(subprocess.run, ["podman", "rmi", "-f", ref], capture_output=True)
+        script = (f'set -e; mkdir -p dist/ctx; echo probe > dist/ctx/f; printf "FROM scratch\\nCOPY f /f\\n" > dist/ctx/Containerfile; '
+                  f'"$OCI_BIN" build --platform linux/arm64 -t {ref} -f dist/ctx/Containerfile dist/ctx >/dev/null; '
+                  f'"$OCI_BIN" save --format docker-archive -o dist/image.tar {ref}; tar -tf dist/image.tar | grep -c manifest.json')
+        result = self.real_builder(package, script)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(result.stdout.split()[-1:], ["1"], result.stdout + result.stderr)
+
+    def test_run_hands_the_podman_service_to_the_container(self):
+        self.runtime("podman")
+        result = self.invoke("run", "true", IMAGE_PRESENT="1", SOCKET_PATH="/run/user/502/podman/podman.sock")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run = next(c for c in self.calls() if c[1] == "run")
+        self.assertTrue(self.has_pair(run, "-v", "/run/user/502/podman/podman.sock:/run/podman/podman.sock"), run)
+        self.assertTrue(self.has_pair(run, "-e", "CONTAINER_HOST=unix:///run/podman/podman.sock"), run)
+        self.assertTrue(self.has_pair(run, "-e", "OCI_BIN=podman"), run)
+        # The machine's SELinux policy denies a container the runtime socket.
+        self.assertTrue(self.has_pair(run, "--security-opt", "label=disable"), run)
+
+    def test_runtime_is_podman_only(self):
+        # The OVN image is built through the podman service, so docker alone
+        # cannot do the whole build.
+        self.runtime("docker")
+        result = self.invoke("check", IMAGE_PRESENT="1")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("podman or docker", result.stderr)
+        self.assertIn("podman", result.stderr)
+        self.assertEqual(self.calls(), [])
 
     @unittest.skipUnless(os.environ.get("NKE_TEST_BUILDER_RUNTIME"),
-                         "set NKE_TEST_BUILDER_RUNTIME=podman|docker to run the real builder image")
+                         "set NKE_TEST_BUILDER_RUNTIME=1 to run the real builder image under podman")
     def test_builder_awk_supports_interval_expressions(self):
         # The package bundles parse publisher checksum lists with
         # /^[0-9a-fA-F]{64}$/. Bookworm's default mawk (1.3.4-20200120) has no
         # interval expressions, so every digest line silently failed to match.
         digest = "0" * 64
         program = '$1 ~ /^[0-9a-fA-F]{64}$/ { print "match" }'
-        result = subprocess.run(
-            [shutil.which("bash"), str(PACKER_DIR / "scripts/builder-container.sh"), "run",
-             "sh", "-c", f'echo "{digest}  cni.tgz" | awk \'{program}\''],
-            env=os.environ | {"ARCH": "arm64",
-                              "CONTAINER_RUNTIME": os.environ["NKE_TEST_BUILDER_RUNTIME"]},
-            cwd=REPO_ROOT, text=True, capture_output=True, check=False, timeout=1800,
-        )
+        result = self.real_builder(REPO_ROOT, f'echo "{digest}  cni.tgz" | awk \'{program}\'', root=REPO_ROOT)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("match", result.stdout.split(), result.stdout + result.stderr)
 

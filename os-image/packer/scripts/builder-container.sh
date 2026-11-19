@@ -6,14 +6,18 @@
 # in a container, for hosts that cannot run them natively: an Apple-silicon Mac
 # without Nix. Packer and QEMU stay on the host, under HVF.
 #
-#   builder-container.sh check            runtime answers; image built if missing
+#   builder-container.sh check            podman answers; image built if missing
 #   builder-container.sh run CMD [ARG...]  run CMD in the container, here
 #
 # The checkout is mounted at its own absolute path and the command runs in the
 # host's current directory, so every path Make records (the artifacts staging
 # directory, the ISO cache, the material manifest's ISO link) means the same
-# thing on both sides. Reads ARCH (amd64|arm64), CONTAINER_RUNTIME (podman or
-# docker; default podman, then docker) and SOURCE_ROOT (default: this checkout).
+# thing on both sides. Reads ARCH (amd64|arm64) and SOURCE_ROOT (default: this
+# checkout).
+#
+# podman only: cni-ovn builds its image from source, and inside the container
+# it does so through the podman machine's own service (OCI_BIN=podman with
+# CONTAINER_HOST), with the static podman-remote client the image carries.
 
 set -euo pipefail
 
@@ -28,19 +32,7 @@ builder_dir="$source_root/os-image/packer/builder"
 containerfile="$builder_dir/Containerfile"
 [[ -f "$containerfile" ]] || die "no Containerfile at $containerfile"
 
-if [[ -n "${CONTAINER_RUNTIME:-}" ]]; then
-  case "$CONTAINER_RUNTIME" in
-    podman|docker) runtime=$CONTAINER_RUNTIME ;;
-    *) die "CONTAINER_RUNTIME must be podman or docker, not $CONTAINER_RUNTIME" ;;
-  esac
-  command -v "$runtime" >/dev/null || die "CONTAINER_RUNTIME=$runtime is not on PATH"
-elif command -v podman >/dev/null; then
-  runtime=podman
-elif command -v docker >/dev/null; then
-  runtime=docker
-else
-  die "a container runtime is required: install podman or docker (see os-image/README.md)"
-fi
+command -v podman >/dev/null || die "podman is required: install it and start its machine (see os-image/README.md)"
 
 sha256_of() {
   if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
@@ -53,17 +45,10 @@ image="localhost/nvke-os-image-builder:${digest:0:12}-$arch"
 platform="linux/$arch"
 
 ensure_image() {
-  if ! "$runtime" info >/dev/null 2>&1; then
-    if [[ "$runtime" == podman ]]; then
-      die "podman is not answering; start its VM with: podman machine start"
-    fi
-    die "docker is not answering; start Docker Desktop or the docker daemon"
-  fi
-  local exists=(image inspect "$image")
-  [[ "$runtime" == podman ]] && exists=(image exists "$image")
-  if ! "$runtime" "${exists[@]}" >/dev/null 2>&1; then
+  podman info >/dev/null 2>&1 || die "podman is not answering; start its VM with: podman machine start"
+  if ! podman image exists "$image" >/dev/null 2>&1; then
     echo "building $image ($platform) from $containerfile"
-    "$runtime" build --platform "$platform" -t "$image" -f "$containerfile" "$builder_dir"
+    podman build --platform "$platform" -t "$image" -f "$containerfile" "$builder_dir"
   fi
 }
 
@@ -71,15 +56,24 @@ run_in_container() {
   (($# > 0)) || die "run needs a command"
   local cache="${XDG_CACHE_HOME:-$HOME/.cache}/nvke/os-image-builder/$arch"
   mkdir -p "$cache"
-  local cwd
+  local cwd socket
   cwd=$(pwd -P)
+  # The service socket as the machine sees it, where the container runs.
+  socket=$(podman info --format '{{.Host.RemoteSocket.Path}}') || die "podman info did not report its service socket"
+  socket=${socket#unix://}
+  [[ -n "$socket" ]] || die "podman reported no service socket"
   local args=(run --rm --platform "$platform"
     -v "$source_root:$source_root"
     -v "$cache:/var/cache/nvke-builder"
     -w "$cwd"
     -e "GOMODCACHE=/var/cache/nvke-builder/gomod"
     -e "GOCACHE=/var/cache/nvke-builder/gobuild"
-    -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e "GIT_CONFIG_VALUE_0=*")
+    -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e "GIT_CONFIG_VALUE_0=*"
+    # The machine's SELinux policy would deny the container its runtime socket.
+    --security-opt label=disable
+    -v "$socket:/run/podman/podman.sock"
+    -e CONTAINER_HOST=unix:///run/podman/podman.sock
+    -e OCI_BIN=podman)
   # A linked worktree keeps its git metadata in the main checkout; the agent's
   # version stamp (git describe) needs it inside the container too.
   local common
@@ -109,7 +103,7 @@ run_in_container() {
       args+=(-e "$name=${!name}")
     fi
   done
-  "$runtime" "${args[@]}" "$image" "$@"
+  podman "${args[@]}" "$image" "$@"
 }
 
 case "${1:-}" in

@@ -45,7 +45,7 @@ Package-builder prerequisites depend on the selected mode:
 - **Nix VM builds:** Nix with `nix-command` and `flakes` enabled. Preparing the
   VM requires a matching Linux builder or cached build outputs; see the
   [Nix setup instructions](nix/README.md). Go is provided inside the VM.
-- **Container builds (Apple-silicon macOS only):** podman or Docker. Go and the
+- **Container builds (Apple-silicon macOS only):** podman. Go and the
   ISO tools are provided inside the container; see
   [Build on an Apple-silicon Mac](#build-on-an-apple-silicon-mac).
 
@@ -168,7 +168,7 @@ Run `make -C os-image test-qemu` for the selection and build-entrypoint tests
 without booting a VM.
 
 The build checks package-builder prerequisites before starting Packer — Go for
-host builds, Nix for VM builds, a running podman or Docker for container builds;
+host builds, Nix for VM builds, a running podman machine for container builds;
 `make -C os-image/packer check-deps ARCH=arm64`
 runs that check on its own. The agent package uses nfpm, pinned in
 `make/tool-versions.mk`.
@@ -249,8 +249,9 @@ podman machine start
 make -C os-image/packer install-packer
 ```
 
-Docker Desktop works in place of podman; `CONTAINER_RUNTIME=docker` picks it
-when both are installed. Then, from a clean checkout:
+It has to be podman: the OVN CNI package builds its image from source, and the
+builder container does that through the podman machine's own service. Then,
+from a clean checkout:
 
 ```bash
 make -C os-image/packer os-image-non-fde ARCH=arm64
@@ -271,7 +272,10 @@ What runs where:
   `nvke-os-image-builder-<arch>-<package>-<checkout>` instead: on a mount backed
   by macOS, the container's root cannot open a file with no permissions, which
   is how `tar` stages some symlinks while extracting.
-- `check-deps` fails in seconds if podman or Docker is not running.
+- `check-deps` fails in seconds if the podman machine is not running.
+- The container gets the machine's podman service socket (with SELinux
+  labelling off for that container) and a static `podman-remote` client, so
+  `cni-ovn`'s image build runs on the machine's podman with `OCI_BIN=podman`.
 - Packer runs on macOS under HVF, with the `linux-generic` kernel (see above).
   This is a development image: it cannot boot the NVIDIA 64K-page kernel that
   release images carry, and the Mac path covers arm64 only.
