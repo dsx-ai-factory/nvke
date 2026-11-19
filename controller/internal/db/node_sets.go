@@ -47,24 +47,24 @@ func NodePoolNeedsNewNodeSet(nodePool NodePool, current NodeSet) bool {
 	return nodePool.CurrentNodeSetID == nil || !NodePoolMatchesNodeSet(nodePool, current)
 }
 
-// NodePoolMatchesNodeSet reports whether a snapshot matches the pool's requested
+// NodePoolMatchesNodeSet reports whether the supplied NodeSet matches the pool's requested
 // rollout configuration. It does not depend on the active generation's ID, so a
 // previous generation can match again after a rollback.
-func NodePoolMatchesNodeSet(nodePool NodePool, snapshot NodeSet) bool {
-	if nodePool.KubernetesVersion != snapshot.KubernetesVersion ||
-		nodePool.SystemReservedMemory != snapshot.SystemReservedMemory ||
-		nodePool.KubeReservedMemory != snapshot.KubeReservedMemory ||
-		nodePool.TeleportEnabled != snapshot.TeleportEnabled {
+func NodePoolMatchesNodeSet(nodePool NodePool, current NodeSet) bool {
+	if nodePool.KubernetesVersion != current.KubernetesVersion ||
+		nodePool.SystemReservedMemory != current.SystemReservedMemory ||
+		nodePool.KubeReservedMemory != current.KubeReservedMemory ||
+		nodePool.TeleportEnabled != current.TeleportEnabled {
 		return false
 	}
 
 	switch {
 	case nodePool.Nico != nil:
-		return snapshot.Nico != nil && nodePool.Nico.Equal(*snapshot.Nico)
+		return current.Nico != nil && nodePool.Nico.Equal(*current.Nico)
 	case nodePool.Capi != nil:
-		return snapshot.Capi != nil && nodePool.Capi.Equal(*snapshot.Capi)
+		return current.Capi != nil && nodePool.Capi.Equal(*current.Capi)
 	case nodePool.LaunchLayer != nil:
-		return snapshot.LaunchLayer != nil && nodePool.LaunchLayer.Equal(*snapshot.LaunchLayer)
+		return current.LaunchLayer != nil && nodePool.LaunchLayer.Equal(*current.LaunchLayer)
 	default:
 		return false
 	}
