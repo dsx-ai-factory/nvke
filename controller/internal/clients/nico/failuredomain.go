@@ -54,12 +54,19 @@ func failureDomainUnavailable(ctx context.Context, k8sClient client.Client, mach
 
 func isFailureDomainUnavailable(nicoMachine *nicov1.NicoMachine, domain string) bool {
 	provisioned := nicoMachineProvisionedCondition(nicoMachine.Status.Conditions)
+	if provisioned == nil {
+		return false
+	}
+
+	// Don't act on a stale report. Let CAPNICo catch up before marking the domain unavailable.
+	if provisioned.ObservedGeneration != 0 && provisioned.ObservedGeneration < nicoMachine.Generation {
+		return false
+	}
+
 	return nicoMachine.Status.InstanceID == "" &&
-		provisioned != nil &&
 		provisioned.Status == metav1.ConditionFalse &&
 		provisioned.Reason == nicov1.FailureDomainUnavailableReason &&
-		(provisioned.ObservedGeneration == 0 || provisioned.ObservedGeneration >= nicoMachine.Generation) &&
-		// A Machine patch does not bump the NicoMachine generation; CAPNICo names the
-		// domain in the message, which keeps a report about the previous domain from counting.
+		// The failure domain lives on the CAPI Machine, so moving it leaves the NicoMachine
+		// generation unchanged; check the domain in the message instead.
 		strings.HasPrefix(provisioned.Message, fmt.Sprintf("failure domain %q:", domain))
 }
