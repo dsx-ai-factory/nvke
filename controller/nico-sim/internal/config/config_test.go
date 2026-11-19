@@ -17,6 +17,7 @@ func TestParseContainerNodeShmSize(t *testing.T) {
 		"padded override": {" 8g ", "8g"},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Setenv("NICO_VMS_VM_BACKEND", "mock")
 			t.Setenv("NICO_CONTAINERS_ENABLED", "true")
 			t.Setenv("NICO_CONTAINERS_NODE_SHM_SIZE", tc.env)
 			cfg, err := Parse(slog.Default())
