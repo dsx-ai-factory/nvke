@@ -55,6 +55,8 @@ LOCAL_NKE_E2E_LABEL_FILTER=mokka hack/local-backend-e2e.sh
 
 The entry installs the charts with `helm`, so the suite's runner needs it; both E2E entrypoints copy the host's in.
 
+The [NVSentinel scenario](nvsentinel/README.md#in-ci) runs in its own scheduled lane, since it takes longer than the pull-request runs allow.
+
 ## What it does not prove
 
 - **CUDA, NCCL and RDMA.** Mokka simulates the driver's interfaces, not GPU execution. The CUDA validator passes because the values skip its CUDA workload (`WITH_WORKLOAD=false`).

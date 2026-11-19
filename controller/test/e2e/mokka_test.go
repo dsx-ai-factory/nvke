@@ -193,10 +193,21 @@ func validateMokkaGPU(test *tenantTest) {
 	}, NodeTimeout(time.Duration(len(mokkaProfiles))*siteCreateTimeout+time.Minute))
 }
 
-// helmOnTenant runs helm against the test's tenant as its admin, with a freshly
-// minted kubeconfig and helm's cache and config kept out of the runner's home.
+// helmOnTenant runs helm against the test's tenant as its admin.
 func helmOnTenant(ctx context.Context, test *tenantTest, args ...string) error {
-	dir := GinkgoT().TempDir()
+	return runOnTenant(ctx, test, helmRun, "helm", args...)
+}
+
+// runOnTenant runs a kubeconfig-driven tool, such as helm or kubectl, against the
+// test's tenant as its admin for up to timeout, with a freshly minted kubeconfig
+// and helm's cache and config kept out of the runner's home. It cleans up after
+// itself rather than through GinkgoT, so a DeferCleanup callback can call it.
+func runOnTenant(ctx context.Context, test *tenantTest, timeout time.Duration, tool string, args ...string) error {
+	dir, err := os.MkdirTemp("", "e2e-tenant-")
+	if err != nil {
+		return fmt.Errorf("creating a scratch directory: %w", err)
+	}
+	defer os.RemoveAll(dir)
 	kubeconfig, err := test.tenantClients.AdminKubeconfig(ctx, test.cluster.Name)
 	if err != nil {
 		return fmt.Errorf("minting the tenant kubeconfig: %w", err)
@@ -206,9 +217,9 @@ func helmOnTenant(ctx context.Context, test *tenantTest, args ...string) error {
 		return fmt.Errorf("writing the tenant kubeconfig: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, helmRun)
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	command := exec.CommandContext(ctx, "helm", args...)
+	command := exec.CommandContext(ctx, tool, args...)
 	command.Env = append(os.Environ(),
 		"KUBECONFIG="+path,
 		"HELM_CACHE_HOME="+filepath.Join(dir, "cache"),
@@ -217,7 +228,7 @@ func helmOnTenant(ctx context.Context, test *tenantTest, args ...string) error {
 	)
 	output, err := command.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("helm %s: %w\n%s", strings.Join(args, " "), err, output)
+		return fmt.Errorf("%s %s: %w\n%s", tool, strings.Join(args, " "), err, output)
 	}
 	return nil
 }

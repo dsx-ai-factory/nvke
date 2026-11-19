@@ -72,6 +72,7 @@ jobs:
             capd-e2e.yml
             nico-e2e.yml
             capd-dsx-identity-exchange-e2e.yml
+            capd-nvsentinel-e2e.yml
             local-entrypoint-e2e.yml
             nico-vms-e2e.yml
             nvkectl-bootstrap-e2e.yml
@@ -115,6 +116,7 @@ jobs:
             capd-e2e.yml
             nico-e2e.yml
             capd-dsx-identity-exchange-e2e.yml
+            capd-nvsentinel-e2e.yml
             local-entrypoint-e2e.yml
             nico-vms-e2e.yml
             nvkectl-bootstrap-e2e.yml

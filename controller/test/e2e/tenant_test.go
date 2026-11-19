@@ -169,6 +169,8 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 		},
 		options: nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 	}),
+	// In nvsentinel_test.go, which its own lane's path filter watches.
+	capdNVSentinelEntry,
 	// Opt-in via the "cp-controller" label: it exercises cluster-level
 	// control-plane-controller provisioning (no control-plane node pool) and its
 	// update, rolling-update and delete specs.
@@ -687,6 +689,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			if spec.validate.mokkaGPU {
 				validateMokkaGPU(&test)
 			}
+			if spec.validate.nvsentinel {
+				validateNVSentinel(&test)
+			}
 			if spec.validate.tenantChecks {
 				capabilities, capabilitiesErr := runCapabilities()
 				gpuRuntime := planTenantGPURuntime(tenantGPURuntime, capabilities, capabilitiesErr)
@@ -974,6 +979,9 @@ type validations struct {
 	// mokkaGPU runs GPU Operator on Mokka's simulated GPUs, on the worker pools
 	// labeled mokkaLabelKey with a profile in mokkaProfiles. The runner needs helm.
 	mokkaGPU bool
+	// nvsentinel runs NVSentinel's fault cycle on the GPUs mokkaGPU sets up, so the
+	// entry needs both, and two Mokka nodes for the drain to move a workload between.
+	nvsentinel bool
 }
 
 // managementCluster is the cluster the controller runs on, which a tenant test reaches

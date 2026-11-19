@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Layered over Mokka's NVSentinel guide values (nvsentinelGuideValues in
+# nvsentinel_test.go).
+
+# MongoDB keeps its data in an emptyDir, so the cluster needs no StorageClass.
+mongodb-store:
+  psmdb-db:
+    replsets:
+      rs0:
+        volumeSpec:
+          emptyDir: {}
+          pvc: null
+
+# Drain only the sample workload's namespace, where the guide drains every user
+# namespace, so nothing else on a shared cluster's hot node is evicted.
+node-drainer:
+  userNamespaces:
+    - name: nvsentinel-sample
+      mode: Immediate
