@@ -9,6 +9,7 @@ import shutil
 import stat
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -25,6 +26,7 @@ class BuildEntrypointTest(unittest.TestCase):
         self.packer_dir.mkdir(parents=True)
         shutil.copy(PACKER_DIR / "Makefile", self.packer_dir)
         shutil.copytree(PACKER_DIR / "scripts", self.packer_dir / "scripts")
+        shutil.copytree(PACKER_DIR / "builder", self.packer_dir / "builder")
         # The Makefile includes ../../make/tool-versions.mk for the committed
         # installer digests. Copy the real file rather than a stub so the
         # fixture resolves ISO_CHECKSUM exactly as a real checkout does.
@@ -175,6 +177,56 @@ output.mkdir(parents=True, exist_ok=True)
                     self.assertIn("os-image/nix/README.md", result.stderr)
                 else:
                     self.assertIn("package builder: host", result.stdout)
+
+    def macos_without_nix(self, *runtimes):
+        """Darwin/arm64 with only the stubs and the base system on PATH."""
+        self.script("uname", '#!/bin/sh\ncase "$1" in -m) echo arm64;; -s) echo Darwin;; esac\n')
+        for name in runtimes:
+            self.script(name, RUNTIME_STUB)
+        self.env.update(PATH=f"{self.root}:/usr/bin:/bin:/usr/sbin:/sbin",
+                        RUNTIME_LOG=str(self.root / "runtime.log"), IMAGE_PRESENT="1",
+                        XDG_CACHE_HOME=str(self.root / "cache"))
+
+    def runtime_calls(self):
+        log = self.root / "runtime.log"
+        return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+    def test_auto_on_macos_without_nix_selects_container_when_runtime_present(self):
+        self.macos_without_nix("podman")
+        result = self.make("check-deps", f"PYTHON={sys.executable}")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("package builder: container (arm64", result.stdout)
+        self.assertEqual(self.runtime_calls()[0][:2], ["podman", "info"])
+
+    def test_auto_on_macos_without_nix_or_runtime_names_both(self):
+        self.macos_without_nix()
+        result = self.make("check-deps", f"PYTHON={sys.executable}")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("os-image/nix/README.md", result.stderr)
+        self.assertIn("podman", result.stderr)
+
+    def test_container_mode_rejected_off_macos_arm64(self):
+        self.script("podman", RUNTIME_STUB)
+        result = self.make("check-deps", "NKE_PACKAGE_BUILDER=container")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("Apple-silicon macOS", result.stderr)
+
+    def test_container_adapter_runs_fetch_artifacts_in_place(self):
+        self.macos_without_nix("podman")
+        artifacts = self.root / "artifacts with spaces"
+        result = subprocess.run(
+            ["bash", str(PACKER_DIR / "scripts/package-builder.sh")],
+            env=self.env | {"ARCH": "arm64", "NKE_PACKAGE_BUILDER": "container",
+                            "ARTIFACTS_DIR": str(artifacts), "NKE_TARGET_UBUNTU_SERIES": "26.04"},
+            text=True, capture_output=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        run = next(c for c in self.runtime_calls() if c[1] == "run")
+        self.assertEqual(run[-2:], ["bash", str(PACKER_DIR / "scripts/fetch-artifacts.sh")])
+        self.assertTrue(BuilderContainerTest.has_pair(run, "-e", "NKE_BUILD_IN_PLACE=1"), run)
+        self.assertTrue(BuilderContainerTest.has_pair(run, "-e", f"ARTIFACTS_DIR={artifacts}"), run)
+        self.assertTrue(BuilderContainerTest.has_pair(run, "-e", f"SOURCE_ROOT={REPO_ROOT}"), run)
+        self.assertTrue(BuilderContainerTest.has_pair(run, "-e", "NKE_TARGET_UBUNTU_SERIES=26.04"), run)
 
     def test_check_deps_fails_when_the_guest_runner_cannot_be_realized(self):
         self.script("nix", '''#!/usr/bin/env python3
