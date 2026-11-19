@@ -1463,16 +1463,16 @@ type NodePool struct {
 	// Nico NICo settings for the pool.
 	Nico *NicoNodePoolProvider `json:"nico,omitempty"`
 
-	// NodeCount Observed CWE node records in the pool, including pending and deleting nodes. May exceed desiredNodeCount during a rollout or after a scale-down request. Omitted when not observed.
-	NodeCount *int `json:"nodeCount,omitempty"`
-
 	// NodeNamePrefix Node names are `<cluster>-<prefix>-<NNNN>` (four-digit suffix), at most 63 characters in total.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
 
-	// ReadyNodeCount Pool node records whose observed KubernetesReady condition is True. Does not additionally require provisioning completion or schedulability. Omitted when not observed.
+	// ObservedNodeCount Observed number of nodes in the pool, including pending and deleting nodes. May exceed desiredNodeCount during a rollout or after a scale-down request. Omitted when not observed.
+	ObservedNodeCount *int `json:"observedNodeCount,omitempty"`
+
+	// ReadyNodeCount Number of nodes in the pool whose observed Kubernetes Ready condition is True. Does not additionally require provisioning completion or schedulability. Omitted when not observed.
 	ReadyNodeCount *int `json:"readyNodeCount,omitempty"`
 
-	// UpdatedNodeCount Pool node records whose NodeSet matches the requested rollout configuration, including Kubernetes version and provider image and initialization settings. Includes pending, provisioning and deleting nodes when their configuration matches; does not require readiness or verify running software. Omitted when not observed.
+	// UpdatedNodeCount Number of nodes in the pool matching the requested configuration, including Kubernetes version, image and initialization settings. Includes pending, provisioning and deleting nodes when their configuration matches; does not require readiness or verify running software. Omitted when not observed.
 	UpdatedNodeCount *int `json:"updatedNodeCount,omitempty"`
 }
 

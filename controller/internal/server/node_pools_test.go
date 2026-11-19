@@ -5,6 +5,7 @@ package server_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -234,7 +235,7 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 				}
 				mockDB.On("ListNodePoolCounts", mock.Anything, tt.dbNodePools).Return(counts, nil).Once()
 				for i := range tt.wantNodePool {
-					tt.wantNodePool[i].NodeCount = testutil.PtrTo(0)
+					tt.wantNodePool[i].ObservedNodeCount = testutil.PtrTo(0)
 					tt.wantNodePool[i].ReadyNodeCount = testutil.PtrTo(0)
 					tt.wantNodePool[i].UpdatedNodeCount = testutil.PtrTo(0)
 				}
@@ -620,7 +621,7 @@ func TestNodePoolService_GetNodePool(t *testing.T) {
 			mockDB.On("GetNodePool", mock.Anything, tt.nodePoolID).Return(tt.dbNodePool, tt.dbError)
 			if tt.dbError == nil {
 				mockDB.On("ListNodePoolCounts", mock.Anything, []db.NodePool{tt.dbNodePool}).Return(map[uuid.UUID]db.NodePoolCounts{tt.dbNodePool.ID: {}}, nil).Once()
-				tt.wantNodePool.NodeCount = testutil.PtrTo(0)
+				tt.wantNodePool.ObservedNodeCount = testutil.PtrTo(0)
 				tt.wantNodePool.ReadyNodeCount = testutil.PtrTo(0)
 				tt.wantNodePool.UpdatedNodeCount = testutil.PtrTo(0)
 			}
@@ -1892,9 +1893,15 @@ func TestNodePoolReadCounts(t *testing.T) {
 				} else {
 					require.NoError(t, err)
 					require.Equal(t, 4, result.DesiredNodeCount)
-					require.Equal(t, 5, *result.NodeCount)
+					require.Equal(t, 5, *result.ObservedNodeCount)
 					require.Equal(t, 3, *result.ReadyNodeCount)
 					require.Equal(t, 2, *result.UpdatedNodeCount)
+					encoded, err := json.Marshal(result)
+					require.NoError(t, err)
+					var fields map[string]json.RawMessage
+					require.NoError(t, json.Unmarshal(encoded, &fields))
+					require.JSONEq(t, "5", string(fields["observedNodeCount"]))
+					require.NotContains(t, fields, "nodeCount")
 				}
 				store.AssertExpectations(t)
 			})
@@ -1972,7 +1979,7 @@ func TestNodePoolWriteCounts(t *testing.T) {
 					require.ErrorContains(t, err, "count query failed")
 				} else {
 					require.NoError(t, err)
-					require.Equal(t, 5, *result.NodeCount)
+					require.Equal(t, 5, *result.ObservedNodeCount)
 					require.Equal(t, 3, *result.ReadyNodeCount)
 					require.Equal(t, 2, *result.UpdatedNodeCount)
 				}
@@ -2004,10 +2011,10 @@ func TestListNodePoolsBatchCounts(t *testing.T) {
 	require.Equal(t, "second", responses[1].Name)
 	require.Equal(t, "16Gi", *responses[0].SystemReservedMemory)
 	require.Equal(t, "32Gi", *responses[1].SystemReservedMemory)
-	require.Equal(t, 5, *responses[0].NodeCount)
+	require.Equal(t, 5, *responses[0].ObservedNodeCount)
 	require.Equal(t, 3, *responses[0].ReadyNodeCount)
 	require.Equal(t, 2, *responses[0].UpdatedNodeCount)
-	require.Equal(t, 2, *responses[1].NodeCount)
+	require.Equal(t, 2, *responses[1].ObservedNodeCount)
 	require.Equal(t, 1, *responses[1].ReadyNodeCount)
 	require.Zero(t, *responses[1].UpdatedNodeCount)
 	store.AssertExpectations(t)

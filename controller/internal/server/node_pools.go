@@ -1004,7 +1004,7 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool, count db.NodePoolCounts) api.Nod
 		},
 		MachineAnnotations: maps.Clone(dbNodePool.MachineAnnotations),
 		MachineLabels:      maps.Clone(dbNodePool.MachineLabels),
-		NodeCount:          &count.NodeCount,
+		ObservedNodeCount:  &count.NodeCount,
 		ReadyNodeCount:     &count.ReadyNodeCount,
 		UpdatedNodeCount:   &count.UpdatedNodeCount,
 	}
