@@ -209,7 +209,7 @@ func TestDbNodePoolFromAPI_EveryNestedNicoFieldReachesTheStoredPool(t *testing.T
 	assert.Equal(t, "cfg", nico.ConfigProfile)
 	assert.Equal(t, db.DiskSelectionStrategy(api.DiskSelectionStrategyCreateLargest), nico.DiskSelectionStrategy)
 
-	got := apiNodePoolFromDB(&pool)
+	got := nodePoolResponseForTest(t, &pool)
 	require.NotNil(t, got.Nico)
 	assert.Equal(t, "os", got.Nico.Release)
 	assert.Nil(t, got.Infra)
@@ -238,7 +238,7 @@ func TestDbNodePoolFromAPI_EveryNestedCapiFieldReachesTheStoredPool(t *testing.T
 	assert.Equal(t, []string{"echo hi"}, pool.Capi.PreKubeadmCommands)
 	assert.Equal(t, []db.CloudInitFile{{Path: "/tmp/a", Content: "x"}}, pool.Capi.BootstrapFiles)
 
-	got := apiNodePoolFromDB(&pool)
+	got := nodePoolResponseForTest(t, &pool)
 	require.NotNil(t, got.Infra)
 	assert.Equal(t, "DockerMachineTemplate", got.Infra.MachineTemplate["kind"])
 	assert.Equal(t, files, got.Infra.BootstrapFiles)
@@ -284,7 +284,7 @@ func TestApplyUpdateNodePoolRequest_NestedNicoPatch(t *testing.T) {
 		assert.Equal(t, []uuid.UUID{subnetB}, pool.Nico.SubnetIDs)
 		assert.Equal(t, "os-v2", pool.Nico.Release)
 
-		got := apiNodePoolFromDB(pool)
+		got := nodePoolResponseForTest(t, pool)
 		require.NotNil(t, got.Nico)
 		assert.Equal(t, []uuid.UUID{subnetB}, got.Nico.SubnetIDs)
 		assert.Equal(t, "os-v2", got.Nico.Release)
@@ -362,7 +362,7 @@ func TestApiNodePoolFromDB_EmitsNestedWhenPayloadPresent(t *testing.T) {
 		},
 	}
 
-	got := apiNodePoolFromDB(pool)
+	got := nodePoolResponseForTest(t, pool)
 	require.NotNil(t, got.Nico)
 	assert.Equal(t, "os", got.Nico.Release)
 	assert.Nil(t, got.Infra)
@@ -391,7 +391,7 @@ func TestNodePoolGetThenPatchNestedMutableOnly(t *testing.T) {
 		ConfigProfile:         "cfg",
 		DiskSelectionStrategy: db.DiskSelectionStrategySmallest,
 	})
-	got := apiNodePoolFromDB(pool)
+	got := nodePoolResponseForTest(t, pool)
 	require.NotNil(t, got.Nico)
 
 	assert.NotEqual(t, uuid.Nil, got.Nico.InstanceTypeID)
@@ -427,7 +427,7 @@ func TestNodePool_MachineMetadataRoundTrip(t *testing.T) {
 			require.NotNil(t, stored.MachineAnnotations)
 			require.NotNil(t, stored.MachineLabels)
 			loaded := stored
-			response := apiNodePoolFromDB(&loaded)
+			response := nodePoolResponseForTest(t, &loaded)
 			require.Equal(t, db.CloneStringMap(params.annotations), response.MachineAnnotations)
 			require.Equal(t, db.CloneStringMap(params.labels), response.MachineLabels)
 			require.Equal(t, "legacy-profile", response.Nico.ConfigProfile)

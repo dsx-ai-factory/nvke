@@ -28,7 +28,7 @@ func TestLaunchLayerSecurityGroups_CreateReadPersistence(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := t.Context()
-			bunDB := testutil.SetupDB(ctx, t, (*db.NodePool)(nil), (*db.NodeSet)(nil), (*db.ControlPlaneConfiguration)(nil))
+			bunDB := testutil.SetupDB(ctx, t, (*db.NodePool)(nil), (*db.NodeSet)(nil), (*db.ControlPlaneConfiguration)(nil), (*db.Node)(nil))
 			queries := db.NewDB(bunDB)
 			var input api.LaunchLayerNodePoolProvider
 			require.NoError(t, json.Unmarshal([]byte(attachments), &input))
@@ -42,7 +42,10 @@ func TestLaunchLayerSecurityGroups_CreateReadPersistence(t *testing.T) {
 			loaded, err := queries.GetNodePool(ctx, pool.ID)
 			require.NoError(t, err)
 			require.Equal(t, pool.LaunchLayer, loaded.LaunchLayer)
-			poolOutput := apiNodePoolFromDB(&loaded).LaunchLayer
+			responses, err := apiNodePoolsFromDB(ctx, queries, []db.NodePool{loaded})
+			require.NoError(t, err)
+			require.Len(t, responses, 1)
+			poolOutput := responses[0].LaunchLayer
 			require.NotNil(t, poolOutput)
 			require.Equal(t, input.SecurityGroupRefs, poolOutput.SecurityGroupRefs)
 			if name == "empty" {

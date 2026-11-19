@@ -75,7 +75,7 @@ func TestNodePoolCountsRejectMissingObservation(t *testing.T) {
 	store := &testutil.MockDB{}
 	pool := db.NodePool{ID: uuid.New()}
 	store.On("ListNodePoolCounts", mock.Anything, []db.NodePool{pool}).Return(map[uuid.UUID]db.NodePoolCounts{}, nil).Once()
-	_, err := apiNodePoolsWithCounts(t.Context(), store, []db.NodePool{pool})
+	_, err := apiNodePoolsFromDB(t.Context(), store, []db.NodePool{pool})
 	require.ErrorContains(t, err, "node pool counts missing")
 	store.AssertExpectations(t)
 }
@@ -148,4 +148,50 @@ func TestNodePoolWriteCounts(t *testing.T) {
 			})
 		}
 	}
+}
+
+// nodePoolResponseForTest exercises mapping-only fixtures through the batch API
+// with an explicit empty-node observation.
+func nodePoolResponseForTest(t *testing.T, pool *db.NodePool) api.NodePool {
+	t.Helper()
+	store := &testutil.MockDB{}
+	store.On("ListNodePoolCounts", mock.Anything, []db.NodePool{*pool}).Return(map[uuid.UUID]db.NodePoolCounts{pool.ID: {}}, nil).Once()
+	responses, err := apiNodePoolsFromDB(t.Context(), store, []db.NodePool{*pool})
+	require.NoError(t, err)
+	require.Len(t, responses, 1)
+	store.AssertExpectations(t)
+	return responses[0]
+}
+
+func TestAPINodePoolsFromDBBatch(t *testing.T) {
+	pools := []db.NodePool{
+		{ID: uuid.New(), Name: "first", SystemReservedMemory: "16Gi"},
+		{ID: uuid.New(), Name: "second", SystemReservedMemory: "32Gi"},
+	}
+	store := &testutil.MockDB{}
+	store.On("ListNodePoolCounts", mock.Anything, pools).Return(map[uuid.UUID]db.NodePoolCounts{
+		pools[0].ID: {NodeCount: 5, ReadyNodeCount: 3, UpdatedNodeCount: 2},
+		pools[1].ID: {NodeCount: 2, ReadyNodeCount: 1, UpdatedNodeCount: 0},
+	}, nil).Once()
+	responses, err := apiNodePoolsFromDB(t.Context(), store, pools)
+	require.NoError(t, err)
+	require.Len(t, responses, 2)
+	require.Equal(t, "first", responses[0].Name)
+	require.Equal(t, "second", responses[1].Name)
+	require.Equal(t, "16Gi", *responses[0].SystemReservedMemory)
+	require.Equal(t, "32Gi", *responses[1].SystemReservedMemory)
+	require.Equal(t, 5, *responses[0].NodeCount)
+	require.Equal(t, 3, *responses[0].ReadyNodeCount)
+	require.Equal(t, 2, *responses[0].UpdatedNodeCount)
+	require.Equal(t, 2, *responses[1].NodeCount)
+	require.Equal(t, 1, *responses[1].ReadyNodeCount)
+	require.Zero(t, *responses[1].UpdatedNodeCount)
+	store.AssertExpectations(t)
+}
+
+func TestAPINodePoolsFromDBEmpty(t *testing.T) {
+	responses, err := apiNodePoolsFromDB(t.Context(), nil, nil)
+	require.NoError(t, err)
+	require.NotNil(t, responses)
+	require.Empty(t, responses)
 }
