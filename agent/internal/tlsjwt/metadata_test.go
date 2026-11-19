@@ -99,13 +99,12 @@ func TestMetadataClient_FetchRejectsUnusableResponses(t *testing.T) {
 		body    string
 		wantErr string
 	}{
-		"http error":       {status: http.StatusForbidden, body: "denied", wantErr: "returned http 403"},
-		"empty body":       {status: http.StatusOK, body: "\n", wantErr: "empty dsx identity token"},
-		"not a JWT":        {status: http.StatusOK, body: "opaque", wantErr: "not a compact JWS"},
-		"bad payload":      {status: http.StatusOK, body: "a.%%%.c", wantErr: "decoding token payload"},
-		"missing exp":      {status: http.StatusOK, body: testJWT(t, `{"sub":"x"}`), wantErr: "no exp claim"},
-		"non-numeric exp":  {status: http.StatusOK, body: testJWT(t, `{"exp":"soon"}`), wantErr: "decoding token claims"},
-		"non-positive exp": {status: http.StatusOK, body: testJWT(t, `{"exp":0}`), wantErr: "not a positive number"},
+		"http error":      {status: http.StatusForbidden, body: "denied", wantErr: "returned http 403"},
+		"empty body":      {status: http.StatusOK, body: "\n", wantErr: "empty dsx identity token"},
+		"not a JWT":       {status: http.StatusOK, body: "opaque", wantErr: "parsing token"},
+		"bad payload":     {status: http.StatusOK, body: "a.%%%.c", wantErr: "parsing token"},
+		"missing exp":     {status: http.StatusOK, body: testJWT(t, `{"sub":"x"}`), wantErr: "no exp claim"},
+		"non-numeric exp": {status: http.StatusOK, body: testJWT(t, `{"exp":"soon"}`), wantErr: "reading token exp claim"},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {

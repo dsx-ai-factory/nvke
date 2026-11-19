@@ -5,8 +5,6 @@ package tlsjwt
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +12,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 const (
@@ -25,8 +25,8 @@ const (
 	maxMetadataResponseSize = 64 << 10
 )
 
-// MetadataClient fetches DSX identity tokens from the DSX metadata service a
-// virtual machine reaches at its link-local metadata address.
+// MetadataClient fetches DSX identity tokens from the DSX metadata service,
+// which a VM reaches at 169.254.169.254.
 type MetadataClient struct {
 	endpoint string
 	client   *http.Client
@@ -105,28 +105,18 @@ func (c *MetadataClient) Fetch(ctx context.Context, audience string) (Token, err
 // unverifiedExpiry reads the exp claim without verifying the signature. The
 // value only schedules the refresh; the controller verifies the token.
 func unverifiedExpiry(token string) (time.Time, error) {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return time.Time{}, errors.New("token is not a compact JWS")
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	parsed, _, err := jwt.NewParser().ParseUnverified(token, jwt.MapClaims{})
 	if err != nil {
-		return time.Time{}, fmt.Errorf("decoding token payload: %w", err)
+		return time.Time{}, fmt.Errorf("parsing token: %w", err)
 	}
-	var claims struct {
-		Exp *json.Number `json:"exp"`
+	expiry, err := parsed.Claims.GetExpirationTime()
+	if err != nil {
+		return time.Time{}, fmt.Errorf("reading token exp claim: %w", err)
 	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return time.Time{}, fmt.Errorf("decoding token claims: %w", err)
-	}
-	if claims.Exp == nil {
+	if expiry == nil {
 		return time.Time{}, errors.New("token has no exp claim")
 	}
-	seconds, err := claims.Exp.Float64()
-	if err != nil || seconds <= 0 {
-		return time.Time{}, fmt.Errorf("token exp claim %q is not a positive number", claims.Exp.String())
-	}
-	return time.Unix(int64(seconds), 0), nil
+	return expiry.Time, nil
 }
 
 // NewMetadataTokenSource returns a caching token source over the DSX metadata

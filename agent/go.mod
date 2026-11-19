@@ -4,6 +4,7 @@ go 1.27.4
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/logger v1.1.2
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/prometheus/client_model v0.6.3
