@@ -202,19 +202,23 @@ class TriageRerunTest(unittest.TestCase):
         self.assertEqual(self.rerun_calls(), [])
 
     def test_only_a_finished_failure_of_a_tag_push_is_re_run(self):
+        # Each case also says why, so a wrong reason fails the test: a run that
+        # has not finished has no conclusion, which once shifted the fields.
         cases = {
-            "not a push": run_json(event="pull_request"),
-            "not a tag": run_json(head_branch="main"),
-            "a branch named like a flag": run_json(head_branch="--force"),
-            "still running": run_json(status="in_progress", conclusion=None),
-            "cancelled": run_json(conclusion="cancelled"),
-            "passed": run_json(conclusion="success"),
+            "not a push": (run_json(event="pull_request"), "not a push of a version tag"),
+            "not a tag": (run_json(head_branch="main"), "not a push of a version tag"),
+            "a branch named like a flag": (run_json(head_branch="--force"), "not a push of a version tag"),
+            "still running": (run_json(status="in_progress", conclusion=None), "is in_progress, not a finished failure"),
+            "queued": (run_json(status="queued", conclusion=None), "is queued, not a finished failure"),
+            "cancelled": (run_json(conclusion="cancelled"), "is completed (cancelled), not a finished failure"),
+            "passed": (run_json(conclusion="success"), "is completed (success), not a finished failure"),
         }
-        for name, body in cases.items():
+        for name, (body, why) in cases.items():
             self.run_file.write_text(body)
             r = self.run_script(row() + "\n", DRY_RUN="false")
             self.assertEqual(r.returncode, 0, f"{name}: {r.stderr}")
             self.assertIn("Not re-run", r.stdout, name)
+            self.assertIn(why, r.stdout, name)
             self.assertEqual(self.rerun_calls(), [], name)
 
     def test_a_re_run_that_cannot_be_started_fails_loudly_and_tells_no_one(self):

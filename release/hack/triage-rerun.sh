@@ -92,9 +92,11 @@ if [[ ! -s "${work}/rows.jsonl" ]]; then
 fi
 
 # The run itself, from the API and not from anything the caller says about it.
-IFS=$'\t' read -r status conclusion event latest head < <(
+# The conclusion is last because a run that has not finished has none, and read
+# collapses adjacent tabs, so an empty field anywhere else would shift the rest.
+IFS=$'\t' read -r status event latest head conclusion < <(
     gh api "repos/${repo}/actions/runs/${run}" \
-        --jq '[.status, .conclusion // "", .event, .run_attempt, .head_branch] | @tsv'
+        --jq '[.status, .event, .run_attempt, .head_branch, .conclusion // ""] | @tsv'
 )
 
 if [[ "${event}" != push || ! "${head}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
