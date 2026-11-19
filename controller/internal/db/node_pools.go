@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math/big"
 	"reflect"
 	"slices"
 	"time"
@@ -105,7 +106,7 @@ func (c CAPINodePoolProvider) Equal(other CAPINodePoolProvider) bool {
 }
 
 // jsonEqual compares JSON content independent of object key order and whitespace.
-// Numbers retain their original representations to preserve precision.
+// Numbers compare by exact value, including equivalent exponent notation.
 func jsonEqual(a, b json.RawMessage) bool {
 	if bytes.Equal(a, b) {
 		return true
@@ -122,7 +123,28 @@ func jsonEqual(a, b json.RawMessage) bool {
 		return false
 	}
 	right, err := decode(b)
-	return err == nil && reflect.DeepEqual(left, right)
+	return err == nil && jsonValuesEqual(left, right)
+}
+
+func jsonValuesEqual(a, b any) bool {
+	switch left := a.(type) {
+	case json.Number:
+		right, ok := b.(json.Number)
+		if !ok {
+			return false
+		}
+		x, xOK := new(big.Rat).SetString(string(left))
+		y, yOK := new(big.Rat).SetString(string(right))
+		return xOK && yOK && x.Cmp(y) == 0
+	case map[string]any:
+		right, ok := b.(map[string]any)
+		return ok && maps.EqualFunc(left, right, jsonValuesEqual)
+	case []any:
+		right, ok := b.([]any)
+		return ok && slices.EqualFunc(left, right, jsonValuesEqual)
+	default:
+		return reflect.DeepEqual(a, b)
+	}
 }
 
 // Equal reports whether two LaunchLayerNodePoolProvider values represent the same configuration.
