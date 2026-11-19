@@ -66,8 +66,7 @@ func appendMappingNode(node *yaml.Node, key string, style yaml.Style, value, tag
 }
 
 // renderBootstrapUserData renders the template-backed CAPI node's cloud-init
-// user data. A KubeVirt VM gets no SPIRE agent: its node agent authenticates
-// with the DSX token from the metadata service in the VM.
+// user data.
 func (*Client) renderBootstrapUserData(
 	ctx context.Context,
 	deps shared.MachineCreateDeps,

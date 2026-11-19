@@ -72,11 +72,16 @@ func TestClient_ValidateNodeAgentProfile_KubeVirt(t *testing.T) {
 		wantErr  error
 	}{
 		"KubeVirt with SPIFFE and no external mTLS": {
-			profile:  db.Node{SpiffeEnabled: true},
+			profile:  db.Node{SpiffeEnabled: true, NodeAgentTLSJWTEnabled: true},
 			nodePool: kubeVirtPool,
-			wantErr:  errKubeVirtRequiresExternalMTLS,
+			wantErr:  errKubeVirtRequiresTLSJWT,
 		},
-		"KubeVirt with SPIFFE and external mTLS": {
+		"KubeVirt with SPIFFE and no TLS/JWT": {
+			profile:  db.Node{SpiffeEnabled: true, NodeAgentExternalMTLSEnabled: true},
+			nodePool: kubeVirtPool,
+			wantErr:  errKubeVirtRequiresTLSJWT,
+		},
+		"KubeVirt with TLS/JWT and external mTLS": {
 			profile:  db.Node{SpiffeEnabled: true, NodeAgentExternalMTLSEnabled: true, NodeAgentTLSJWTEnabled: true},
 			nodePool: kubeVirtPool,
 		},
@@ -154,7 +159,7 @@ func TestClient_CreateMachine_KubeVirtVM(t *testing.T) {
 	assert.Empty(t, machine.Annotations[keys.MachineSpireAgentSpiffeIDPath.String()])
 }
 
-func TestClient_CreateMachine_KubeVirtVMRequiresExternalMTLS(t *testing.T) {
+func TestClient_CreateMachine_KubeVirtVMRequiresTLSJWT(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	k8sClient, deps, nodeSet, _, _ := newKubeVirtCreateMachineFixture(t)
@@ -162,7 +167,7 @@ func TestClient_CreateMachine_KubeVirtVMRequiresExternalMTLS(t *testing.T) {
 	node := db.Node{ID: uuid.New(), Name: "cp-0", SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodJoinToken}
 	err := New().CreateMachine(ctx, deps, node, nodeSet, db.NodePool{ControlPlane: true}, db.Cluster{Name: "cluster-a"})
 	require.ErrorIs(t, err, shared.ErrUnsupportedMachineConfig)
-	require.ErrorIs(t, err, errKubeVirtRequiresExternalMTLS)
+	require.ErrorIs(t, err, errKubeVirtRequiresTLSJWT)
 
 	machines := &clusterv1.MachineList{}
 	require.NoError(t, k8sClient.List(ctx, machines))

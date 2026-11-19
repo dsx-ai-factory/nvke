@@ -27,8 +27,7 @@ import (
 )
 
 const (
-	// kubeVirtSVIDHint matches the --svid-hint of the DSX metadata sidecar
-	// injected into virt-launcher pods.
+	// kubeVirtSVIDHint must match the DSX metadata sidecar's --svid-hint.
 	kubeVirtSVIDHint = "dsx-imds-vm"
 
 	metalLBAddressPoolAnnotation = "metallb.universe.tf/address-pool"
@@ -39,22 +38,15 @@ const (
 	infraNamespaceSecretKey  = "namespace"
 )
 
-// KubeVirtAgentEndpoint creates and deletes the infra cluster resources a
-// KubeVirt VM node agent needs: a LoadBalancer Service the controller dials,
-// since VM pod addresses are not routable from the controller, and, for
-// TLS/JWT nodes, a ClusterSPIFFEID that registers the agent's DSX identity
-// /vm/<node ID>.
+// KubeVirtAgentEndpoint manages a KubeVirt VM node agent's LoadBalancer
+// Service and ClusterSPIFFEID in the cluster the VM runs in.
 type KubeVirtAgentEndpoint struct {
-	// ManagementClient reads the KubevirtCluster's infra kubeconfig Secret.
-	// It is also the infra cluster client when the KubevirtCluster names
-	// no Secret, since CAPK then creates VMs in the management cluster.
 	ManagementClient client.Client
 	// Namespace is the management namespace holding CAPI objects.
 	Namespace        string
 	Config           config.Config
 	FieldManagerName string
-	// NewClient builds the infra cluster client from its REST config.
-	// Nil uses client.New.
+	// NewClient defaults to client.New.
 	NewClient func(*rest.Config, client.Options) (client.Client, error)
 }
 
@@ -109,15 +101,12 @@ func (e KubeVirtAgentEndpoint) Delete(ctx context.Context, cluster db.Cluster, n
 	return nil
 }
 
-// kubeVirtAgentObjectName names the node's Service and ClusterSPIFFEID. The
-// node ID keeps it unique across management namespaces and within the
-// 63-character Service name limit.
+// kubeVirtAgentObjectName must stay within the 63-character Service name limit.
 func kubeVirtAgentObjectName(node db.Node) string {
 	return "nvke-node-agent-" + node.ID.String()
 }
 
-// kubeVirtPodSelector selects the virt-launcher pod CAPK creates for the
-// node's KubevirtMachine, which NVKE names after the node.
+// kubeVirtPodSelector selects the virt-launcher pod of the node's KubevirtMachine.
 func (e KubeVirtAgentEndpoint) kubeVirtPodSelector(node db.Node) map[string]string {
 	return map[string]string{
 		kubeVirtMachineNameLabel:      node.Name,
@@ -138,9 +127,7 @@ func (e KubeVirtAgentEndpoint) buildService(node db.Node, vmNamespace string) (*
 			Labels:    map[string]string{nodeIDLabel: node.ID.String()},
 		},
 		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeLoadBalancer,
-			// MetalLB then advertises the address only from the host
-			// running the VM.
+			Type:                  corev1.ServiceTypeLoadBalancer,
 			ExternalTrafficPolicy: corev1.ServiceExternalTrafficPolicyLocal,
 			Selector:              e.kubeVirtPodSelector(node),
 			Ports: []corev1.ServicePort{{
@@ -166,8 +153,6 @@ func (e KubeVirtAgentEndpoint) buildClusterSPIFFEID(node db.Node, vmNamespace st
 			Labels: map[string]string{nodeIDLabel: node.ID.String()},
 		},
 		Spec: spirev1alpha1.ClusterSPIFFEIDSpec{
-			// DSX Identity exchanges this local ID for the /vm/<node ID>
-			// subject the controller accepts.
 			SPIFFEIDTemplate: fmt.Sprintf("spiffe://{{ .TrustDomain }}/tenant/%s/service/%s/vm/%s",
 				tlsJWT.SubjectTenant, tlsJWT.SubjectService, node.ID),
 			ClassName:         e.Config.NodeAgent.KubeVirt.SPIFFEIDClassName,
@@ -178,10 +163,8 @@ func (e KubeVirtAgentEndpoint) buildClusterSPIFFEID(node db.Node, vmNamespace st
 	}
 }
 
-// infraClusterClient returns a client for the cluster CAPK creates the
-// cluster's VMs in, and the namespace it creates them in, resolved the way
-// CAPK resolves them: from the KubevirtCluster's infraClusterSecretRef, or the
-// management cluster and namespace when it names no Secret.
+// infraClusterClient resolves the cluster and namespace CAPK creates the VMs
+// in, the same way CAPK does.
 func (e KubeVirtAgentEndpoint) infraClusterClient(ctx context.Context, cluster db.Cluster) (client.Client, string, error) {
 	secretRef, found, err := kubeVirtInfraClusterSecretRef(cluster)
 	if err != nil {
@@ -238,8 +221,7 @@ type secretRef struct {
 	Namespace string
 }
 
-// kubeVirtInfraClusterSecretRef reads spec.infraClusterSecretRef from the
-// cluster's KubevirtCluster manifest, reporting false when it names none.
+// kubeVirtInfraClusterSecretRef reports false when the KubevirtCluster names no Secret.
 func kubeVirtInfraClusterSecretRef(cluster db.Cluster) (secretRef, bool, error) {
 	if cluster.Capi == nil || len(cluster.Capi.InfraCluster) == 0 {
 		return secretRef{}, false, errors.New("cluster has no infra cluster manifest")

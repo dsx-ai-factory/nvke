@@ -10,11 +10,6 @@ import (
 	"github.com/uptrace/bun"
 )
 
-// nodes.capi holds per-node state for infra (CAPI) provider nodes, such as
-// whether the machine is a KubeVirt VM and the address the controller dials
-// its node agent at. Existing rows keep NULL, which means a bare-metal node
-// dialed at its machine address.
-//
 //nolint:gochecknoinits // Bun registers migrations at package initialization.
 func init() {
 	migrations.MustRegister(func(ctx context.Context, db *bun.DB) error {

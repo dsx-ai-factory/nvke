@@ -71,8 +71,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	if err := applyNicoMachineInstanceLabels(node, cluster, nodePool.ID, infraMachine); err != nil {
 		return err
 	}
-	// The node is pinned to the profile in force when it was created, which
-	// can differ from the one its pool was accepted under.
+	// The node's profile can differ from the one its pool was validated with.
 	kubeVirtVM := isKubeVirtObject(infraMachine, kubeVirtMachineKind)
 	if kubeVirtVM {
 		if err := validateKubeVirtNodeAgentProfile(node); err != nil {

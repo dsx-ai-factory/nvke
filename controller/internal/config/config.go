@@ -90,17 +90,11 @@ type TLSJWTConfig struct {
 	DSXIdentityExchangeURL string `controllerconfig:"nodeAgent.tlsJWT.dsxIdentityExchangeURL"`
 }
 
-// KubeVirtConfig configures the per-VM resources the controller creates in
-// the infra cluster for KubeVirt VM nodes.
+// KubeVirtConfig configures the controller's per-VM resources for KubeVirt VM nodes.
 type KubeVirtConfig struct {
-	// SPIFFEIDClassName is the className of the infra cluster's SPIRE
-	// controller manager that issues DSX identities to VMs. Empty leaves the
-	// per-VM ClusterSPIFFEID classless.
 	SPIFFEIDClassName string `controllerconfig:"nodeAgent.kubeVirt.spiffeIDClassName"`
-
-	// AddressPool is the MetalLB address pool for the per-VM node-agent
-	// LoadBalancer Service. It must be reachable from the controller. Empty
-	// leaves the choice to MetalLB.
+	// AddressPool is the MetalLB pool for VM node agent Services. It must be
+	// reachable from the controller.
 	AddressPool string `controllerconfig:"nodeAgent.kubeVirt.addressPool"`
 }
 
@@ -119,7 +113,6 @@ type NodeAgentConfig struct {
 	// TLSJWT contains TLS/JWT transport settings.
 	TLSJWT TLSJWTConfig
 
-	// KubeVirt contains settings for KubeVirt VM nodes.
 	KubeVirt KubeVirtConfig
 
 	// UpdateMethod selects apt or bundle installation for opted-in clusters.

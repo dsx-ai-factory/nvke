@@ -102,9 +102,8 @@ rules:
       - kubevirtmachinetemplates.infrastructure.cluster.x-k8s.io
     verbs:
       - get
-  # A KubevirtCluster without infraClusterSecretRef runs its VMs in this
-  # cluster, where the controller creates each VM node agent's Service and
-  # ClusterSPIFFEID. Otherwise the infra kubeconfig's identity needs these.
+  # For VMs in the management cluster: the controller creates a Service and a
+  # ClusterSPIFFEID per VM node.
   - apiGroups:
       - ""
     resources:

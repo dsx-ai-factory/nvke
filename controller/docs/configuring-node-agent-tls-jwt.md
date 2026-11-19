@@ -78,35 +78,28 @@ SPIFFE-only nodes that do not use DSX Identity exchange retain the legacy
 
 ## Nodes in virtual machines
 
-Generic CAPI nodes whose machine template is a CAPK `KubevirtMachineTemplate`
-run as KubeVirt VMs. A VM runs no SPIRE agent, so its node agent cannot get a
-JWT-SVID to exchange. Its bootstrap has no SPIRE agent configuration or join
-token, and instead sets `--dsx-identity-metadata-url=http://169.254.169.254`:
-the agent fetches its token from the DSX metadata-service sidecar in the VM.
-A VM node must use external mTLS when SPIFFE is enabled.
+CAPI nodes whose machine template is a CAPK `KubevirtMachineTemplate` run as
+KubeVirt VMs. A VM has no SPIRE agent, so its node agent gets its token from
+the DSX metadata service (`--dsx-identity-metadata-url`). VM nodes need TLS/JWT
+with external mTLS.
 
-When the machine is ready, the controller creates two objects in the cluster the
-`KubevirtCluster` runs its VMs in: the cluster named by
-`spec.infraClusterSecretRef`, or the management cluster when it names none.
+For each VM node, the controller creates two objects in the cluster the VMs
+run in, and deletes them with the machine:
 
-- A `LoadBalancer` Service, `nvke-node-agent-<node UUID>`, that selects the
-  VM's virt-launcher pod. VM pod addresses are often not routable from the
-  controller, so the controller dials the agent at the Service's address.
-  `nodeAgent.kubeVirt.addressPool` picks the MetalLB address pool.
-- For TLS/JWT nodes, a ClusterSPIFFEID of the same name that registers
+- A `LoadBalancer` Service in front of the VM, because its pod address is not
+  reachable from the controller. The controller dials the agent there.
+  `nodeAgent.kubeVirt.addressPool` sets the MetalLB pool.
+- A ClusterSPIFFEID registering
   `spiffe://<local-trust-domain>/tenant/<subjectTenant>/service/<subjectService>/vm/<node UUID>`
-  with SVID hint `dsx-imds-vm` for the pod. DSX Identity exchanges it for the
-  `/vm/<node UUID>` subject the controller accepts.
-  `nodeAgent.kubeVirt.spiffeIDClassName` must name the className of the SPIRE
-  controller manager that serves the metadata sidecar.
+  for the VM's pod. `nodeAgent.kubeVirt.spiffeIDClassName` must match the
+  SPIRE controller manager serving the metadata sidecar.
 
-The controller deletes both when it deletes the machine. The identity in the
-infra kubeconfig Secret needs `create`, `get`, `patch` and `delete` on Services
-in the VM namespace and on ClusterSPIFFEIDs. With `capi.rbac.kubeVirt: true`,
-the chart grants these and the CAPK resource permissions in the management
-cluster.
+`capi.rbac.kubeVirt: true` grants the controller these permissions in the
+management cluster. When the `KubevirtCluster` uses `infraClusterSecretRef`,
+the identity in that kubeconfig needs them instead.
 
-The VM template must request the sidecar and give the VM its pod's address:
+The VM template must request the sidecar and use `bridge` binding (the sidecar
+does not work with `masquerade`):
 
 ```yaml
 spec:
@@ -128,6 +121,3 @@ spec:
                 - name: default
                   pod: {}
 ```
-
-The sidecar's network setup needs `bridge` binding; it does not work with
-`masquerade`.

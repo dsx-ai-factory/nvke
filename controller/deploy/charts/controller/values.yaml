@@ -147,11 +147,9 @@ nodeAgent:
     # arguments when TLS/JWT is enabled.
     dsxIdentityExchangeURL: ""
   kubeVirt:
-    # -- className of the infra cluster's SPIRE controller manager that issues
-    # DSX identities to KubeVirt VM nodes. Empty creates classless registrations.
+    # -- className of the SPIRE controller manager that issues DSX identities to VMs.
     spiffeIDClassName: ""
-    # -- MetalLB address pool for each KubeVirt VM node's agent Service. It must
-    # be reachable from the controller. Empty leaves the choice to MetalLB.
+    # -- MetalLB address pool for VM node agent Services. Must be reachable from the controller.
     addressPool: ""
   externalMTLS:
     # -- Pin an externally managed client certificate transport for newly
@@ -449,9 +447,8 @@ capi:
     # launchlayermachinetemplates). Only applies when `create` is true.
     # Keep it true while CAPLL's CRDs are installed.
     launchLayer: true
-    # -- Grant RBAC for CAPK's CRDs (kubevirtclusters, kubevirtmachines,
-    # kubevirtmachinetemplates) and for the per-VM node-agent Services and
-    # ClusterSPIFFEIDs. Only applies when `create` is true.
+    # -- Grant RBAC for CAPK's CRDs and the per-VM Services and ClusterSPIFFEIDs.
+    # Only applies when `create` is true.
     kubeVirt: false
 
 kubeadm:

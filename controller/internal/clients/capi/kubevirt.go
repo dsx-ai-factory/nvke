@@ -22,8 +22,8 @@ const (
 	kubeVirtMachineNamespaceLabel = "capk.cluster.x-k8s.io/kubevirt-machine-namespace"
 )
 
-var errKubeVirtRequiresExternalMTLS = errors.New("SPIFFE-enabled KubeVirt VM nodes require external mTLS: " +
-	"a VM runs no SPIRE agent, so its node agent has no SVID")
+var errKubeVirtRequiresTLSJWT = errors.New("KubeVirt VM nodes with SPIFFE or TLS/JWT require TLS/JWT with external mTLS: " +
+	"a VM runs no SPIRE agent")
 
 // IsKubeVirtMachineRef reports whether a Machine's infrastructure is a CAPK
 // KubevirtMachine.
@@ -37,8 +37,7 @@ func isKubeVirtObject(obj *unstructured.Unstructured, kind string) bool {
 }
 
 // isKubeVirtNodePool reports whether nodePool's machine template is a
-// KubevirtMachineTemplate. An unparseable template reports false; manifest
-// validation rejects it.
+// KubevirtMachineTemplate.
 func isKubeVirtNodePool(nodePool db.NodePool) bool {
 	if nodePool.Capi == nil {
 		return false
@@ -48,8 +47,9 @@ func isKubeVirtNodePool(nodePool db.NodePool) bool {
 }
 
 func validateKubeVirtNodeAgentProfile(profile db.Node) error {
-	if profile.SpiffeEnabled && !profile.NodeAgentExternalMTLSEnabled {
-		return errKubeVirtRequiresExternalMTLS
+	authenticated := profile.SpiffeEnabled || profile.NodeAgentTLSJWTEnabled
+	if authenticated && (!profile.NodeAgentTLSJWTEnabled || !profile.NodeAgentExternalMTLSEnabled) {
+		return errKubeVirtRequiresTLSJWT
 	}
 	return nil
 }

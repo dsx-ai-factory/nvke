@@ -76,13 +76,8 @@ type LaunchLayerNodeProvider struct {
 
 // CAPINodeProvider records per-node state for infra (CAPI) provider nodes.
 type CAPINodeProvider struct {
-	// KubeVirtVM marks a node whose CAPI machine is a KubevirtMachine. Its
-	// node agent gets its TLS/JWT token from the DSX metadata service in the
-	// VM and runs no SPIRE agent.
 	KubeVirtVM bool `json:"kubevirt_vm,omitempty"`
-	// AgentDialAddress is the address the controller dials the node agent at
-	// when the machine address is not reachable from the controller, such as a
-	// per-VM LoadBalancer address. Empty means dial IP.
+	// AgentDialAddress overrides IP as the address the node agent is dialed at.
 	AgentDialAddress string `json:"agent_dial_address,omitempty"`
 }
 

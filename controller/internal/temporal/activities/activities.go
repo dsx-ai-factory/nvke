@@ -82,8 +82,8 @@ func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, 
 	}
 	if node.NodeAgentTLSJWTEnabled {
 		args = append(args, "--grpc-auth-mode=tls-jwt")
-		// A VM has no SPIRE agent to get a JWT-SVID from, so its agent reads
-		// the DSX token from the metadata service in the VM instead.
+		// A VM has no SPIRE agent, so its agent gets the token from the DSX
+		// metadata service.
 		if node.IsKubeVirtVM() {
 			args = append(args, "--dsx-identity-metadata-url="+constants.DSXMetadataServiceURL)
 		} else {
