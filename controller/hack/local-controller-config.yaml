@@ -3,9 +3,8 @@
 
 # nvke-controller-config for host-local runs: make run, make run-local,
 # make run-remote, make debug, and the gofail e2e worker. A deployment gets the
-# same file from the chart instead. Every key is required, because
-# internal/controllerconfig has no defaults; TestLocalControllerConfig checks
-# that this file still loads and sets them all.
+# same file from the chart instead. Every key is listed explicitly so
+# TestLocalControllerConfig checks that this file still loads and sets them all.
 #
 # To change a setting for your own runs, copy this file under .local/ and point
 # CONTROLLER_CONFIG_PATH at the copy.
@@ -42,6 +41,9 @@ credentialMonitoring:
   inspectionInterval: 1h
   observationMaxAge: 3h
   warningDays: 45
+kubeVip:
+  localASN: 65100
+  staticPeerASN: 4294967000
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false

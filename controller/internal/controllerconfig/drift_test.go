@@ -128,6 +128,8 @@ var configMapOnly = []string{
 	"credentialMonitoring.inspectionInterval",
 	"credentialMonitoring.observationMaxAge",
 	"credentialMonitoring.warningDays",
+	"kubeVip.localASN",
+	"kubeVip.staticPeerASN",
 }
 
 // chartDeployment is the template whose env block decides what the chart sets.

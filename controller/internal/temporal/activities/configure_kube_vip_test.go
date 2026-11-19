@@ -26,12 +26,13 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		cluster    db.Cluster
-		nodePool   db.NodePool
-		cfg        config.Config
-		wantSource nvkeproto.ReconcileKubeVipRequest_BGPPeerASNSource
-		wantASN    uint32
-		wantFMDS   string
+		cluster      db.Cluster
+		nodePool     db.NodePool
+		cfg          config.Config
+		wantSource   nvkeproto.ReconcileKubeVipRequest_BGPPeerASNSource
+		wantASN      uint32
+		wantFMDS     string
+		wantLocalASN uint32
 	}{
 		"CAPI pool without Nico payload uses default ASN": {
 			cluster: db.Cluster{
@@ -45,6 +46,30 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 			wantSource: nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC,
 			wantASN:    4294967000,
 		},
+		"CAPI pool uses configured ASNs": {
+			cluster:  db.Cluster{ProviderType: db.ProviderTypeCAPI, ControlPlaneVIP: "10.0.0.10"},
+			nodePool: db.NodePool{ControlPlane: true, Capi: &db.CAPINodePoolProvider{}},
+			cfg: config.Config{KubeVip: config.KubeVipConfig{
+				LocalASN: 64512, StaticPeerASN: 4200000000,
+			}},
+			wantSource:   nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC,
+			wantASN:      4200000000,
+			wantLocalASN: 64512,
+		},
+		"Nico pool without VPC prefixes uses configured peer ASN": {
+			cluster:    db.Cluster{ProviderType: db.ProviderTypeNico, ControlPlaneVIP: "10.0.0.10"},
+			nodePool:   db.NodePool{ControlPlane: true, Nico: &db.NicoNodePoolProvider{}},
+			cfg:        config.Config{KubeVip: config.KubeVipConfig{StaticPeerASN: 65001}},
+			wantSource: nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC,
+			wantASN:    65001,
+		},
+		"LaunchLayer pool uses configured peer ASN": {
+			cluster:    db.Cluster{ProviderType: db.ProviderTypeLaunchLayer, ControlPlaneVIP: "10.0.0.10"},
+			nodePool:   db.NodePool{ControlPlane: true},
+			cfg:        config.Config{KubeVip: config.KubeVipConfig{StaticPeerASN: 65001}},
+			wantSource: nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_STATIC,
+			wantASN:    65001,
+		},
 		"CAPI pool with site FMDS endpoint uses FMDS ASN": {
 			cluster: db.Cluster{
 				ProviderType:    db.ProviderTypeCAPI,
@@ -56,10 +81,12 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 			},
 			cfg: config.Config{
 				KubeVipFMDSEndpoint: "http://169.254.169.254/latest/meta-data/asn",
+				KubeVip:             config.KubeVipConfig{LocalASN: 64512, StaticPeerASN: 65001},
 			},
-			wantSource: nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS,
-			wantASN:    0,
-			wantFMDS:   "http://169.254.169.254/latest/meta-data/asn",
+			wantSource:   nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS,
+			wantASN:      0,
+			wantFMDS:     "http://169.254.169.254/latest/meta-data/asn",
+			wantLocalASN: 64512,
 		},
 		"Nico pool with VPC prefix uses FMDS ASN": {
 			cluster: db.Cluster{
@@ -72,6 +99,7 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 					VpcPrefixIDs: []uuid.UUID{uuid.New()},
 				},
 			},
+			cfg:        config.Config{KubeVip: config.KubeVipConfig{StaticPeerASN: 65001}},
 			wantSource: nvkeproto.ReconcileKubeVipRequest_BGP_PEER_ASN_SOURCE_FMDS,
 			wantASN:    0,
 		},
@@ -131,7 +159,11 @@ func TestConfigureKubeVip_BGPPEERASNFromProvider(t *testing.T) {
 			request := fakeAgent.ReconcileKubeVipRequests[0]
 			require.Equal(t, "10.0.0.10", request.GetVipAddress())
 			require.Equal(t, "10.0.0.20", request.GetNodeIp())
-			require.Equal(t, uint32(65100), request.GetBgpAsn())
+			wantLocalASN := tt.wantLocalASN
+			if wantLocalASN == 0 {
+				wantLocalASN = 65100
+			}
+			require.Equal(t, wantLocalASN, request.GetBgpAsn())
 			require.Equal(t, tt.wantSource, request.GetBgpPeerAsnSource())
 			require.Equal(t, tt.wantASN, request.GetBgpPeerAsn())
 			require.Equal(t, tt.wantFMDS, request.GetFmdsEndpoint())
@@ -149,6 +181,7 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 		fmdsEndpoint        string
 		wantRunbooks        []string
 		wantError           string
+		bgp                 config.KubeVipConfig
 	}{
 		"unimplemented uses kube-vip runbook": {
 			rpcError:     status.Error(codes.Unimplemented, "unknown method ReconcileKubeVip"),
@@ -158,6 +191,11 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 			rpcError:            fmt.Errorf("reconcile call: %w", status.Error(codes.Unimplemented, "unknown method ReconcileKubeVip")),
 			configureSuperAdmin: true,
 			wantRunbooks:        []string{"configure-super-admin", configureKubeVipRunbookName},
+		},
+		"unimplemented passes configured ASNs to legacy runbook": {
+			rpcError:     status.Error(codes.Unimplemented, "unknown method ReconcileKubeVip"),
+			wantRunbooks: []string{configureKubeVipRunbookName},
+			bgp:          config.KubeVipConfig{LocalASN: 64512, StaticPeerASN: 4200000000},
 		},
 		"unimplemented passes FMDS endpoint to legacy runbook": {
 			rpcError:     status.Error(codes.Unimplemented, "unknown method ReconcileKubeVip"),
@@ -197,12 +235,19 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 			fakeAgent := &agenttest.FakeClient{ReconcileKubeVipError: tt.rpcError}
 			fakeAgent.ExecuteScriptHook = func(_ db.Node, runbookName, script string) (*nvkeproto.ExecuteScriptResponse, error) {
 				if runbookName == configureKubeVipRunbookName {
+					wantLocalAS := "65100"
+					if tt.bgp.LocalASN != 0 {
+						wantLocalAS = fmt.Sprint(tt.bgp.LocalASN)
+					}
 					wantPeerAS := "4294967000"
+					if tt.bgp.StaticPeerASN != 0 {
+						wantPeerAS = fmt.Sprint(tt.bgp.StaticPeerASN)
+					}
 					if tt.fmdsEndpoint != "" {
 						wantPeerAS = "FROM_FMDS"
 					}
 					require.Contains(t, script, "export VIP_ADDRESS='10.0.0.10'")
-					require.Contains(t, script, "export BGP_AS='65100'")
+					require.Contains(t, script, "export BGP_AS='"+wantLocalAS+"'")
 					require.Contains(t, script, "export BGP_PEER_AS='"+wantPeerAS+"'")
 					require.Contains(t, script, "export FMDS_ENDPOINT='"+tt.fmdsEndpoint+"'")
 					require.Contains(t, script, "export NODE_IP='10.0.0.20'")
@@ -213,6 +258,7 @@ func TestConfigureKubeVip_RPCFallbackBoundary(t *testing.T) {
 			a := &Activities{
 				cfg: config.Config{
 					KubeVipFMDSEndpoint: tt.fmdsEndpoint,
+					KubeVip:             tt.bgp,
 				},
 				db:              mockDB,
 				nodeAgentClient: fakeAgent,

@@ -128,6 +128,15 @@ func TestRenderedChart(t *testing.T) {
 				}, cfg.AgentReadiness)
 			}
 
+			switch filepath.Base(render) {
+			case "kube-vip-custom.yaml":
+				require.Equal(t, uint32(64512), cfg.KubeVip.LocalASN)
+				require.Equal(t, uint32(4200000000), cfg.KubeVip.StaticPeerASN)
+			case "defaults.yaml", "kube-vip-empty.yaml", "kube-vip-null.yaml", "kube-vip-null-section.yaml":
+				require.Equal(t, uint32(65100), cfg.KubeVip.LocalASN)
+				require.Equal(t, uint32(4294967000), cfg.KubeVip.StaticPeerASN)
+			}
+
 			if filepath.Base(render) == "dev-without-vip.yaml" {
 				require.True(t, cfg.AllowControlPlaneWithoutVIP)
 			}
@@ -308,6 +317,19 @@ func TestLoadStartupConfig(t *testing.T) {
 		require.Equal(t, "debug", cfg.LogLevel, "from the environment")
 		require.Equal(t, "localhost:7233", cfg.TemporalHostPort, "from the file")
 		require.Equal(t, file.ProfilesDir, cfg.ProfilesDir)
+	})
+
+	t.Run("older config without kubeVip uses defaults", func(t *testing.T) {
+		raw, err := os.ReadFile(localControllerConfig)
+		require.NoError(t, err)
+		legacy := strings.Replace(string(raw), "kubeVip:\n  localASN: 65100\n  staticPeerASN: 4294967000\n", "", 1)
+		require.NotContains(t, legacy, "kubeVip:")
+		t.Setenv("CONTROLLER_CONFIG_PATH", writeConfig(t, legacy))
+
+		cfg, _, err := controllerconfig.LoadStartupConfig()
+		require.NoError(t, err)
+		require.Equal(t, uint32(65100), cfg.KubeVip.LocalASN)
+		require.Equal(t, uint32(4294967000), cfg.KubeVip.StaticPeerASN)
 	})
 
 	t.Run("a missing file is an error", func(t *testing.T) {
