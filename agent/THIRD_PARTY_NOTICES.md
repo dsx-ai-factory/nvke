@@ -49,6 +49,7 @@ commands are not listed, because they are not distributed.
 | [github.com/go-openapi/swag/stringutils](https://pkg.go.dev/github.com/go-openapi/swag/stringutils@v0.29.2) | Apache-2.0 | github.com/go-openapi/swag/stringutils@v0.29.2 |
 | [github.com/go-openapi/swag/typeutils](https://pkg.go.dev/github.com/go-openapi/swag/typeutils@v0.29.2) | Apache-2.0 | github.com/go-openapi/swag/typeutils@v0.29.2 |
 | [github.com/go-openapi/swag/yamlutils](https://pkg.go.dev/github.com/go-openapi/swag/yamlutils@v0.29.2) | Apache-2.0 | github.com/go-openapi/swag/yamlutils@v0.29.2 |
+| [github.com/golang-jwt/jwt/v5](https://pkg.go.dev/github.com/golang-jwt/jwt/v5@v5.3.1) | MIT | github.com/golang-jwt/jwt/v5@v5.3.1 |
 | [github.com/golang/protobuf/proto](https://pkg.go.dev/github.com/golang/protobuf@v1.5.4) | BSD-3-Clause | github.com/golang/protobuf@v1.5.4 |
 | [github.com/google/gnostic-models](https://pkg.go.dev/github.com/google/gnostic-models@v0.7.0) | Apache-2.0 | github.com/google/gnostic-models@v0.7.0 |
 | [github.com/google/logger](https://pkg.go.dev/github.com/google/logger@v1.1.2) | Apache-2.0 | github.com/google/logger@v1.1.2 |
@@ -4377,6 +4378,23 @@ _Apache-2.0_
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+```
+
+### github.com/golang-jwt/jwt/v5
+
+_MIT_
+
+```
+Copyright (c) 2012 Dave Grijalva
+Copyright (c) 2021 golang-jwt maintainers
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
 
 ```
 
