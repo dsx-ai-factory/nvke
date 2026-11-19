@@ -67,7 +67,7 @@ gh api --paginate "repos/${repo}/actions/runs/${run}/jobs?filter=all&per_page=10
 if [[ "${format}" == markdown ]]; then
     echo "## Triage of run ${run}"
     echo
-    echo "Diagnosis only: nothing was re-run, posted or deleted."
+    echo "This table is a diagnosis: producing it re-ran, posted and deleted nothing."
     echo
 
     if [[ ! -s "${work}/jobs.tsv" ]]; then

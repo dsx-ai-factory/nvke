@@ -14,14 +14,17 @@
 #           It never sees the workflow's own shell source.
 #   action  what may be done about it automatically:
 #             none               leave it to a person
-#             rerun-failed       re-run the failed jobs of the run, once
+#             rerun-failed       re-run the failed jobs of the run, once; the
+#                                triage workflow does it when every failed job
+#                                of the first attempt names this action
 #             rerun-image-build  re-run the OS image build's failed jobs first
 #             wait-then-rerun    wait before the single re-run
 #   note    what it means and what to do, for a person.
 #
-# An action is a recommendation. A rule that names rerun-failed says a re-run
-# has fixed this failure before; it does not say why it failed. Add one only
-# with a failure seen at least three times and a re-run that fixed it.
+# A rule that names rerun-failed says a re-run has fixed this failure before; it
+# does not say why it failed. Add one only with a failure seen at least three
+# times and a re-run that fixed it. The other actions are recommendations: nothing
+# acts on them yet.
 
 rules:
   - name: os-image-not-published
