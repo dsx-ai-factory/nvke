@@ -72,6 +72,12 @@ ROOT_FS_LABEL ?= cloudimg-rootfs
 # either way, because the build VM captures its log there.
 SERIAL_CONSOLE ?=
 
+# The Ubuntu snapshot every Ubuntu package comes from (#2206). Empty keeps the
+# default in variables.pkr.hcl, the one place it is pinned; set either to
+# override it for one build, e.g. a candidate ID or a mirror of the service.
+UBUNTU_SNAPSHOT ?=
+UBUNTU_SNAPSHOT_BASE_URL ?=
+
 # amd64 or arm64. Drives the ISO default, source package preparation, and the
 # explicit Packer architecture variable that selects QEMU, firmware, console,
 # and NVIDIA kernel behavior.
@@ -597,6 +603,8 @@ _os-image-fde: prepare-image-build
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
 		-var "serial_console=$(SERIAL_CONSOLE)" \
 		-var "kernel_package=$(KERNEL_PACKAGE)" \
+		$(if $(UBUNTU_SNAPSHOT),-var "ubuntu_snapshot=$(UBUNTU_SNAPSHOT)") \
+		$(if $(UBUNTU_SNAPSHOT_BASE_URL),-var "ubuntu_snapshot_base_url=$(UBUNTU_SNAPSHOT_BASE_URL)") \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_FDE)/fde/nvke-node.qcow2" \
@@ -640,6 +648,8 @@ _os-image-non-fde: prepare-image-build
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
 		-var "serial_console=$(SERIAL_CONSOLE)" \
 		-var "kernel_package=$(KERNEL_PACKAGE)" \
+		$(if $(UBUNTU_SNAPSHOT),-var "ubuntu_snapshot=$(UBUNTU_SNAPSHOT)") \
+		$(if $(UBUNTU_SNAPSHOT_BASE_URL),-var "ubuntu_snapshot_base_url=$(UBUNTU_SNAPSHOT_BASE_URL)") \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-non-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)/non-fde/nvke-node.qcow2" \

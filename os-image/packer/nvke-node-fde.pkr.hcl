@@ -43,6 +43,7 @@ source "qemu" "nvke-fde" {
       serial_console            = local.serial_console
       capture_apt_acquisitions  = var.capture_apt_acquisitions
       apt_capture_configuration = file("${local.project_root}/cidata/apt-capture.conf")
+      ubuntu_snapshot_uri       = local.ubuntu_snapshot_uri
     })
     "/meta-data" = "instance-id: nke-packer-fde\nlocal-hostname: nke-packer-fde\n"
   }
