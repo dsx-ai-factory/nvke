@@ -5,6 +5,7 @@ package nodeagentreadiness
 
 import (
 	"errors"
+	"regexp"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -15,6 +16,14 @@ const (
 	// address to dial.
 	noAddressMessage = "Node has no IP address"
 )
+
+// tcpOpLocalAddr matches the local address net.OpError reports for operations
+// on an established connection, as "read tcp <local>-><remote>" or
+// "write tcp6 <local>-><remote>". The local port is ephemeral and differs on
+// every probe, so keeping it in the condition message would make each probe
+// look like a new failure: the write it triggers requeues the node and the
+// agent is probed again about a second later. Only the remote side is kept.
+var tcpOpLocalAddr = regexp.MustCompile(`\b(read|write|dial) (tcp[46]?) \S+->`)
 
 type nodeAgentProbe struct {
 	agentVersion string
@@ -38,7 +47,7 @@ func nodeAgentCondition(existing db.Condition, agentProbe nodeAgentProbe) db.Con
 		if errors.Is(agentProbe.err, agent.ErrNoAddress) {
 			return updatedCondition(existing, db.ConditionStatusFalse, noAddressMessage)
 		}
-		return updatedCondition(existing, db.ConditionStatusFalse, agentProbe.err.Error())
+		return updatedCondition(existing, db.ConditionStatusFalse, normalizeProbeErrorMessage(agentProbe.err.Error()))
 	}
 
 	return updatedCondition(existing, db.ConditionStatusTrue, "Node agent is reachable")
@@ -47,4 +56,11 @@ func nodeAgentCondition(existing db.Condition, agentProbe nodeAgentProbe) db.Con
 func updatedCondition(existing db.Condition, status db.ConditionStatus, message string) db.Condition {
 	db.SetCondition(&existing, db.Condition{Status: status, Message: message})
 	return existing
+}
+
+// normalizeProbeErrorMessage drops the per-connection local address from a
+// probe error so that consecutive failures with the same cause produce the
+// same condition message.
+func normalizeProbeErrorMessage(message string) string {
+	return tcpOpLocalAddr.ReplaceAllString(message, "$1 $2 ->")
 }
