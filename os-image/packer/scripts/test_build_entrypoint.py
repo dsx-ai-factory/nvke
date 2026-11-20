@@ -83,6 +83,48 @@ output.mkdir(parents=True, exist_ok=True)
                               f"efi_firmware_vars={self.env['OVMF_VARS_TEMPLATE']}"):
                     self.assertIn(value, args)
 
+    def test_snapshot_variables_pass_through_only_when_set(self):
+        # The Packer default is the one place the snapshot ID lives; Make adds
+        # a -var only for an explicit override, so it never restates it.
+        for variant, extra in (
+            ("non-fde", []),
+            ("fde", ["UBUNTU_SNAPSHOT=20261119T000000Z", "UBUNTU_SNAPSHOT_BASE_URL=https://mirror.example/ubuntu"]),
+        ):
+            with self.subTest(variant=variant, extra=extra):
+                result = self.make(f"os-image-{variant}", *extra, skip_build_setup=True)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                args = json.loads(Path(self.env["PACKER_ARGS"]).read_text())
+                snapshot_args = [a for a in args if a.startswith("ubuntu_snapshot")]
+                if extra:
+                    self.assertEqual(snapshot_args, ["ubuntu_snapshot=20261119T000000Z",
+                                                     "ubuntu_snapshot_base_url=https://mirror.example/ubuntu"])
+                    self.assertEqual(args[args.index(snapshot_args[0]) - 1], "-var")
+                else:
+                    self.assertEqual(snapshot_args, [])
+
+    def test_snapshot_check_target_invokes_id_subcommand(self):
+        recorder = self.root / "python-recorder"
+        recorder.write_text('#!/bin/sh\nprintf "%s\\n" "$@" > "$PYTHON_ARGS"\n')
+        recorder.chmod(0o755)
+        self.env["PYTHON_ARGS"] = str(self.root / "python-args")
+        script = str(self.packer_dir / "scripts/check-ubuntu-snapshot.py")
+        for extra, expected_id in ((["UBUNTU_SNAPSHOT=20261119T000000Z"], "20261119T000000Z"), ([], None)):
+            with self.subTest(extra=extra):
+                result = subprocess.run(
+                    [os.environ.get("MAKE", "make"), "--no-print-directory", "-C", str(self.packer_dir),
+                     "ubuntu-snapshot-check", f"PYTHON={recorder}", *extra],
+                    env=self.env, text=True, capture_output=True, check=False)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                args = (self.root / "python-args").read_text().split("\n")[:-1]
+                self.assertEqual(args[:5], [script.replace(str(self.packer_dir) + "/", "./"), "id",
+                                            "--base-url", "https://snapshot.ubuntu.com/ubuntu", "--snapshot-id"])
+                if expected_id:
+                    self.assertEqual(args[5], expected_id)
+                else:
+                    # No ID given: propose the current hour, and say so.
+                    self.assertRegex(args[5], r"^[0-9]{8}T[0-9]{2}0000Z$")
+                    self.assertIn(f"candidate snapshot: {args[5]}", result.stdout)
+
     def test_serial_console_defaults_to_empty_and_passes_an_override_through(self):
         # Empty means "use the architecture default", resolved in the template
         # rather than in Make. A variant each, not the same one twice: the build

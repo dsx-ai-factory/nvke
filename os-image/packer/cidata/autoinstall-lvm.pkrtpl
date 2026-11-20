@@ -56,10 +56,43 @@ autoinstall:
   ntp:
     enabled: true
 
-%{ if capture_apt_acquisitions ~}
-  # Capture real archives before APT cache cleanup. Repository metadata is
-  # checked after autoinstall, when python3-apt is available in the target.
+  # Every Ubuntu package comes from one snapshot.ubuntu.com snapshot (#2206),
+  # for the installer and for the installed system, which keeps these sources;
+  # nothing reads the live archive or security.ubuntu.com. One archive serves
+  # both architectures: the snapshot service carries arm64 under /ubuntu, and
+  # its /ubuntu-ports answers 401. Subiquity mirror-checks this single legacy
+  # `primary` candidate, and `fallback: abort` stops the install when that check
+  # fails rather than quietly installing from the ISO alone.
   apt:
+    preserve_sources_list: false
+    geoip: false
+    fallback: abort
+    primary:
+      - arches: [default]
+        uri: ${ubuntu_snapshot_uri}
+    security:
+      - arches: [default]
+        uri: ${ubuntu_snapshot_uri}
+    # Written out rather than derived from the image's own ubuntu.sources:
+    # curtin derives it by swapping a default mirror URI that matches exactly,
+    # and on the 24.04.5 arm64 ISO the file's ports.ubuntu.com/ubuntu-ports/
+    # has a trailing slash curtin's default lacks, so the live archive stayed.
+    # Curtin fills $PRIMARY, $SECURITY and $RELEASE from the sections above.
+    sources_list: |
+      Types: deb
+      URIs: $PRIMARY
+      Suites: $RELEASE $RELEASE-updates $RELEASE-backports
+      Components: main restricted universe multiverse
+      Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+      Types: deb
+      URIs: $SECURITY
+      Suites: $RELEASE-security
+      Components: main restricted universe multiverse
+      Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+%{ if capture_apt_acquisitions ~}
+    # Capture real archives before APT cache cleanup. Repository metadata is
+    # checked after autoinstall, when python3-apt is available in the target.
     conf: |
       ${indent(6, apt_capture_configuration)}
 %{ endif ~}
@@ -98,14 +131,16 @@ autoinstall:
     - socat
     - ethtool
 
-  # security, not all: "all" was tried and reverted -- it pulls in every
-  # linux-firmware-* split package (AMD/Intel/Broadcom/Qualcomm/Mellanox/
-  # Realtek graphics+wireless blobs, individually large), which took a
-  # confirmed FDE build from ~5-7min to 24m27s under real KVM, risking the
-  # ssh_timeout budget for an unrelated reason. Applied by curtin during
-  # install, before the late-commands below, so any kernel upgrade here is
-  # already in place when those regenerate the initramfs.
-  updates: security
+  # all, not security: the base system arrives from the ISO at point-release
+  # versions, and the snapshot no longer indexes any that -updates has since
+  # replaced, so the build's snapshot check (provision.sh) fails unless every
+  # package is brought up to the snapshot here. An earlier switch to "all" was
+  # reverted for pulling every linux-firmware-* split package; the kernel now
+  # depends on all of them anyway. Its cost is measured in
+  # os-image/docs/ubuntu-snapshot.md. Applied by curtin during install, before
+  # the late-commands below, so any kernel upgrade here is already in place
+  # when those regenerate the initramfs.
+  updates: all
 
   late-commands:
     - curtin in-target --target=/target -- sh -c 'echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu'

@@ -72,6 +72,12 @@ ROOT_FS_LABEL ?= cloudimg-rootfs
 # either way, because the build VM captures its log there.
 SERIAL_CONSOLE ?=
 
+# The Ubuntu snapshot every Ubuntu package comes from (#2206). Empty keeps the
+# default in variables.pkr.hcl, the one place it is pinned; set either to
+# override it for one build, e.g. a candidate ID or a mirror of the service.
+UBUNTU_SNAPSHOT ?=
+UBUNTU_SNAPSHOT_BASE_URL ?=
+
 # amd64 or arm64. Drives the ISO default, source package preparation, and the
 # explicit Packer architecture variable that selects QEMU, firmware, console,
 # and NVIDIA kernel behavior.
@@ -210,7 +216,7 @@ KERNEL_PACKAGE ?= $(if $(filter hvf,$(ACCELERATOR)),linux-generic,)
 PACKER_BUILD = ARCH=$(ARCH) ACCELERATOR=$(ACCELERATOR) REQUIRE_ACCELERATION=$(REQUIRE_ACCELERATION) \
 	./scripts/run-packer-build.sh $(PACKER) build
 
-.PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-ssh-key prepare-image-build prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde check-acceleration
+.PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-ssh-key prepare-image-build prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde check-acceleration ubuntu-snapshot-check
 
 prepare-ssh-key:
 	@command -v ssh-keygen >/dev/null 2>&1 || { \
@@ -302,6 +308,16 @@ init-packer: preflight
 	$(PACKER) init "$(PACKER_PROJECT)"
 
 init-fde init-non-fde: init-packer
+
+# Check that a candidate Ubuntu snapshot serves both series and both
+# architectures before it becomes ubuntu_snapshot's default in
+# variables.pkr.hcl (#2206). Without UBUNTU_SNAPSHOT, proposes the current
+# hour. The base URL defaults to the public service, as the variable does.
+ubuntu-snapshot-check:
+	@id="$(UBUNTU_SNAPSHOT)"; \
+	if [ -z "$$id" ]; then id="$$(date -u +%Y%m%dT%H0000Z)"; echo "candidate snapshot: $$id"; fi; \
+	$(PYTHON) ./scripts/check-ubuntu-snapshot.py id \
+		--base-url "$(or $(UBUNTU_SNAPSHOT_BASE_URL),https://snapshot.ubuntu.com/ubuntu)" --snapshot-id "$$id"
 
 validate-packer:
 	@command -v "$(PACKER)" >/dev/null 2>&1 || { echo "Packer is required to validate the directory project" >&2; exit 1; }
@@ -597,6 +613,8 @@ _os-image-fde: prepare-image-build
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
 		-var "serial_console=$(SERIAL_CONSOLE)" \
 		-var "kernel_package=$(KERNEL_PACKAGE)" \
+		$(if $(UBUNTU_SNAPSHOT),-var "ubuntu_snapshot=$(UBUNTU_SNAPSHOT)") \
+		$(if $(UBUNTU_SNAPSHOT_BASE_URL),-var "ubuntu_snapshot_base_url=$(UBUNTU_SNAPSHOT_BASE_URL)") \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_FDE)/fde/nvke-node.qcow2" \
@@ -640,6 +658,8 @@ _os-image-non-fde: prepare-image-build
 		-var "root_fs_label=$(ROOT_FS_LABEL)" \
 		-var "serial_console=$(SERIAL_CONSOLE)" \
 		-var "kernel_package=$(KERNEL_PACKAGE)" \
+		$(if $(UBUNTU_SNAPSHOT),-var "ubuntu_snapshot=$(UBUNTU_SNAPSHOT)") \
+		$(if $(UBUNTU_SNAPSHOT_BASE_URL),-var "ubuntu_snapshot_base_url=$(UBUNTU_SNAPSHOT_BASE_URL)") \
 		"$(PACKER_PROJECT)"
 	mkdir "$(CURDIR)/output-non-fde"
 	mv "$(PACKER_OUTPUT_DIRECTORY_NON_FDE)/non-fde/nvke-node.qcow2" \

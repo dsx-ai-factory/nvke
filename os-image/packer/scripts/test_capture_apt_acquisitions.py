@@ -435,6 +435,7 @@ class CaptureAPTTest(unittest.TestCase):
         # not approximate the template grammar or add a Python YAML dependency.
         configuration = (SCRIPTS.parent / "cidata" / "apt-capture.conf").read_text()
         template = str(SCRIPTS.parent / "cidata" / "autoinstall-lvm.pkrtpl")
+        snapshot = "https://snapshot.ubuntu.com/ubuntu/20261119T000000Z"
         for series in ("24.04", "26.04"):
             for capture in (False, True):
                 for encrypted in (False, True):
@@ -442,16 +443,39 @@ class CaptureAPTTest(unittest.TestCase):
                         values = dict(ssh_public_key="ssh-ed25519 fixture", luks_enabled=encrypted,
                                       luks_passphrase="fixture-only", nvidia_kernel_package="linux-nvidia",
                                       serial_console="ttyS0", capture_apt_acquisitions=capture,
-                                      apt_capture_configuration=configuration, ubuntu_series=series)
+                                      apt_capture_configuration=configuration, ubuntu_series=series,
+                                      ubuntu_snapshot_uri=snapshot)
                         expression = f"jsonencode(yamldecode(templatefile({json.dumps(template)}, {json.dumps(values)})))\n"
                         result = subprocess.run([os.environ["NKE_TEST_PACKER"], "console", "-config-type=hcl2"],
                                                 input=expression, check=True, capture_output=True, text=True, timeout=30)
                         autoinstall = json.loads(result.stdout)["autoinstall"]
                         self.assertEqual("erofs-utils" in autoinstall["packages"], series == "26.04")
+                        # #2206: installer and target take Ubuntu only from the
+                        # snapshot, for both architectures, with nothing live.
+                        apt = autoinstall["apt"]
+                        mirror = [{"arches": ["default"], "uri": snapshot}]
+                        self.assertEqual(apt["primary"], mirror)
+                        self.assertEqual(apt["security"], mirror)
+                        self.assertIs(apt["geoip"], False)
+                        self.assertEqual(apt["fallback"], "abort")
+                        self.assertIs(apt["preserve_sources_list"], False)
+                        self.assertEqual(autoinstall["updates"], "all")
+                        # An explicit template: noble's curtin only swaps a default
+                        # mirror URI that matches exactly, and the 24.04.5 arm64
+                        # ISO's `ports.ubuntu.com/ubuntu-ports/` has a trailing
+                        # slash its default lacks, so the live archive survived.
+                        stanzas = [s for s in apt["sources_list"].strip().split("\n\n")]
+                        self.assertEqual([[line.split(":", 1)[0] for line in s.splitlines()] for s in stanzas],
+                                         [["Types", "URIs", "Suites", "Components", "Signed-By"]] * 2)
+                        self.assertIn("URIs: $PRIMARY", stanzas[0])
+                        self.assertIn("Suites: $RELEASE $RELEASE-updates $RELEASE-backports", stanzas[0])
+                        self.assertIn("URIs: $SECURITY", stanzas[1])
+                        self.assertIn("Suites: $RELEASE-security", stanzas[1])
+                        self.assertNotRegex(apt["sources_list"], r"ubuntu\.com/|http://")
                         if capture:
-                            self.assertEqual(autoinstall["apt"]["conf"], configuration)
+                            self.assertEqual(apt["conf"], configuration)
                         else:
-                            self.assertNotIn("apt", autoinstall)
+                            self.assertNotIn("conf", apt)
 
 if __name__ == "__main__":
     unittest.main()
