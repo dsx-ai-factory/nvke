@@ -29,6 +29,9 @@ func NewApp(name, usage, version string, commands ...*cli.Command) *cli.App {
 		Version:         version,
 		HideHelpCommand: true,
 		OnUsageError:    codedUsageError,
+		// Run owns the exit status; urfave/cli must not exit the process from
+		// inside a command (it does for an unknown help topic).
+		ExitErrHandler: func(*cli.Context, error) {},
 		Action: func(c *cli.Context) error {
 			if c.Args().Present() {
 				return oserr.New(oserr.CodeUsage, "unknown command %q", c.Args().First())
@@ -72,16 +75,23 @@ func configureCommandUsage(command *cli.Command) {
 }
 
 // Run executes app with args (args[0] is the program name), writes results to
-// stdout and diagnostics to stderr, and returns the process exit status. An
-// uncoded error from a cancelled or timed-out run reports CodeTimeout, so a
-// caller can retry it.
+// stdout and diagnostics to stderr, and returns the process exit status. Every
+// failure carries a code: an uncoded error from a cancelled or timed-out run
+// reports CodeTimeout, so a caller can retry it; urfave/cli's own exit errors
+// (an unknown help topic) report CodeUsage; anything else reports CodeInternal.
 func Run(ctx context.Context, app *cli.App, args []string, stdout, stderr io.Writer) int {
 	app.Writer, app.ErrWriter = stdout, stderr
 	err := app.RunContext(ctx, args)
 	var coded *oserr.Error
-	if err != nil && !errors.As(err, &coded) &&
-		(ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+	var exitCoder cli.ExitCoder
+	switch {
+	case err == nil || errors.As(err, &coded):
+	case ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded):
 		err = oserr.Wrap(oserr.CodeTimeout, err, "run canceled")
+	case errors.As(err, &exitCoder):
+		err = oserr.Wrap(oserr.CodeUsage, err, "invalid command usage")
+	default:
+		err = oserr.Wrap(oserr.CodeInternal, err, "command failed")
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", app.Name, err)

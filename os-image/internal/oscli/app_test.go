@@ -44,6 +44,8 @@ func TestCommandLine(t *testing.T) {
 		{name: "unknown command is usage error", args: []string{"frobnicate"}, wantExit: 2, wantStderrContains: []string{"NVKE-OS-E-USAGE"}},
 		{name: "version rejects positional args", args: []string{"version", "typo"}, wantExit: 2, wantStdoutEmpty: true, wantStderrContains: []string{"NVKE-OS-E-USAGE"}},
 		{name: "manifest rejects positional args", args: []string{"manifest", "extra"}, wantExit: 2, wantStderrContains: []string{"NVKE-OS-E-USAGE"}},
+		{name: "help for a known command", args: []string{"--help", "version"}, wantExit: 0, wantStdoutContains: []string{"--format"}},
+		{name: "help for an unknown command is usage error", args: []string{"--help", "frobnicate"}, wantExit: 2, wantStderrContains: []string{"NVKE-OS-E-USAGE"}},
 	}
 
 	for _, tc := range tests {
@@ -118,6 +120,8 @@ func TestSubcommandUsageContract(t *testing.T) {
 		{name: "unknown subcommand is usage error", args: []string{"repo", "frobnicate"}, wantExit: 2, wantStdoutEmpty: true, wantStderrContains: "NVKE-OS-E-USAGE"},
 		{name: "unknown subcommand flag is usage error", args: []string{"repo", "add", "--bogus"}, wantExit: 2, wantStdoutEmpty: true, wantStderrContains: "NVKE-OS-E-USAGE"},
 		{name: "stray subcommand argument is usage error", args: []string{"repo", "add", "extra"}, wantExit: 2, wantStdoutEmpty: true, wantStderrContains: "NVKE-OS-E-USAGE"},
+		{name: "help subcommand for a known subcommand", args: []string{"repo", "help", "add"}, wantExit: 0},
+		{name: "help subcommand for an unknown subcommand is usage error", args: []string{"repo", "help", "frobnicate"}, wantExit: 2, wantStderrContains: "NVKE-OS-E-USAGE"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -150,15 +154,16 @@ func TestCancelledRunExitsTimeout(t *testing.T) {
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
 	tests := []struct {
-		name     string
-		ctx      context.Context
-		err      error
-		wantExit int
+		name       string
+		ctx        context.Context
+		err        error
+		wantExit   int
+		wantStderr string
 	}{
 		{name: "cancelled context and uncoded error", ctx: cancelled, err: errors.New("interrupted"), wantExit: 31},
 		{name: "deadline error from the verb", ctx: context.Background(), err: fmt.Errorf("probe: %w", context.DeadlineExceeded), wantExit: 31},
 		{name: "cancelled context keeps a coded error", ctx: cancelled, err: oserr.New(oserr.CodeUnsupported, "x"), wantExit: 10},
-		{name: "live context and uncoded error is internal", ctx: context.Background(), err: errors.New("boom"), wantExit: 1},
+		{name: "live context and uncoded error is internal", ctx: context.Background(), err: errors.New("boom"), wantExit: 1, wantStderr: "NVKE-OS-E-INTERNAL"},
 		{name: "cancelled context and success is success", ctx: cancelled, err: nil, wantExit: 0},
 	}
 	for _, tc := range tests {
@@ -170,6 +175,7 @@ func TestCancelledRunExitsTimeout(t *testing.T) {
 			got := oscli.Run(tc.ctx, app, []string{"nvke-os", "probe"}, &stdout, &stderr)
 
 			require.Equal(t, tc.wantExit, got, "stderr=%q", stderr.String())
+			require.Contains(t, stderr.String(), tc.wantStderr)
 		})
 	}
 }
