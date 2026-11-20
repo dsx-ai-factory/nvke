@@ -400,11 +400,11 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			workerPools: []nvke.NodePoolSpec{
 				// Old agent image pins the agent version to 0.1.22, which is before the new nvkeproto.CheckCloudInitStatus was introduced in version 0.1.24.
 				// So this release test exists to prove that the controller can still provision nodePools that may still be pointed at older agent versions.
-				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, Release: "nvke-nico-vms-24.04-amd64-fde-old-agent"},
-				// nicoVMSNodePoolSpec defaults kube/system reserved memory to 250Mi so the
-				// default nico-vms instance type has enough allocatable memory.
-				{Name: "worker-260625-24.04", NodeNamePrefix: "w260625", DesiredNodeCount: 1, Release: "nke-260625-24.04-x86-fde"},
-				{Name: "worker-260602-24.04", NodeNamePrefix: "w260602", DesiredNodeCount: 1, Release: "nke-260602-24.04-x86-fde"},
+				// ovnkube-node keeps its chart requests (1312Mi on 2.4.2), which the
+				// default cpu2-mem2gb instance type cannot fit, so every worker is large.
+				{Name: "worker-old-agent", NodeNamePrefix: "wold", DesiredNodeCount: 1, Release: "nvke-nico-vms-24.04-amd64-fde-old-agent", InstanceTypeID: nicoVMSLargeInstanceID},
+				{Name: "worker-260625-24.04", NodeNamePrefix: "w260625", DesiredNodeCount: 1, Release: "nke-260625-24.04-x86-fde", InstanceTypeID: nicoVMSLargeInstanceID},
+				{Name: "worker-260602-24.04", NodeNamePrefix: "w260602", DesiredNodeCount: 1, Release: "nke-260602-24.04-x86-fde", InstanceTypeID: nicoVMSLargeInstanceID},
 			},
 		},
 		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
