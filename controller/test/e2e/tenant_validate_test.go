@@ -10,13 +10,13 @@ import (
 	"net"
 	"os"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	utilrand "k8s.io/apimachinery/pkg/util/rand"
@@ -31,9 +31,9 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/site"
 )
 
-// The validation image's tenant checks: the site checks that hold on any
-// Kubernetes cluster, run against one tenant, plus what the controller's
-// record of that tenant says it should have.
+// The validation image's tenant checks: the management cluster checks that
+// hold on any Kubernetes cluster, run against one tenant, plus what the
+// controller's record of that tenant says it should have.
 //
 // The suite reaches the tenant as a ServiceAccount the runner provisions in
 // it, NVKE's tenant automation path: a read-only ClusterRole, and create and
@@ -45,32 +45,19 @@ const (
 	// Required when tenantValidateEnv is true.
 	tenantClusterEnv = "NVKE_TENANT_CLUSTER"
 	// tenantTokenSecretEnv names a Secret in the suite's own namespace on
-	// the site holding the tenant ServiceAccount's credential under
+	// the management cluster holding the tenant ServiceAccount's credential under
 	// tenantTokenKey and tenantCAKey, and optionally the API server URL
 	// under tenantServerKey. Unset is nvke-validate-<cluster>.
 	tenantTokenSecretEnv = "NVKE_TENANT_TOKEN_SECRET"
-	// tenantNamespaceEnv is the tenant namespace the ServiceAccount may
-	// create in, where the probe pods run. Its pods are left out of the pod
-	// check.
-	tenantNamespaceEnv = "NVKE_TENANT_NAMESPACE"
 	// tenantKubernetesVersionEnv overrides the version the controller
 	// records for the tenant's control plane.
 	tenantKubernetesVersionEnv = "NVKE_TENANT_KUBERNETES_VERSION"
-	// tenantNamespacesEnv replaces the namespaces that must each run a
-	// workload, comma-separated. Unset is kube-system.
-	tenantNamespacesEnv = "NVKE_TENANT_NAMESPACES"
-	// tenantProbeImageEnv is the probe pods' image, which needs sh,
-	// nslookup and curl.
-	tenantProbeImageEnv = "NVKE_TENANT_PROBE_IMAGE"
-	// tenantProbePullSecretsEnv lists, comma-separated, the Secrets in the
-	// tenant namespace that the probe pods pull their image with.
-	tenantProbePullSecretsEnv = "NVKE_TENANT_PROBE_PULL_SECRETS"
-	// tenantGPUNodesEnv is how many nodes must advertise GPUs. Unset skips
-	// the GPU checks.
-	tenantGPUNodesEnv = "NVKE_TENANT_GPU_NODES"
-	// tenantGPUImageEnv is the GPU workload's image, which needs sh. The
-	// NVIDIA container runtime mounts nvidia-smi into it.
-	tenantGPUImageEnv = "NVKE_TENANT_GPU_IMAGE"
+	// tenantWorkloadVersionsEnv overrides tenant.workloadVersions for one
+	// run, as namespace/workload=version comma-separated.
+	tenantWorkloadVersionsEnv = "NVKE_TENANT_WORKLOAD_VERSIONS"
+	// fieldGPUNodes is how many nodes must advertise GPUs. Unset skips the
+	// GPU checks.
+	fieldGPUNodes = "tenant.gpu.nodes"
 )
 
 const (
@@ -91,7 +78,8 @@ const (
 type tenantValidateSettings struct {
 	enabled bool
 	cluster string
-	// tokenSecret is in runnerNamespace, the suite's own on the site.
+	// tokenSecret is in runnerNamespace, the suite's own on the management
+	// cluster.
 	tokenSecret       string
 	runnerNamespace   string
 	kubernetesVersion string
@@ -104,7 +92,13 @@ type tenantValidateSettings struct {
 	expect          siteExpectations
 }
 
-func tenantValidateFromEnv(getenv func(string) string, namespaceFile string) (tenantValidateSettings, error) {
+// tenantValidateFromProfile reads the settings from the profile's tenant
+// section, and which tenant to check from the environment: a profile
+// describes tenants alike, and a run names one.
+//
+// tenant.namespace is the tenant namespace the ServiceAccount may create in,
+// where the probe pods run. Its pods are left out of the pod check.
+func tenantValidateFromProfile(p profileTenant, getenv func(string) string, namespaceFile string) (tenantValidateSettings, error) {
 	enabled, err := parseRequireEnv(tenantValidateEnv, getenv(tenantValidateEnv))
 	if err != nil {
 		return tenantValidateSettings{}, err
@@ -124,43 +118,22 @@ func tenantValidateFromEnv(getenv func(string) string, namespaceFile string) (te
 		runnerNamespace = strings.TrimSpace(string(own))
 	}
 
-	namespace := strings.TrimSpace(getenv(tenantNamespaceEnv))
-	if namespace == "" {
-		namespace = defaultTenantNamespace
-	}
+	namespace := cmp.Or(strings.TrimSpace(p.Namespace), defaultTenantNamespace)
 
 	namespaces := []siteNamespace{{name: kubeSystemNamespace, source: "kubeadm"}}
-	if raw := strings.TrimSpace(getenv(tenantNamespacesEnv)); raw != "" {
-		names := splitList(raw, ",")
-		namespaces = make([]siteNamespace, 0, len(names))
-		for _, name := range names {
-			namespaces = append(namespaces, siteNamespace{name: name, source: tenantNamespacesEnv})
-		}
-		if len(namespaces) == 0 {
-			return tenantValidateSettings{}, fmt.Errorf("%s=%q names no namespace", tenantNamespacesEnv, raw)
+	if p.Namespaces != nil {
+		namespaces, err = profileNamespaces(p.Namespaces, sectionTenant+".namespaces")
+		if err != nil {
+			return tenantValidateSettings{}, err
 		}
 	}
 
-	image := probeImage{ref: cmp.Or(strings.TrimSpace(getenv(tenantProbeImageEnv)), kube.KubectlImage)}
-	for _, name := range splitList(getenv(tenantProbePullSecretsEnv), ",") {
-		image.pullSecrets = append(image.pullSecrets, corev1.LocalObjectReference{Name: name})
+	if p.GPU.Nodes != nil && *p.GPU.Nodes < 0 {
+		return tenantValidateSettings{}, fmt.Errorf("%s: %d is not a count of nodes", fieldGPUNodes, *p.GPU.Nodes)
 	}
+	gpuImage := cmp.Or(strings.TrimSpace(p.GPU.Image), defaultTenantGPUImage)
 
-	var gpuNodes *int
-	if raw := strings.TrimSpace(getenv(tenantGPUNodesEnv)); raw != "" {
-		count, countErr := strconv.Atoi(raw)
-		if countErr != nil || count < 0 {
-			return tenantValidateSettings{}, fmt.Errorf("%s=%q is not a count of nodes", tenantGPUNodesEnv, raw)
-		}
-		gpuNodes = &count
-	}
-
-	gpuImage := strings.TrimSpace(getenv(tenantGPUImageEnv))
-	if gpuImage == "" {
-		gpuImage = defaultTenantGPUImage
-	}
-
-	expect, err := siteExpectationsFromEnv(getenv, tenantPrefix)
+	expect, err := siteExpectationsFromProfile(p.profileExpectations, sectionTenant, tenantWorkloadVersionsEnv, getenv)
 	if err != nil {
 		return tenantValidateSettings{}, err
 	}
@@ -175,12 +148,12 @@ func tenantValidateFromEnv(getenv func(string) string, namespaceFile string) (te
 		tokenSecret:       tokenSecret,
 		runnerNamespace:   runnerNamespace,
 		kubernetesVersion: strings.TrimSpace(getenv(tenantKubernetesVersionEnv)),
-		gpuNodes:          gpuNodes,
+		gpuNodes:          p.GPU.Nodes,
 		gpuImage:          gpuImage,
 		checks: siteChecks{
 			namespaces:       namespaces,
 			probeNamespace:   namespace,
-			probeImage:       image,
+			probeImage:       profileProbeImage(p.Probe),
 			excusedNamespace: namespace,
 			tenant:           true,
 			certManager:      certManager,
@@ -200,15 +173,15 @@ type tenantTarget struct {
 // describe lists the settings the run resolved, for the report. It names the
 // credential's Secret, never its contents.
 func (s tenantValidateSettings) describe() []string {
-	lines := []string{
-		tenantClusterEnv + "=" + s.cluster,
-		"credential Secret: " + s.runnerNamespace + "/" + s.tokenSecret,
-	}
+	lines := append(runNotes(),
+		tenantClusterEnv+"="+s.cluster,
+		"credential Secret: "+s.runnerNamespace+"/"+s.tokenSecret,
+	)
 	if s.kubernetesVersion != "" {
 		lines = append(lines, tenantKubernetesVersionEnv+"="+s.kubernetesVersion)
 	}
 	if s.gpuNodes != nil {
-		lines = append(lines, fmt.Sprintf("%s=%d", tenantGPUNodesEnv, *s.gpuNodes), "GPU image: "+s.gpuImage)
+		lines = append(lines, fmt.Sprintf("%s: %d", fieldGPUNodes, *s.gpuNodes), "GPU image: "+s.gpuImage)
 	}
 	lines = append(lines, s.checks.describe()...)
 	return append(lines, s.expect.describe()...)
@@ -326,11 +299,11 @@ func tenantExpectations(expect siteExpectations, record api.Cluster) siteExpecta
 	return expect
 }
 
-// Like the site validation, every check runs whatever the others found.
-// tenantValidateEnv selects these specs in the image, and gates them
-// everywhere else, as siteValidateEnv does the site's.
+// Like the management cluster validation, every check runs whatever the
+// others found. tenantValidateEnv selects these specs in the image, and gates them
+// everywhere else, as siteValidateEnv does the management cluster's.
 var _ = Describe("tenant validation", Ordered, ContinueOnFailure, Label(tenantValidateLabel), func() {
-	settings, err := tenantValidateFromEnv(os.Getenv, serviceAccountNamespaceFile)
+	settings, err := tenantValidateFromProfile(validateProfile.Tenant, os.Getenv, serviceAccountNamespaceFile)
 	var (
 		target     *tenantTarget
 		connectErr error
@@ -407,28 +380,33 @@ func tenantBehaviorSettings(settings tenantValidateSettings, checks siteChecks, 
 	}
 }
 
-// laneTenantSettings are the tenant checks a lane runs on the tenant it built:
-// kube-system's workloads, probe pods in default, and fail fast, since every
-// minute a failed check spends is one the delete needs. Nothing on a lane
-// installs a GPU driver or device plugin, so the GPU checks skip.
+// laneTenantSettings are the tenant checks a lane runs on its tenant:
+// kube-system's workloads, probe pods in the image's namespace, and fail
+// fast, since every minute a failed check spends is one the delete needs.
+// The tenant may be one lifecycle.reuseCluster names, so the probes keep out
+// of its own namespaces. Nothing on a lane installs a GPU driver or device
+// plugin, so the GPU checks skip.
 var laneTenantSettings = tenantValidateSettings{
 	enabled:         true,
 	adminCredential: true,
 	gpuImage:        defaultTenantGPUImage,
 	checks: siteChecks{
-		namespaces:     []siteNamespace{{name: kubeSystemNamespace, source: "kubeadm"}},
-		failFast:       true,
-		probeNamespace: "default",
-		probeImage:     probeImage{ref: kube.KubectlImage},
-		tenant:         true,
+		namespaces:       []siteNamespace{{name: kubeSystemNamespace, source: "kubeadm"}},
+		failFast:         true,
+		probeNamespace:   defaultTenantNamespace,
+		probeImage:       probeImage{ref: kube.KubectlImage},
+		excusedNamespace: defaultTenantNamespace,
+		tenant:           true,
 	},
-	expect: siteExpectations{prefix: tenantPrefix},
+	expect: siteExpectations{section: sectionTenant},
 }
 
-// laneTenantTarget is the tenant test built, reached as its admin through
-// the lane's own controller client and relay. It skips once failed reports
-// an earlier failure, for the same reason the settings fail fast.
-func laneTenantTarget(test *tenantTest, failed func() bool) func() *tenantTarget {
+// laneTenantTarget is the tenant test built or reused, reached as its admin
+// through the lane's own controller client and relay, with the probe
+// namespace in place. When it creates that namespace it hands created the
+// way to delete it. It skips once failed reports an earlier failure, for the
+// same reason the settings fail fast.
+func laneTenantTarget(test *tenantTest, failed func() bool, created func(remove func(context.Context) error)) func() *tenantTarget {
 	var target *tenantTarget
 	return func() *tenantTarget {
 		if failed() {
@@ -438,10 +416,33 @@ func laneTenantTarget(test *tenantTest, failed func() bool) func() *tenantTarget
 			ctx, cancel := context.WithTimeout(context.Background(), tenantConnect)
 			defer cancel()
 			restConfig := expectSucceed(test.tenantClients.AdminRESTConfig(ctx, test.cluster.Name))
+			clientset := expectSucceed(kubernetes.NewForConfig(restConfig))
+			namespace := laneTenantSettings.checks.probeNamespace
+			made, err := ensureNamespace(ctx, clientset, namespace)
+			Expect(err).NotTo(HaveOccurred(), "creating the probe namespace %s on the tenant", namespace)
+			if made {
+				created(func(ctx context.Context) error {
+					return clientset.CoreV1().Namespaces().Delete(ctx, namespace, metav1.DeleteOptions{})
+				})
+			}
 			target = &tenantTarget{record: *test.cluster, controller: test.nvke, restConfig: restConfig}
 			AddReportEntry("tenant validation target", strings.Join(target.describe(), "\n"))
 		}
 		return target
+	}
+}
+
+// ensureNamespace creates the namespace unless it exists, and says whether
+// it did.
+func ensureNamespace(ctx context.Context, clientset kubernetes.Interface, name string) (bool, error) {
+	_, err := clientset.CoreV1().Namespaces().Create(ctx, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: name}}, metav1.CreateOptions{})
+	switch {
+	case err == nil:
+		return true, nil
+	case apierrors.IsAlreadyExists(err):
+		return false, nil
+	default:
+		return false, err
 	}
 }
 
@@ -532,7 +533,7 @@ func validateTenantRecord(resolve func() *tenantTarget, settings tenantValidateS
 	It("has as many nodes advertising GPUs as the run expects", func(ctx SpecContext) {
 		connect()
 		if settings.gpuNodes == nil {
-			Skip(tenantGPUNodesEnv + " is unset")
+			Skip(fieldGPUNodes + " is unset")
 		}
 		Eventually(func(ctx context.Context) error {
 			var nodes corev1.NodeList
@@ -546,7 +547,7 @@ func validateTenantRecord(resolve func() *tenantTarget, settings tenantValidateS
 	It("runs a GPU workload to completion", func(ctx SpecContext) {
 		connect()
 		if settings.gpuNodes == nil || *settings.gpuNodes == 0 {
-			Skip(tenantGPUNodesEnv + " expects no GPU node")
+			Skip(fieldGPUNodes + " expects no GPU node")
 		}
 		image := probeImage{ref: settings.gpuImage, pullSecrets: settings.checks.probeImage.pullSecrets}
 		pod := gpuPod(settings.checks.probeNamespace, image, map[string]string{siteRunLabel: utilrand.String(6)})

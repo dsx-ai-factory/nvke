@@ -397,6 +397,11 @@ func (d Stack) withDefaults() Stack {
 	return d
 }
 
+// StorageClass is the name of the default StorageClass the stack installs.
+func (d Stack) StorageClass() string {
+	return d.withDefaults().StorageClassName
+}
+
 // CheckControllerName fails when the deploy path installs the controller
 // under a name the suite is not configured to look for.
 //

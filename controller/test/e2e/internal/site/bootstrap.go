@@ -47,6 +47,10 @@ type Cluster struct {
 	// NodeKubeconfig is the same cluster's admin kubeconfig, as a path on the
 	// node.
 	NodeKubeconfig string
+
+	// APIServerPort is the port the API server listens on, on the node's
+	// loopback.
+	APIServerPort int
 }
 
 // Bootstrap builds Kubernetes on n: it stages the site onto the node, runs
@@ -86,13 +90,14 @@ func Bootstrap(ctx context.Context, n infra.Node, s infra.Session, nvkectl strin
 		}
 	}
 
-	kubeconfig, err := b.forwardKubeconfig(ctx)
+	kubeconfig, port, err := b.forwardKubeconfig(ctx)
 	if err != nil {
 		return Cluster{}, fmt.Errorf("site %s: forward kubeconfig: %w", spec.Name, err)
 	}
 	return Cluster{
 		Kubeconfig:     kubeconfig,
 		NodeKubeconfig: kubeconfigPath,
+		APIServerPort:  port,
 	}, nil
 }
 

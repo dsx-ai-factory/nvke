@@ -473,6 +473,17 @@ That is site-1's route. For a node kept on site-2, as a GB200 run's is, use
 key. A tenant node holds no key at all, and the image locks the account; its
 serial console, which carries cloud-init's output, is the way in.
 
+Beside the key, `<run-dir>/node-keys/<node>.json` records how the node is
+reached: its address, login and jump host, and the kept kubeconfig, with no
+credential. `qualify validate` reads it to run the
+[validation image](../../controller/test/e2e/README.md#from-a-workstation)
+against the kept management cluster, through the same jump host, with the run's versions:
+
+```bash
+go run ./release/cmd/qualify validate --run-dir <run-dir>          # creates and deletes only the DNS probe pod
+go run ./release/cmd/qualify validate --run-dir <run-dir> --full   # also the specs that create other objects
+```
+
 ### What it reads from your shell
 
 A run reads the same names the workflow's job puts in its environment, from

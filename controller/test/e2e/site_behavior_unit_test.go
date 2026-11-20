@@ -4,7 +4,14 @@
 package e2e
 
 import (
+	"crypto/tls"
 	"errors"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -77,71 +84,147 @@ func TestUnit_PolicySelectingAnyFindsPoliciesThatDecideTheProbes(t *testing.T) {
 	}, run, roles), "a policy on a source decides the check's traffic as much as one on the target")
 }
 
-func TestUnit_SiteExpectationsFromEnvUnset(t *testing.T) {
-	expect, err := siteExpectationsFromEnv(envMap(nil), sitePrefix)
+func TestUnit_SiteExpectationsFromProfileUnset(t *testing.T) {
+	expect, err := siteExpectationsFromProfile(profileExpectations{}, sectionManagementCluster, siteWorkloadVersionsEnv, envMap(nil))
 	require.NoError(t, err)
-	require.Equal(t, siteExpectations{prefix: sitePrefix}, expect, "nothing is expected unless the run says so")
+	require.Equal(t, siteExpectations{section: sectionManagementCluster, workloadVersionsEnv: siteWorkloadVersionsEnv}, expect,
+		"nothing is expected unless the profile says so")
 }
 
-func TestUnit_SiteExpectationsFromEnvTenantPrefix(t *testing.T) {
-	expect, err := siteExpectationsFromEnv(envMap(map[string]string{
-		siteComponentsEnv:           "argocd",
-		"NVKE_TENANT_COMPONENTS":    "kube-vip, cert-manager",
-		"NVKE_TENANT_STORAGE_CLASS": "ignored",
-	}), tenantPrefix)
+func TestUnit_SiteExpectationsCertManagerApproval(t *testing.T) {
+	expect, err := siteExpectationsFromProfile(profileExpectations{CertManager: profileCertManager{Approval: certManagerApprovalAny}}, sectionManagementCluster, "", envMap(nil))
 	require.NoError(t, err)
-	require.Equal(t, map[string]string{componentKubeVIP: kubeSystemNamespace, componentCertManager: "cert-manager"}, expect.components,
-		"a tenant reads its own variables, not the site's")
-	require.Equal(t, "NVKE_TENANT_COMPONENTS", expect.env(siteComponentsEnv))
-	require.Equal(t, siteComponentsEnv, siteExpectations{}.env(siteComponentsEnv))
+	require.False(t, expect.certManagerPolicy, "any is the default, named")
 
-	_, err = siteExpectationsFromEnv(envMap(map[string]string{"NVKE_TENANT_COMPONENTS": "flux"}), tenantPrefix)
-	require.ErrorContains(t, err, "NVKE_TENANT_COMPONENTS")
+	expect, err = siteExpectationsFromProfile(profileExpectations{CertManager: profileCertManager{Approval: " policy "}}, sectionTenant, "", envMap(nil))
+	require.NoError(t, err)
+	require.True(t, expect.certManagerPolicy)
+	require.Contains(t, expect.describe(), "tenant.certManager.approval: policy")
 }
 
-func TestUnit_SiteExpectationsFromEnv(t *testing.T) {
-	expect, err := siteExpectationsFromEnv(envMap(map[string]string{
-		siteComponentsEnv:        "argocd, cnpg=databases ,,kube-vip",
-		siteStorageClassesEnv:    "local-path, fast",
-		sitePVCStorageClassEnv:   " fast ",
-		siteWorkloadVersionsEnv:  "kube-system/calico-node=v3.29.1, ovn-kubernetes/ovnkube-node=1.1.0",
-		siteRequiredWorkloadsEnv: "spire-server/spire-server, spire-system/spire-agent",
-		siteAPIServerFlagsEnv:    "--profiling=false; enable-admission-plugins=NodeRestriction,PodSecurity;",
-		siteEtcdEncryptedEnv:     "true",
-		siteReservedMemoryEnv:    "2Gi",
-	}), sitePrefix)
+func TestUnit_CertificateRequestDecision(t *testing.T) {
+	request := func(name, certificate string, conditions ...map[string]any) unstructured.Unstructured {
+		r := unstructured.Unstructured{Object: map[string]any{}}
+		r.SetName(name)
+		r.SetAnnotations(map[string]string{"cert-manager.io/certificate-name": certificate})
+		raw := make([]any, 0, len(conditions))
+		for _, c := range conditions {
+			raw = append(raw, c)
+		}
+		require.NoError(t, unstructured.SetNestedSlice(r.Object, raw, "status", "conditions"))
+		return r
+	}
+	approved := map[string]any{"type": "Approved", "status": "True", "reason": "policy.cert-manager.io"}
+	denied := map[string]any{"type": "Denied", "status": "True", "reason": "policy.cert-manager.io"}
+	notReady := map[string]any{"type": "Ready", "status": "False", "reason": "Pending"}
+
+	decision, err := certificateRequestDecision([]unstructured.Unstructured{
+		request("other-1", "other", approved),
+		request("mine-1", "mine", notReady, approved),
+	}, "mine")
 	require.NoError(t, err)
+	require.Equal(t, certificateDecision{request: "mine-1", approved: true, reason: "policy.cert-manager.io"}, decision)
+
+	decision, err = certificateRequestDecision([]unstructured.Unstructured{request("mine-1", "mine", denied)}, "mine")
+	require.NoError(t, err)
+	require.False(t, decision.approved, "a denial is a decision")
+
+	_, err = certificateRequestDecision([]unstructured.Unstructured{request("mine-1", "mine", notReady)}, "mine")
+	require.ErrorContains(t, err, "neither approved nor denied")
+
+	_, err = certificateRequestDecision([]unstructured.Unstructured{request("other-1", "other", approved)}, "mine")
+	require.ErrorContains(t, err, "no CertificateRequest", "another Certificate's decision is not this one's")
+
+	_, err = certificateRequestDecision([]unstructured.Unstructured{
+		request("mine-1", "mine", map[string]any{"type": "Approved", "status": "False"}),
+	}, "mine")
+	require.Error(t, err, "a condition that is not True decides nothing")
+}
+
+func TestUnit_SiteExpectationsNameTheirSection(t *testing.T) {
+	expect, err := siteExpectationsFromProfile(profileExpectations{
+		Components: []profileComponent{{Name: componentKubeVIP}, {Name: componentCertManager}},
+	}, sectionTenant, tenantWorkloadVersionsEnv, envMap(nil))
+	require.NoError(t, err)
+	require.Equal(t, map[string]string{componentKubeVIP: kubeSystemNamespace, componentCertManager: "cert-manager"}, expect.components)
+	require.Equal(t, "tenant.components", expect.field(fieldComponents))
+	require.Equal(t, fieldComponents, siteExpectations{}.field(fieldComponents))
+	require.Equal(t, "tenant.namespace", expect.probeNamespaceField())
+	require.Equal(t, "managementCluster.probe.namespace", siteExpectations{section: sectionManagementCluster}.probeNamespaceField())
+
+	_, err = siteExpectationsFromProfile(profileExpectations{Components: []profileComponent{{Name: "flux"}}}, sectionTenant, "", envMap(nil))
+	require.ErrorContains(t, err, "tenant.components")
+}
+
+func TestUnit_SiteExpectationsFromProfile(t *testing.T) {
+	expect, err := siteExpectationsFromProfile(profileExpectations{
+		Components:        []profileComponent{{Name: componentArgoCD}, {Name: componentCNPG, Namespace: "databases"}, {Name: componentKubeVIP}},
+		StorageClasses:    []string{"local-path", " fast", ""},
+		PVCStorageClass:   " fast ",
+		WorkloadVersions:  map[string]string{"ovn-kubernetes/ovnkube-node": "1.1.0", "kube-system/calico-node": "v3.29.1"},
+		RequiredWorkloads: []string{"spire-server/spire-server", "spire-system/spire-agent"},
+		APIServer: profileAPIServer{
+			Flags:         map[string]string{"--profiling": "false", "enable-admission-plugins": "NodeRestriction,PodSecurity", "runtime-config": ""},
+			EtcdEncrypted: true,
+		},
+		ReservedMemory: "2Gi",
+		CertManager:    profileCertManager{Approval: certManagerApprovalPolicy},
+	}, sectionManagementCluster, siteWorkloadVersionsEnv, envMap(nil))
+	require.NoError(t, err)
+	require.True(t, expect.certManagerPolicy)
+	require.Contains(t, expect.describe(), "managementCluster.certManager.approval: policy")
 	require.Equal(t, map[string]string{componentArgoCD: "argocd", componentCNPG: "databases", componentKubeVIP: kubeSystemNamespace}, expect.components)
 	require.Equal(t, []string{"local-path", "fast"}, expect.storageClasses)
 	require.Equal(t, "fast", expect.pvcStorageClass)
 	require.Equal(t, []workloadVersion{
 		{namespace: "kube-system", name: "calico-node", version: "v3.29.1"},
 		{namespace: "ovn-kubernetes", name: "ovnkube-node", version: "1.1.0"},
-	}, expect.workloadVersions)
+	}, expect.workloadVersions, "sorted, so the report reads the same every run")
+	require.Equal(t, "managementCluster.workloadVersions", expect.workloadVersionsSource)
 	require.Equal(t, []workloadRef{{namespace: "spire-server", name: "spire-server"}, {namespace: "spire-system", name: "spire-agent"}}, expect.workloads)
-	require.Equal(t, map[string]string{"profiling": "false", "enable-admission-plugins": "NodeRestriction,PodSecurity"}, expect.apiServerFlags)
+	require.Equal(t, map[string]string{"profiling": "false", "enable-admission-plugins": "NodeRestriction,PodSecurity", "runtime-config": ""}, expect.apiServerFlags)
 	require.True(t, expect.etcdEncrypted)
 	require.NotNil(t, expect.reservedMemory)
 	require.Equal(t, "2Gi", expect.reservedMemory.String())
 }
 
-func TestUnit_SiteExpectationsFromEnvRejects(t *testing.T) {
-	for name, env := range map[string]map[string]string{
-		"unknown component":       {siteComponentsEnv: "argocd,flux"},
-		"version without name":    {siteWorkloadVersionsEnv: "kube-system=v1"},
-		"version without value":   {siteWorkloadVersionsEnv: "kube-system/calico-node="},
-		"flag without value":      {siteAPIServerFlagsEnv: "--profiling"},
-		"workload without name":   {siteRequiredWorkloadsEnv: "spire-server"},
-		"workload with two parts": {siteRequiredWorkloadsEnv: "a/b/c"},
-		"encrypted not boolean":   {siteEtcdEncryptedEnv: "sometimes"},
-		"memory not a quantity":   {siteReservedMemoryEnv: "two gigs"},
-		"error reaches settings":  {siteComponentsEnv: "nope"},
+func TestUnit_SiteWorkloadVersionsEnvOverridesProfile(t *testing.T) {
+	profile := profileExpectations{WorkloadVersions: map[string]string{"kube-system/calico-node": "v3.29.1"}}
+	expect, err := siteExpectationsFromProfile(profile, sectionManagementCluster, siteWorkloadVersionsEnv, envMap(map[string]string{
+		siteWorkloadVersionsEnv: "kube-system/calico-node=v3.30.0, ovn-kubernetes/ovnkube-node=1.1.0",
+	}))
+	require.NoError(t, err)
+	require.Equal(t, []workloadVersion{
+		{namespace: "kube-system", name: "calico-node", version: "v3.30.0"},
+		{namespace: "ovn-kubernetes", name: "ovnkube-node", version: "1.1.0"},
+	}, expect.workloadVersions, "the run's list replaces the profile's")
+	require.Contains(t, expect.describe(), "managementCluster.workloadVersions: kube-system/calico-node=v3.30.0, ovn-kubernetes/ovnkube-node=1.1.0 (NVKE_MGMT_CLUSTER_WORKLOAD_VERSIONS)")
+	require.Equal(t, "managementCluster.workloadVersions or NVKE_MGMT_CLUSTER_WORKLOAD_VERSIONS", expect.workloadVersionsInput())
+
+	_, err = siteExpectationsFromProfile(profile, sectionManagementCluster, siteWorkloadVersionsEnv, envMap(map[string]string{siteWorkloadVersionsEnv: "kube-system=v1"}))
+	require.ErrorContains(t, err, siteWorkloadVersionsEnv)
+}
+
+func TestUnit_SiteExpectationsFromProfileRejects(t *testing.T) {
+	for name, tc := range map[string]struct {
+		profile profileExpectations
+		field   string
+	}{
+		"unknown component":       {profileExpectations{Components: []profileComponent{{Name: "flux"}}}, "managementCluster.components"},
+		"version without name":    {profileExpectations{WorkloadVersions: map[string]string{"kube-system": "v1"}}, "managementCluster.workloadVersions"},
+		"version without value":   {profileExpectations{WorkloadVersions: map[string]string{"kube-system/calico-node": " "}}, "managementCluster.workloadVersions"},
+		"flag without name":       {profileExpectations{APIServer: profileAPIServer{Flags: map[string]string{"--": "x"}}}, "managementCluster.apiServer.flags"},
+		"flag given twice":        {profileExpectations{APIServer: profileAPIServer{Flags: map[string]string{"profiling": "false", "--profiling": "true"}}}, "--profiling is given twice"},
+		"workload without name":   {profileExpectations{RequiredWorkloads: []string{"spire-server"}}, "managementCluster.requiredWorkloads"},
+		"workload with two parts": {profileExpectations{RequiredWorkloads: []string{"a/b/c"}}, "managementCluster.requiredWorkloads"},
+		"memory not a quantity":   {profileExpectations{ReservedMemory: "two gigs"}, "managementCluster.reservedMemory"},
+		"approval unknown":        {profileExpectations{CertManager: profileCertManager{Approval: "restricted"}}, "managementCluster.certManager.approval"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := siteExpectationsFromEnv(envMap(env), sitePrefix)
-			require.Error(t, err)
-			_, err = siteValidateFromEnv(envMap(env), filepath.Join(t.TempDir(), "absent"))
-			require.Error(t, err)
+			_, err := siteExpectationsFromProfile(tc.profile, sectionManagementCluster, siteWorkloadVersionsEnv, envMap(nil))
+			require.ErrorContains(t, err, tc.field)
+			_, err = siteValidateFromProfile(profileManagementCluster{profileExpectations: tc.profile}, envMap(nil), filepath.Join(t.TempDir(), "absent"))
+			require.ErrorContains(t, err, tc.field, "the error reaches the settings")
 		})
 	}
 }
@@ -213,6 +296,15 @@ func TestUnit_SiteArgoApplicationProblems(t *testing.T) {
 		`Application argocd/drifted: sync "OutOfSync", health "Healthy"`,
 		`Application argocd/new: sync "", health ""`,
 	}, argoApplicationProblems([]unstructured.Unstructured{healthy, drifted, unknown}))
+}
+
+func TestUnit_SiteArgoApplicationScopedByDestination(t *testing.T) {
+	ours := unstructuredWith(t, "argocd", "nvke-controller", map[string]any{"spec.destination.namespace": "nvke-controller"})
+	other := unstructuredWith(t, "argocd", "other-team", map[string]any{"spec.destination.namespace": "other-team"})
+	clusterScoped := unstructuredWith(t, "argocd", "crds", nil)
+	in, out := splitScope(siteScope{"argocd": true, "nvke-controller": true}, []unstructured.Unstructured{ours, other, clusterScoped}, argoApplicationDestination)
+	require.Equal(t, []unstructured.Unstructured{ours}, in, "an Application in Argo CD's namespace is scoped by where it deploys")
+	require.Equal(t, []unstructured.Unstructured{other, clusterScoped}, out)
 }
 
 func TestUnit_SiteCNPGClusterProblems(t *testing.T) {
@@ -332,18 +424,18 @@ func TestUnit_SiteAPIServerFlagProblems(t *testing.T) {
 		staticPod("kube-apiserver-cp-2", "kube-apiserver", "--profiling=true"),
 	}
 	require.Equal(t, []string{
-		"kube-apiserver-cp-2: no --audit-log-maxage (set by " + siteAPIServerFlagsEnv + ")",
+		"kube-apiserver-cp-2: no --audit-log-maxage (set by " + "managementCluster.apiServer.flags" + ")",
 		"kube-apiserver-cp-2: --profiling=true, want false (set by kubeadm-config)",
-	}, apiServerFlagProblems(map[string]string{"profiling": "false"}, map[string]string{"audit-log-maxage": "30"}, siteAPIServerFlagsEnv, pods))
+	}, apiServerFlagProblems(map[string]string{"profiling": "false"}, map[string]string{"audit-log-maxage": "30"}, "managementCluster.apiServer.flags", pods))
 	require.Equal(t, []string{
-		`--profiling: kubeadm-config sets "false", ` + siteAPIServerFlagsEnv + ` wants "true"`,
-	}, apiServerFlagProblems(map[string]string{"profiling": "false"}, map[string]string{"profiling": "true"}, siteAPIServerFlagsEnv, pods[:1]))
-	require.Equal(t, []string{"no kube-apiserver pod in kube-system"}, apiServerFlagProblems(nil, nil, siteAPIServerFlagsEnv, nil))
-	require.Empty(t, apiServerFlagProblems(map[string]string{"runtime-config": ""}, nil, siteAPIServerFlagsEnv,
+		`--profiling: kubeadm-config sets "false", ` + "managementCluster.apiServer.flags" + ` wants "true"`,
+	}, apiServerFlagProblems(map[string]string{"profiling": "false"}, map[string]string{"profiling": "true"}, "managementCluster.apiServer.flags", pods[:1]))
+	require.Equal(t, []string{"no kube-apiserver pod in kube-system"}, apiServerFlagProblems(nil, nil, "managementCluster.apiServer.flags", nil))
+	require.Empty(t, apiServerFlagProblems(map[string]string{"runtime-config": ""}, nil, "managementCluster.apiServer.flags",
 		[]corev1.Pod{staticPod("kube-apiserver-kind", "kube-apiserver", "--runtime-config=")}),
 		"kubeadm renders an empty value as --name=, as kind's runtime-config")
 	require.Equal(t, []string{"kube-apiserver-cp-1: no --runtime-config (set by kubeadm-config)"},
-		apiServerFlagProblems(map[string]string{"runtime-config": ""}, nil, siteAPIServerFlagsEnv, pods[:1]))
+		apiServerFlagProblems(map[string]string{"runtime-config": ""}, nil, "managementCluster.apiServer.flags", pods[:1]))
 }
 
 func TestUnit_SiteEncryptionProblems(t *testing.T) {
@@ -402,6 +494,128 @@ func TestUnit_SiteAnonymousProblem(t *testing.T) {
 	require.Empty(t, anonymousProblem(apierrors.NewForbidden(secrets, "", errors.New("no"))))
 	require.Equal(t, "an anonymous request listed kube-system's Secrets", anonymousProblem(nil))
 	require.Contains(t, anonymousProblem(errors.New("connection refused")), "failed other than as refused")
+}
+
+func TestUnit_SiteWildcardMatches(t *testing.T) {
+	for _, c := range []struct {
+		pattern, s string
+		want       bool
+	}{
+		{"*", "anything", true},
+		{"*", "", true},
+		{"", "", true},
+		{"", "x", false},
+		{"nvke-validate-*", "nvke-validate-abc123", true},
+		{"nvke-validate-*", "other", false},
+		{"mongodb-psmdb-*", "mongodb-psmdb-ca", true},
+		{"*-issuer", "site-issuer", true},
+		{"a*b*c", "axxbyyc", true},
+		{"a*b*c", "axxbyy", false},
+		{"Issuer", "Issuer", true},
+		{"issuer", "Issuer", false},
+		{"a?c", "abc", false},
+	} {
+		require.Equal(t, c.want, wildcardMatches(c.pattern, c.s), "%q against %q", c.pattern, c.s)
+	}
+}
+
+func TestUnit_SiteSelectingPolicies(t *testing.T) {
+	policy := func(name string, selector map[string]any, ready bool) unstructured.Unstructured {
+		status := "False"
+		if ready {
+			status = "True"
+		}
+		return unstructured.Unstructured{Object: map[string]any{
+			"metadata": map[string]any{"name": name},
+			"spec":     map[string]any{"selector": selector},
+			"status":   map[string]any{"conditions": []any{map[string]any{"type": "Ready", "status": status}}},
+		}}
+	}
+	noLabels := func() (map[string]string, error) {
+		t.Error("no policy selects by label, so the namespace is not read")
+		return nil, errors.New("namespace read")
+	}
+	shared := []unstructured.Unstructured{
+		policy("capi-selfsigned", map[string]any{
+			"issuerRef": map[string]any{"group": "cert-manager.io", "kind": "Issuer", "name": "capi-selfsigned-issuer"},
+			"namespace": map[string]any{"matchNames": []any{"capi-system"}},
+		}, true),
+		policy("site-issuer", map[string]any{"issuerRef": map[string]any{"kind": "ClusterIssuer", "name": "site-issuer"}}, true),
+		policy("event-bus", map[string]any{"namespace": map[string]any{"matchNames": []any{"event-bus"}}}, true),
+	}
+	got, err := selectingPolicies(shared, "default", "nvke-validate-abc123", noLabels)
+	require.NoError(t, err)
+	require.Empty(t, got, "a shared management cluster's policies select other teams' issuers and namespaces")
+
+	got, err = selectingPolicies(shared, "event-bus", "nvke-validate-abc123", noLabels)
+	require.NoError(t, err)
+	require.Equal(t, []string{"event-bus"}, got, "a namespace selector alone takes any issuer there")
+
+	wildcard := policy("validate", map[string]any{
+		"issuerRef": map[string]any{"name": "nvke-validate-*"},
+		"namespace": map[string]any{"matchNames": []any{"nvke-*"}},
+	}, true)
+	got, err = selectingPolicies(append(shared, wildcard), "nvke-validate", "nvke-validate-abc123", noLabels)
+	require.NoError(t, err)
+	require.Equal(t, []string{"validate"}, got)
+
+	notReady := policy("not-ready", map[string]any{}, false)
+	everything := policy("everything", map[string]any{"issuerRef": map[string]any{}}, true)
+	got, err = selectingPolicies([]unstructured.Unstructured{notReady, everything}, "default", "x", noLabels)
+	require.NoError(t, err)
+	require.Equal(t, []string{"everything"}, got, "an empty issuerRef takes every issuer; a policy not Ready is not weighed")
+
+	reads := 0
+	byTeam := func(team string) unstructured.Unstructured {
+		return policy(team, map[string]any{"namespace": map[string]any{"matchLabels": map[string]any{"team": team}}}, true)
+	}
+	got, err = selectingPolicies([]unstructured.Unstructured{byTeam("platform"), byTeam("other")}, "default", "x", func() (map[string]string, error) {
+		reads++
+		return map[string]string{"team": "platform"}, nil
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{"platform"}, got)
+	require.Equal(t, 1, reads, "the namespace is read once")
+
+	_, err = selectingPolicies([]unstructured.Unstructured{byTeam("platform")}, "default", "x", func() (map[string]string, error) {
+		return nil, errors.New("forbidden")
+	})
+	require.ErrorContains(t, err, "forbidden")
+}
+
+func TestUnit_SiteCertificateMatchesItsSelection(t *testing.T) {
+	_, certificate := siteCertificate("default", "nvke-validate-abc123", nil)
+	ref, found, err := unstructured.NestedStringMap(certificate.Object, "spec", "issuerRef")
+	require.NoError(t, err)
+	require.True(t, found)
+	require.Equal(t, siteIssuerRef("nvke-validate-abc123"), ref, "the request carries what the pre-check matched")
+	require.Equal(t, "cert-manager.io", ref["group"], "a policy naming the group selects the request")
+
+	selecting := unstructured.Unstructured{Object: map[string]any{"spec": map[string]any{"selector": map[string]any{
+		"issuerRef": map[string]any{"group": "cert-manager.io", "kind": "Issuer", "name": "nvke-validate-*"},
+	}}}}
+	require.True(t, issuerSelected(selecting, "nvke-validate-abc123"))
+}
+
+func TestUnit_SiteRefusedBeforeAPIServer(t *testing.T) {
+	alert := &net.OpError{Op: "remote error", Err: errors.New("tls: certificate required")}
+	require.True(t, refusedBeforeAPIServer(&url.Error{Op: "Get", URL: "https://proxy/api", Err: alert}))
+	require.False(t, refusedBeforeAPIServer(&net.OpError{Op: "dial", Err: errors.New("connection refused")}))
+	require.False(t, refusedBeforeAPIServer(apierrors.NewUnauthorized("no")))
+	require.False(t, refusedBeforeAPIServer(nil))
+
+	proxy := httptest.NewUnstartedServer(http.NotFoundHandler())
+	proxy.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert, MinVersion: tls.VersionTLS13}
+	proxy.Config.ErrorLog = log.New(io.Discard, "", 0)
+	proxy.StartTLS()
+	defer proxy.Close()
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, proxy.URL, http.NoBody)
+	require.NoError(t, err)
+	resp, err := proxy.Client().Do(req)
+	if err == nil {
+		_ = resp.Body.Close()
+	}
+	require.True(t, refusedBeforeAPIServer(err), "a proxy requiring a client certificate: %v", err)
 }
 
 func TestUnit_SiteUnauthenticatedBindingProblems(t *testing.T) {

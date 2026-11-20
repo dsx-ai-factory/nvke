@@ -4,8 +4,10 @@
 package e2e
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"net"
@@ -44,43 +46,47 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
-// sitePrefix and tenantPrefix begin the names a site's and a tenant's
-// expectations are read from: a tenant's components are NVKE_TENANT_COMPONENTS.
+// Fields of a profile section, which a check whose field is unset skips.
+// Management clusters and tenants differ in each.
 const (
-	sitePrefix   = "NVKE_SITE_"
-	tenantPrefix = "NVKE_TENANT_"
+	// fieldComponents lists the optional components the cluster runs, each
+	// with an optional namespace. Names are the keys of
+	// siteComponentNamespaces.
+	fieldComponents = "components"
+	// fieldStorageClasses lists StorageClasses that must exist.
+	fieldStorageClasses = "storageClasses"
+	// fieldPVCStorageClass is the class the PVC check binds from. Unset uses
+	// the default class, and skips where there is none.
+	fieldPVCStorageClass = "pvcStorageClass"
+	// fieldWorkloadVersions maps namespace/workload to a version: a
+	// Deployment, StatefulSet or DaemonSet one of whose containers must run
+	// an image tagged version. The CNI's version is given this way.
+	fieldWorkloadVersions = "workloadVersions"
+	// fieldRequiredWorkloads lists namespace/workload: a Deployment,
+	// StatefulSet or DaemonSet that must exist, fully available. It names
+	// what a cluster's SPIRE, CNI and telemetry stack must run.
+	fieldRequiredWorkloads = "requiredWorkloads"
+	// fieldAPIServerFlags maps flags every API server must run with to
+	// their values.
+	fieldAPIServerFlags = "apiServer.flags"
+	// fieldEtcdEncrypted, when true, requires every API server to run with
+	// an encryption provider config.
+	fieldEtcdEncrypted = "apiServer.etcdEncrypted"
+	// fieldReservedMemory is the least memory every node must hold back from
+	// pods, as a quantity such as 2Gi: capacity less allocatable, which
+	// counts the kubelet's hard eviction threshold with its reservations.
+	fieldReservedMemory = "reservedMemory"
+	// fieldCertManagerApproval says how cert-manager approves a request:
+	// certManagerApprovalAny, the default, where its own approver approves
+	// every one, or certManagerApprovalPolicy, where approver-policy approves
+	// only what a CertificateRequestPolicy allows. It decides what the
+	// certificate check requires.
+	fieldCertManagerApproval = "certManager.approval"
 )
 
-// What a site is expected to have beyond what every NVKE site has. Each is
-// an input because sites differ in it; a check whose input is unset skips.
 const (
-	// siteComponentsEnv lists the optional components the site runs,
-	// comma-separated, each as name or name=namespace. Names are the keys of
-	// siteComponentNamespaces.
-	siteComponentsEnv = "NVKE_SITE_COMPONENTS"
-	// siteStorageClassesEnv lists StorageClasses that must exist.
-	siteStorageClassesEnv = "NVKE_SITE_STORAGE_CLASSES"
-	// sitePVCStorageClassEnv is the class the PVC check binds from. Unset
-	// uses the default class, and skips where there is none.
-	sitePVCStorageClassEnv = "NVKE_SITE_PVC_STORAGE_CLASS"
-	// siteWorkloadVersionsEnv lists namespace/workload=version, comma-separated:
-	// a Deployment, StatefulSet or DaemonSet one of whose containers must run
-	// an image tagged version. The CNI's version is given this way.
-	siteWorkloadVersionsEnv = "NVKE_SITE_WORKLOAD_VERSIONS"
-	// siteRequiredWorkloadsEnv lists namespace/workload, comma-separated: a
-	// Deployment, StatefulSet or DaemonSet that must exist, fully available.
-	// It names what a site's SPIRE, CNI and telemetry stack must run.
-	siteRequiredWorkloadsEnv = "NVKE_SITE_REQUIRED_WORKLOADS"
-	// siteAPIServerFlagsEnv lists flags every API server must run with, as
-	// name=value separated by semicolons, because values hold commas.
-	siteAPIServerFlagsEnv = "NVKE_SITE_APISERVER_FLAGS"
-	// siteEtcdEncryptedEnv, when true, requires every API server to run with
-	// an encryption provider config.
-	siteEtcdEncryptedEnv = "NVKE_SITE_ETCD_ENCRYPTED"
-	// siteReservedMemoryEnv is the least memory every node must hold back
-	// from pods, as a quantity such as 2Gi: capacity less allocatable, which
-	// counts the kubelet's hard eviction threshold with its reservations.
-	siteReservedMemoryEnv = "NVKE_SITE_RESERVED_MEMORY"
+	certManagerApprovalAny    = "any"
+	certManagerApprovalPolicy = "policy"
 )
 
 const (
@@ -88,8 +94,9 @@ const (
 	componentCNPG     = "cnpg"
 	componentTeleport = "teleport"
 	componentKubeVIP  = "kube-vip"
-	// componentCertManager is listed only for a tenant: every site runs
-	// cert-manager, and the site checks require it.
+	// componentCertManager need not be listed for a management cluster: every management cluster runs
+	// cert-manager, and the management cluster checks require it. Listing it adds the
+	// check that its workloads run.
 	componentCertManager = "cert-manager"
 )
 
@@ -140,134 +147,189 @@ type workloadRef struct {
 }
 
 type siteExpectations struct {
-	// prefix begins the names the expectations were read from.
-	prefix           string
-	components       map[string]string
-	storageClasses   []string
-	pvcStorageClass  string
-	workloadVersions []workloadVersion
-	workloads        []workloadRef
-	apiServerFlags   map[string]string
-	etcdEncrypted    bool
-	reservedMemory   *resource.Quantity
+	// section is the profile section the expectations were read from, which
+	// names their fields in messages.
+	section string
+	// workloadVersionsEnv overrides the section's workloadVersions for one
+	// run, and workloadVersionsSource says which of the two set them.
+	workloadVersionsEnv    string
+	workloadVersionsSource string
+	components             map[string]string
+	storageClasses         []string
+	pvcStorageClass        string
+	workloadVersions       []workloadVersion
+	workloads              []workloadRef
+	apiServerFlags         map[string]string
+	etcdEncrypted          bool
+	reservedMemory         *resource.Quantity
+	// certManagerPolicy is fieldCertManagerApproval set to
+	// certManagerApprovalPolicy.
+	certManagerPolicy bool
 }
 
-func siteExpectationsFromEnv(getenv func(string) string, prefix string) (siteExpectations, error) {
-	expect := siteExpectations{prefix: prefix}
-	env := expect.env
+// siteExpectationsFromProfile reads one section's expectations. The workload
+// versions in workloadVersionsEnv, as namespace/workload=version
+// comma-separated, replace the section's: they change with every release, so
+// a run may name them without editing the profile.
+func siteExpectationsFromProfile(p profileExpectations, section, workloadVersionsEnv string, getenv func(string) string) (siteExpectations, error) {
+	expect := siteExpectations{section: section, workloadVersionsEnv: workloadVersionsEnv}
+	field := expect.field
 
-	for _, entry := range splitList(getenv(env(siteComponentsEnv)), ",") {
-		name, namespace, _ := strings.Cut(entry, "=")
-		name, namespace = strings.TrimSpace(name), strings.TrimSpace(namespace)
+	for _, component := range p.Components {
+		name := strings.TrimSpace(component.Name)
 		defaultNamespace, known := siteComponentNamespaces[name]
 		if !known {
-			return siteExpectations{}, fmt.Errorf("%s: unknown component %q (known: %s)", env(siteComponentsEnv), name, strings.Join(slices.Sorted(maps.Keys(siteComponentNamespaces)), ", "))
+			return siteExpectations{}, fmt.Errorf("%s: unknown component %q (known: %s)", field(fieldComponents), name, strings.Join(slices.Sorted(maps.Keys(siteComponentNamespaces)), ", "))
 		}
-		if namespace == "" {
-			namespace = defaultNamespace
+		if _, twice := expect.components[name]; twice {
+			return siteExpectations{}, fmt.Errorf("%s: %s is listed twice", field(fieldComponents), name)
 		}
 		if expect.components == nil {
 			expect.components = map[string]string{}
 		}
-		expect.components[name] = namespace
+		expect.components[name] = cmp.Or(strings.TrimSpace(component.Namespace), defaultNamespace)
 	}
 
-	expect.storageClasses = splitList(getenv(env(siteStorageClassesEnv)), ",")
-	expect.pvcStorageClass = strings.TrimSpace(getenv(env(sitePVCStorageClassEnv)))
+	expect.storageClasses = trimList(p.StorageClasses)
+	expect.pvcStorageClass = strings.TrimSpace(p.PVCStorageClass)
 
-	for _, entry := range splitList(getenv(env(siteWorkloadVersionsEnv)), ",") {
-		workload, version, _ := strings.Cut(entry, "=")
-		namespace, name, _ := strings.Cut(strings.TrimSpace(workload), "/")
-		version = strings.TrimSpace(version)
-		if namespace == "" || name == "" || version == "" {
-			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload=version", env(siteWorkloadVersionsEnv), entry)
+	if raw := strings.TrimSpace(getenv(workloadVersionsEnv)); raw != "" {
+		expect.workloadVersionsSource = workloadVersionsEnv
+		for _, entry := range splitList(raw, ",") {
+			workload, version, _ := strings.Cut(entry, "=")
+			v, ok := parseWorkloadVersion(workload, version)
+			if !ok {
+				return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload=version", workloadVersionsEnv, entry)
+			}
+			expect.workloadVersions = append(expect.workloadVersions, v)
 		}
-		expect.workloadVersions = append(expect.workloadVersions, workloadVersion{namespace: namespace, name: name, version: version})
+	} else if len(p.WorkloadVersions) > 0 {
+		expect.workloadVersionsSource = field(fieldWorkloadVersions)
+		for _, workload := range slices.Sorted(maps.Keys(p.WorkloadVersions)) {
+			v, ok := parseWorkloadVersion(workload, p.WorkloadVersions[workload])
+			if !ok {
+				return siteExpectations{}, fmt.Errorf("%s: %q: %q is not namespace/workload and a version", field(fieldWorkloadVersions), workload, p.WorkloadVersions[workload])
+			}
+			expect.workloadVersions = append(expect.workloadVersions, v)
+		}
 	}
 
-	for _, entry := range splitList(getenv(env(siteRequiredWorkloadsEnv)), ",") {
+	for _, entry := range trimList(p.RequiredWorkloads) {
 		namespace, name, _ := strings.Cut(entry, "/")
 		namespace, name = strings.TrimSpace(namespace), strings.TrimSpace(name)
 		if namespace == "" || name == "" || strings.Contains(name, "/") {
-			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload", env(siteRequiredWorkloadsEnv), entry)
+			return siteExpectations{}, fmt.Errorf("%s: %q is not namespace/workload", field(fieldRequiredWorkloads), entry)
 		}
 		expect.workloads = append(expect.workloads, workloadRef{namespace: namespace, name: name})
 	}
 
-	for _, entry := range splitList(getenv(env(siteAPIServerFlagsEnv)), ";") {
-		name, value, ok := strings.Cut(entry, "=")
-		name = strings.TrimPrefix(strings.TrimSpace(name), "--")
-		if !ok || name == "" {
-			return siteExpectations{}, fmt.Errorf("%s: %q is not name=value", env(siteAPIServerFlagsEnv), entry)
+	for flag, value := range p.APIServer.Flags {
+		name := strings.TrimPrefix(strings.TrimSpace(flag), "--")
+		if name == "" {
+			return siteExpectations{}, fmt.Errorf("%s: %q names no flag", field(fieldAPIServerFlags), flag)
 		}
 		if expect.apiServerFlags == nil {
 			expect.apiServerFlags = map[string]string{}
 		}
+		if _, ok := expect.apiServerFlags[name]; ok {
+			return siteExpectations{}, fmt.Errorf("%s: --%s is given twice", field(fieldAPIServerFlags), name)
+		}
 		expect.apiServerFlags[name] = strings.TrimSpace(value)
 	}
 
-	encrypted, err := parseRequireEnv(env(siteEtcdEncryptedEnv), getenv(env(siteEtcdEncryptedEnv)))
-	if err != nil {
-		return siteExpectations{}, err
-	}
-	expect.etcdEncrypted = encrypted
+	expect.etcdEncrypted = p.APIServer.EtcdEncrypted
 
-	if raw := strings.TrimSpace(getenv(env(siteReservedMemoryEnv))); raw != "" {
+	if raw := strings.TrimSpace(p.ReservedMemory); raw != "" {
 		quantity, err := resource.ParseQuantity(raw)
 		if err != nil {
-			return siteExpectations{}, fmt.Errorf("%s=%q: %w", env(siteReservedMemoryEnv), raw, err)
+			return siteExpectations{}, fmt.Errorf("%s: %q: %w", field(fieldReservedMemory), raw, err)
 		}
 		expect.reservedMemory = &quantity
+	}
+
+	switch approval := strings.TrimSpace(p.CertManager.Approval); approval {
+	case "", certManagerApprovalAny:
+	case certManagerApprovalPolicy:
+		expect.certManagerPolicy = true
+	default:
+		return siteExpectations{}, fmt.Errorf("%s: want %s or %s, got %q", field(fieldCertManagerApproval), certManagerApprovalAny, certManagerApprovalPolicy, approval)
 	}
 	return expect, nil
 }
 
-// env names the variable an expectation is read from: name, which begins
-// with sitePrefix, under the expectations' own prefix.
-func (e siteExpectations) env(name string) string {
-	if e.prefix == "" {
-		return name
-	}
-	return e.prefix + strings.TrimPrefix(name, sitePrefix)
+func parseWorkloadVersion(workload, version string) (workloadVersion, bool) {
+	namespace, name, _ := strings.Cut(strings.TrimSpace(workload), "/")
+	v := workloadVersion{namespace: strings.TrimSpace(namespace), name: strings.TrimSpace(name), version: strings.TrimSpace(version)}
+	return v, v.namespace != "" && v.name != "" && v.version != "" && !strings.Contains(v.name, "/")
 }
 
-// describe lists what the run set, one variable a line, for the report.
+// field names an expectation's field in the profile, under its section.
+func (e siteExpectations) field(name string) string {
+	if e.section == "" {
+		return name
+	}
+	return e.section + "." + name
+}
+
+// probeNamespaceField names the field that places the probe pods.
+func (e siteExpectations) probeNamespaceField() string {
+	if e.section == sectionTenant {
+		return "tenant.namespace"
+	}
+	return "managementCluster.probe.namespace"
+}
+
+// workloadVersionsInput names where workload versions are set, for a message
+// saying they are not.
+func (e siteExpectations) workloadVersionsInput() string {
+	if e.workloadVersionsEnv == "" {
+		return e.field(fieldWorkloadVersions)
+	}
+	return e.field(fieldWorkloadVersions) + " or " + e.workloadVersionsEnv
+}
+
+// describe lists what the run set, one field a line, for the report.
 // None of it is secret.
 func (e siteExpectations) describe() []string {
 	var lines []string
 	add := func(name, value string) {
 		if value != "" {
-			lines = append(lines, e.env(name)+"="+value)
+			lines = append(lines, e.field(name)+": "+value)
 		}
 	}
 	components := make([]string, 0, len(e.components))
 	for _, name := range slices.Sorted(maps.Keys(e.components)) {
 		components = append(components, name+"="+e.components[name])
 	}
-	add(siteComponentsEnv, strings.Join(components, ","))
+	add(fieldComponents, strings.Join(components, ", "))
 	workloads := make([]string, 0, len(e.workloads))
 	for _, w := range e.workloads {
 		workloads = append(workloads, w.namespace+"/"+w.name)
 	}
-	add(siteRequiredWorkloadsEnv, strings.Join(workloads, ","))
+	add(fieldRequiredWorkloads, strings.Join(workloads, ", "))
 	versions := make([]string, 0, len(e.workloadVersions))
 	for _, v := range e.workloadVersions {
 		versions = append(versions, v.namespace+"/"+v.name+"="+v.version)
 	}
-	add(siteWorkloadVersionsEnv, strings.Join(versions, ","))
+	if len(versions) > 0 {
+		lines = append(lines, fmt.Sprintf("%s: %s (%s)", e.field(fieldWorkloadVersions), strings.Join(versions, ", "), e.workloadVersionsSource))
+	}
 	flags := make([]string, 0, len(e.apiServerFlags))
 	for _, name := range slices.Sorted(maps.Keys(e.apiServerFlags)) {
 		flags = append(flags, name+"="+e.apiServerFlags[name])
 	}
-	add(siteAPIServerFlagsEnv, strings.Join(flags, ";"))
+	add(fieldAPIServerFlags, strings.Join(flags, "; "))
 	if e.etcdEncrypted {
-		add(siteEtcdEncryptedEnv, "true")
+		add(fieldEtcdEncrypted, "true")
 	}
 	if e.reservedMemory != nil {
-		add(siteReservedMemoryEnv, e.reservedMemory.String())
+		add(fieldReservedMemory, e.reservedMemory.String())
 	}
-	add(siteStorageClassesEnv, strings.Join(e.storageClasses, ","))
-	add(sitePVCStorageClassEnv, e.pvcStorageClass)
+	if e.certManagerPolicy {
+		add(fieldCertManagerApproval, certManagerApprovalPolicy)
+	}
+	add(fieldStorageClasses, strings.Join(e.storageClasses, ", "))
+	add(fieldPVCStorageClass, e.pvcStorageClass)
 	return lines
 }
 
@@ -289,10 +351,24 @@ func (c siteChecks) describe() []string {
 		}
 		lines = append(lines, "probe pull secrets: "+strings.Join(secrets, ", "))
 	}
+	if c.scope != nil {
+		lines = append(lines, fieldScope+": "+siteScopeNamespaces+": "+strings.Join(slices.Sorted(maps.Keys(c.scope)), ", "))
+	}
 	if keepOnFailure() {
 		lines = append(lines, keepOnFailureEnv+"=true")
 	}
 	return lines
+}
+
+// trimList trims each entry and drops empty ones.
+func trimList(list []string) []string {
+	var entries []string
+	for _, entry := range list {
+		if entry = strings.TrimSpace(entry); entry != "" {
+			entries = append(entries, entry)
+		}
+	}
+	return entries
 }
 
 // splitList splits raw on sep, trimming each entry and dropping empty ones.
@@ -341,7 +417,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	component := func(name string) string {
 		namespace, ok := connect().components[name]
 		if !ok {
-			Skip(fmt.Sprintf("%s does not list %s", settings.expect.env(siteComponentsEnv), name))
+			Skip(fmt.Sprintf("%s does not list %s", settings.expect.field(fieldComponents), name))
 		}
 		return namespace
 	}
@@ -356,26 +432,38 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs Argo CD", func(ctx SpecContext) {
 		namespace := component(componentArgoCD)
 		Eventually(func(ctx context.Context) error {
-			return componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentArgoCD, namespace, argoCDWorkloads)
+			return componentWorkloadProblems(ctx, c, settings.expect.field(fieldComponents), componentArgoCD, namespace, argoCDWorkloads)
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
 	It("has every Argo CD Application Synced and Healthy", func(ctx SpecContext) {
 		component(componentArgoCD)
+		var outside []string
+		reportOutsideScope("Argo CD Applications", &outside)
 		Eventually(func(ctx context.Context) error {
 			applications := &unstructured.UnstructuredList{}
 			applications.SetGroupVersionKind(schema.GroupVersionKind{Group: "argoproj.io", Version: "v1alpha1", Kind: "ApplicationList"})
 			if err := c.List(ctx, applications); err != nil {
 				return err
 			}
-			return joinProblems("Argo CD Applications", argoApplicationProblems(applications.Items))
+			in, other := splitScope(settings.checks.scope, applications.Items, argoApplicationDestination)
+			outside = nil
+			if len(other) > 0 {
+				outside = argoApplicationProblems(other)
+			}
+			if settings.checks.scope != nil && len(in) == 0 {
+				return joinProblems("Argo CD Applications", []string{"none deploys to a namespace " + fieldScope + " covers"})
+			}
+			return joinProblems("Argo CD Applications", argoApplicationProblems(in))
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
 	It("runs the CloudNativePG operator with every database cluster healthy", func(ctx SpecContext) {
 		namespace := component(componentCNPG)
+		var outside []string
+		reportOutsideScope("CloudNativePG clusters", &outside)
 		Eventually(func(ctx context.Context) error {
-			if err := componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentCNPG, namespace, nil); err != nil {
+			if err := componentWorkloadProblems(ctx, c, settings.expect.field(fieldComponents), componentCNPG, namespace, nil); err != nil {
 				return err
 			}
 			clusters := &unstructured.UnstructuredList{}
@@ -383,21 +471,23 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			if err := c.List(ctx, clusters); err != nil {
 				return err
 			}
-			return joinProblems("CloudNativePG clusters", cnpgClusterProblems(clusters.Items))
+			in, other := splitScope(settings.checks.scope, clusters.Items, unstructuredNamespace)
+			outside = cnpgClusterProblems(other)
+			return joinProblems("CloudNativePG clusters", cnpgClusterProblems(in))
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
 	It("runs the Teleport agent", func(ctx SpecContext) {
 		namespace := component(componentTeleport)
 		Eventually(func(ctx context.Context) error {
-			return componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentTeleport, namespace, nil)
+			return componentWorkloadProblems(ctx, c, settings.expect.field(fieldComponents), componentTeleport, namespace, nil)
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
 	It("runs cert-manager", func(ctx SpecContext) {
 		namespace := component(componentCertManager)
 		Eventually(func(ctx context.Context) error {
-			return componentWorkloadProblems(ctx, c, settings.expect.env(siteComponentsEnv), componentCertManager, namespace, certManagerWorkloads)
+			return componentWorkloadProblems(ctx, c, settings.expect.field(fieldComponents), componentCertManager, namespace, certManagerWorkloads)
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("site-software", "component"), NodeTimeout(siteCheck+time.Minute))
 
@@ -421,7 +511,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs every workload the run requires", func(ctx SpecContext) {
 		expect := connect()
 		if len(expect.workloads) == 0 {
-			Skip(settings.expect.env(siteRequiredWorkloadsEnv) + " is unset")
+			Skip(settings.expect.field(fieldRequiredWorkloads) + " is unset")
 		}
 		Eventually(func(ctx context.Context) error {
 			var (
@@ -441,7 +531,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("runs the workload versions the run expects", func(ctx SpecContext) {
 		expect := connect()
 		if len(expect.workloadVersions) == 0 {
-			Skip(settings.expect.env(siteWorkloadVersionsEnv) + " is unset")
+			Skip(settings.expect.workloadVersionsInput() + " is unset")
 		}
 		var (
 			deployments  appsv1.DeploymentList
@@ -460,7 +550,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		kubeadmFlags := expectSucceed(kubeadmAPIServerExtraArgs(configuration))
 		var pods corev1.PodList
 		Expect(c.List(ctx, &pods, client.InNamespace(kubeSystemNamespace), client.MatchingLabels{"component": "kube-apiserver"})).To(Succeed())
-		Expect(joinProblems("API server flags", apiServerFlagProblems(kubeadmFlags, expect.apiServerFlags, expect.env(siteAPIServerFlagsEnv), pods.Items))).To(Succeed())
+		Expect(joinProblems("API server flags", apiServerFlagProblems(kubeadmFlags, expect.apiServerFlags, expect.field(fieldAPIServerFlags), pods.Items))).To(Succeed())
 	}, Label("site-distro"), NodeTimeout(2*time.Minute))
 
 	// Only that a config is given: which provider it writes with is in a file
@@ -468,7 +558,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	// first provider is identity stores Secrets in plain text and passes.
 	It("runs every API server with an encryption provider config", func(ctx SpecContext) {
 		if !connect().etcdEncrypted {
-			Skip(settings.expect.env(siteEtcdEncryptedEnv) + " is not true")
+			Skip(settings.expect.field(fieldEtcdEncrypted) + " is not true")
 		}
 		var pods corev1.PodList
 		Expect(c.List(ctx, &pods, client.InNamespace(kubeSystemNamespace), client.MatchingLabels{"component": "kube-apiserver"})).To(Succeed())
@@ -490,7 +580,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("reserves the memory the run expects on every node", func(ctx SpecContext) {
 		want := connect().reservedMemory
 		if want == nil {
-			Skip(settings.expect.env(siteReservedMemoryEnv) + " is unset")
+			Skip(settings.expect.field(fieldReservedMemory) + " is unset")
 		}
 		var nodes corev1.NodeList
 		Expect(c.List(ctx, &nodes)).To(Succeed())
@@ -500,7 +590,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 	It("has every StorageClass the run expects", func(ctx SpecContext) {
 		expect := connect()
 		if len(expect.storageClasses) == 0 {
-			Skip(settings.expect.env(siteStorageClassesEnv) + " is unset")
+			Skip(settings.expect.field(fieldStorageClasses) + " is unset")
 		}
 		var classes storagev1.StorageClassList
 		Expect(c.List(ctx, &classes)).To(Succeed())
@@ -525,7 +615,8 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		}
 		anonymous := expectSucceed(kubernetes.NewForConfig(rest.AnonymousClientConfig(restConfig)))
 		_, err := anonymous.CoreV1().Secrets(kubeSystemNamespace).List(ctx, metav1.ListOptions{Limit: 1})
-		if problem := anonymousProblem(err); problem != "" {
+		anonymousRefused := refusedBeforeAPIServer(err)
+		if problem := anonymousProblem(err); !anonymousRefused && problem != "" {
 			problems = append(problems, problem)
 		}
 		var (
@@ -536,6 +627,12 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		Expect(c.List(ctx, &roleBindings)).To(Succeed())
 		problems = append(problems, unauthenticatedBindingProblems(clusterRoleBindings.Items, roleBindings.Items)...)
 		Expect(joinProblems("RBAC checks", problems)).To(Succeed())
+		// A pass would claim anonymous access was refused by the API server,
+		// when something in front of it refused the request.
+		if anonymousRefused {
+			Skip("anonymous access not checked through this connection, which refused the request before the API server; " +
+				"the rest of the check passed: " + err.Error())
+		}
 	}, Label("site-distro"), NodeTimeout(2*time.Minute))
 
 	It("has a ready endpoint behind every admission webhook", func(ctx SpecContext) {
@@ -643,7 +740,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		Expect(c.List(ctx, &existing, client.InNamespace(namespace))).To(Succeed())
 		roles := []string{ovnPolicyTargetRole, ovnPolicyControlRole, ovnPolicyAllowedSourceRole, ovnPolicyDeniedSourceRole}
 		if name := policySelectingAny(existing.Items, labels, roles); name != "" {
-			Skip(fmt.Sprintf("NetworkPolicy %s/%s already selects this check's pods, so it decides their traffic; set %s to a namespace without one", namespace, name, siteProbeNamespaceEnv))
+			Skip(fmt.Sprintf("NetworkPolicy %s/%s already selects this check's pods, so it decides their traffic; set %s to a namespace without one", namespace, name, settings.expect.probeNamespaceField()))
 		}
 
 		By("starting the target and control pods")
@@ -715,7 +812,7 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		Expect(c.List(ctx, &classes)).To(Succeed())
 		class := pvcStorageClass(settings.expect.pvcStorageClass, classes.Items)
 		if class == "" {
-			Skip(settings.expect.env(sitePVCStorageClassEnv) + " is unset and the site has no default StorageClass")
+			Skip(settings.expect.field(fieldPVCStorageClass) + " is unset and the cluster has no default StorageClass")
 		}
 		By("creating a PersistentVolumeClaim of StorageClass " + class)
 		claim := sitePVC(namespace, labels, class)
@@ -737,12 +834,44 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 			Skip("the cluster is not expected to run cert-manager")
 		}
 		name := "nvke-validate-" + labels[siteRunLabel]
+		var selecting []string
+		if settings.expect.certManagerPolicy {
+			selecting = expectSucceed(policiesSelecting(ctx, c, namespace, name))
+			if len(selecting) == 0 {
+				Skip(fmt.Sprintf("certificate issuance not checked: no Ready CertificateRequestPolicy selects an Issuer in %s, so approver-policy would leave the request undecided; "+
+					"a policy selecting Issuers named nvke-validate-* there lets the check run", namespace))
+			}
+		}
 		By("creating an Issuer and a Certificate from it")
 		issuer, certificate := siteCertificate(namespace, name, labels)
 		Expect(c.Create(ctx, issuer)).To(Succeed())
 		deleteOnExit(ctx, c, issuer)
 		Expect(c.Create(ctx, certificate)).To(Succeed())
 		deleteOnExit(ctx, c, certificate, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}})
+		if settings.expect.certManagerPolicy {
+			// Under approver-policy the request may be denied by design, so
+			// what must hold is that the approver decides at all.
+			By("waiting for the approver to decide on the CertificateRequest")
+			var decision certificateDecision
+			Eventually(func(ctx context.Context) error {
+				requests := &unstructured.UnstructuredList{}
+				requests.SetAPIVersion("cert-manager.io/v1")
+				requests.SetKind("CertificateRequestList")
+				if err := c.List(ctx, requests, client.InNamespace(namespace)); err != nil {
+					return err
+				}
+				var err error
+				if decision, err = certificateRequestDecision(requests.Items, name); err != nil {
+					return fmt.Errorf("%w (selected by %s; approver-policy also leaves a request whose requester RBAC does not let use any of them)", err, strings.Join(selecting, ", "))
+				}
+				return nil
+			}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(2 * time.Second).Should(Succeed())
+			GinkgoLogr.Info("certificate request", "request", decision.request, "approved", decision.approved, "reason", decision.reason)
+			if !decision.approved {
+				AddReportEntry("certificate request denied, not failing the check", fmt.Sprintf("%s/%s denied (%s): approver-policy decided, as %s=%s declares", namespace, decision.request, decision.reason, settings.expect.field(fieldCertManagerApproval), certManagerApprovalPolicy))
+				return
+			}
+		}
 		By("waiting for the Certificate to be issued")
 		Eventually(func(ctx context.Context) error {
 			if err := c.Get(ctx, client.ObjectKeyFromObject(certificate), certificate); err != nil {
@@ -753,7 +882,141 @@ func validateSiteBehavior(resolve func() siteValidateSettings) {
 		var secret corev1.Secret
 		Expect(c.Get(ctx, client.ObjectKey{Namespace: namespace, Name: name}, &secret)).To(Succeed())
 		Expect(secret.Data).To(HaveKeyWithValue(corev1.TLSCertKey, Not(BeEmpty())))
-	}, Label("site-software", "creates"), NodeTimeout(siteCheck+time.Minute))
+	}, Label("site-software", "creates"), NodeTimeout(2*siteCheck+time.Minute))
+}
+
+// certificateDecision is the approver's decision on a CertificateRequest.
+type certificateDecision struct {
+	request  string
+	approved bool
+	reason   string
+}
+
+// certificateRequestDecision finds the CertificateRequest cert-manager made
+// for the Certificate named certificate and returns the approver's decision,
+// or an error while there is none.
+func certificateRequestDecision(requests []unstructured.Unstructured, certificate string) (certificateDecision, error) {
+	found := false
+	for _, request := range requests {
+		if request.GetAnnotations()["cert-manager.io/certificate-name"] != certificate {
+			continue
+		}
+		found = true
+		conditions, _, _ := unstructured.NestedSlice(request.Object, "status", "conditions")
+		for _, raw := range conditions {
+			condition, _ := raw.(map[string]any)
+			if condition["status"] != "True" {
+				continue
+			}
+			reason, _ := condition["reason"].(string)
+			switch condition["type"] {
+			case "Approved":
+				return certificateDecision{request: request.GetName(), approved: true, reason: reason}, nil
+			case "Denied":
+				return certificateDecision{request: request.GetName(), reason: reason}, nil
+			}
+		}
+	}
+	if !found {
+		return certificateDecision{}, fmt.Errorf("cert-manager has made no CertificateRequest for Certificate %s", certificate)
+	}
+	return certificateDecision{}, fmt.Errorf("the approver has neither approved nor denied the CertificateRequest for Certificate %s", certificate)
+}
+
+// policiesSelecting lists the CertificateRequestPolicies approver-policy would
+// weigh for a request from the Issuer named issuer in namespace.
+func policiesSelecting(ctx context.Context, c client.Client, namespace, issuer string) ([]string, error) {
+	policies := &unstructured.UnstructuredList{}
+	policies.SetAPIVersion("policy.cert-manager.io/v1alpha1")
+	policies.SetKind("CertificateRequestPolicyList")
+	if err := c.List(ctx, policies); err != nil {
+		return nil, err
+	}
+	namespaceLabels := func() (map[string]string, error) {
+		var ns corev1.Namespace
+		if err := c.Get(ctx, client.ObjectKey{Name: namespace}, &ns); err != nil {
+			return nil, err
+		}
+		return ns.Labels, nil
+	}
+	return selectingPolicies(policies.Items, namespace, issuer, namespaceLabels)
+}
+
+// selectingPolicies names the policies that are Ready and whose selector
+// takes a request in namespace from the Issuer named issuer, as
+// approver-policy's predicates decide it. approver-policy leaves a request no
+// policy selects undecided. namespaceLabels is read only where a policy
+// selects by label.
+func selectingPolicies(policies []unstructured.Unstructured, namespace, issuer string, namespaceLabels func() (map[string]string, error)) ([]string, error) {
+	var names []string
+	var labels map[string]string
+	for _, policy := range policies {
+		if !policyReady(policy) || !issuerSelected(policy, issuer) {
+			continue
+		}
+		selector, found, _ := unstructured.NestedMap(policy.Object, "spec", "selector", "namespace")
+		if found {
+			matchNames, _, _ := unstructured.NestedStringSlice(selector, "matchNames")
+			if len(matchNames) > 0 && !slices.ContainsFunc(matchNames, func(pattern string) bool { return wildcardMatches(pattern, namespace) }) {
+				continue
+			}
+			matchLabels, hasLabels, _ := unstructured.NestedStringMap(selector, "matchLabels")
+			if hasLabels {
+				if labels == nil {
+					var err error
+					if labels, err = namespaceLabels(); err != nil {
+						return nil, fmt.Errorf("namespace %s, for policy %s's label selector: %w", namespace, policy.GetName(), err)
+					}
+				}
+				if !klabels.SelectorFromSet(matchLabels).Matches(klabels.Set(labels)) {
+					continue
+				}
+			}
+		}
+		names = append(names, policy.GetName())
+	}
+	return names, nil
+}
+
+func policyReady(policy unstructured.Unstructured) bool {
+	conditions, _, _ := unstructured.NestedSlice(policy.Object, "status", "conditions")
+	for _, raw := range conditions {
+		if condition, _ := raw.(map[string]any); condition["type"] == "Ready" && condition["status"] == "True" {
+			return true
+		}
+	}
+	return false
+}
+
+// issuerSelected applies the policy's issuerRef selector to a cert-manager.io
+// Issuer: a field it leaves out matches anything.
+func issuerSelected(policy unstructured.Unstructured, issuer string) bool {
+	for field, value := range siteIssuerRef(issuer) {
+		pattern, found, _ := unstructured.NestedString(policy.Object, "spec", "selector", "issuerRef", field)
+		if found && !wildcardMatches(pattern, value) {
+			return false
+		}
+	}
+	return true
+}
+
+// wildcardMatches is approver-policy's: * matches any run of characters,
+// and nothing else is special.
+func wildcardMatches(pattern, s string) bool {
+	head, tail, wild := strings.Cut(pattern, "*")
+	if !wild {
+		return pattern == s
+	}
+	if !strings.HasPrefix(s, head) {
+		return false
+	}
+	s = s[len(head):]
+	for i := 0; i <= len(s); i++ {
+		if wildcardMatches(tail, s[i:]) {
+			return true
+		}
+	}
+	return false
 }
 
 // siteBehaviorClient is siteClient with the APIs these specs read.
@@ -859,6 +1122,13 @@ func argoApplicationProblems(applications []unstructured.Unstructured) []string 
 	}
 	slices.Sort(problems)
 	return problems
+}
+
+// argoApplicationDestination is the namespace an Application deploys to,
+// which is what scopes it: Applications themselves all live in Argo CD's.
+func argoApplicationDestination(app unstructured.Unstructured) string {
+	namespace, _, _ := unstructured.NestedString(app.Object, "spec", "destination", "namespace")
+	return namespace
 }
 
 // cnpgHealthy is the phase CloudNativePG reports for a cluster with nothing
@@ -1247,6 +1517,15 @@ func describeAttributes(a authorizationv1.ResourceAttributes) string {
 	return a.Verb + " " + what + " in every namespace"
 }
 
+// refusedBeforeAPIServer reports whether the far end of the TLS connection
+// sent an alert. An API server answers a request with no client certificate
+// over HTTP, so an alert comes from a proxy in front of it, such as Teleport's,
+// and the request never reached the API server to be refused.
+func refusedBeforeAPIServer(err error) bool {
+	var opErr *net.OpError
+	return errors.As(err, &opErr) && opErr.Op == "remote error"
+}
+
 // anonymousProblem reads an anonymous request for kube-system's Secrets:
 // it must be refused.
 func anonymousProblem(err error) string {
@@ -1546,6 +1825,10 @@ func siteCertificate(namespace, name string, labels map[string]string) (*unstruc
 		"metadata":   map[string]any{"name": name, "namespace": namespace},
 		"spec":       map[string]any{"selfSigned": map[string]any{}},
 	}}
+	issuerRef := map[string]any{}
+	for field, value := range siteIssuerRef(name) {
+		issuerRef[field] = value
+	}
 	certificate := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "cert-manager.io/v1",
 		"kind":       "Certificate",
@@ -1555,11 +1838,19 @@ func siteCertificate(namespace, name string, labels map[string]string) (*unstruc
 			"commonName": name,
 			"dnsNames":   []any{name + "." + namespace + ".svc"},
 			"duration":   "1h",
-			"issuerRef":  map[string]any{"name": name, "kind": "Issuer"},
+			"issuerRef":  issuerRef,
 		},
 	}}
 	for _, object := range []*unstructured.Unstructured{issuer, certificate} {
 		object.SetLabels(labels)
 	}
 	return issuer, certificate
+}
+
+// siteIssuerRef is the Certificate's issuerRef, and what issuerSelected
+// matches a policy's selector against. The group is written out so that the
+// request carries the values the selector was matched against, whether or
+// not approver-policy reads an empty group as cert-manager.io.
+func siteIssuerRef(issuer string) map[string]string {
+	return map[string]string{"name": issuer, "kind": "Issuer", "group": "cert-manager.io"}
 }

@@ -22,12 +22,22 @@ import (
 // act as root through sudo, which the machine's user must hold without a
 // password.
 type Client struct {
-	ssh    *ssh.Client
-	stream net.Conn
+	ssh     *ssh.Client
+	stream  net.Conn
+	hostKey ssh.PublicKey
 
 	mu        sync.Mutex
 	listeners []net.Listener
 	closed    bool
+}
+
+// HostKey is the machine's SSH host key, in authorized_keys form, as the
+// handshake that made c verified it.
+func (c *Client) HostKey() string {
+	if c.hostKey == nil {
+		return ""
+	}
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(c.hostKey)))
 }
 
 // Run executes cmd and fails on a non-zero exit, returning the combined

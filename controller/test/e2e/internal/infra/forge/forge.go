@@ -76,6 +76,9 @@ type Options struct {
 	// one. It comes from the runner, not the environment file, so the access
 	// path is not published with the site.
 	JumpHost string
+	// JumpLogin is the Teleport login for JumpHost, recorded on the node so
+	// a kept one can be reached the same way.
+	JumpLogin string
 
 	// Node carries the package versions under qualification. Its image URLs
 	// are filled from Images, so any set here are ignored.
@@ -332,7 +335,11 @@ func (p *Provider) ProvisionNode(ctx context.Context, req infra.NodeRequest) (in
 		return fail(err)
 	}
 
-	return infra.Node{Name: req.Name, IP: address, User: p.nodeUser(), Arch: instanceType.Arch()}, &provision.Session{Conn: conn, Release: release}, nil
+	return infra.Node{
+		Name: req.Name, IP: address, User: p.nodeUser(), Arch: instanceType.Arch(),
+		JumpHost: p.opts.JumpHost, JumpLogin: p.opts.JumpLogin,
+		HostKey: provision.HostKey(conn),
+	}, &provision.Session{Conn: conn, Release: release}, nil
 }
 
 // payloads returns the iPXE script and the cloud-init user data, in that

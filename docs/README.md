@@ -159,7 +159,7 @@ Deeper module documentation:
 | [../hack/rotation-demo/README.md](../hack/rotation-demo/README.md) | Credential renewal/key-rotation evidence collector (no live evidence included) |
 | [../hack/mokka-demo/README.md](../hack/mokka-demo/README.md) | Simulated GPU nodes with Mokka: a node pool, GPU Operator and a GPU pod, without GPUs |
 | [qualification/overview.md](qualification/overview.md) | Release qualification: what it is, what a run proves, and what is not covered yet |
-| [qualification/hardware-qualification.md](qualification/hardware-qualification.md) | Running the hardware lane, in CI or from a workstation with `qualify local`: starting a run, following it, and reading its results |
+| [qualification/hardware-qualification.md](qualification/hardware-qualification.md) | Running the hardware lane, in CI or from a workstation with `qualify local`: starting a run, following it, and reading its results; validating a kept management cluster with `qualify validate` |
 | [qualification/hardware-qualification-design.md](qualification/hardware-qualification-design.md) | How a candidate is qualified on real hardware, layer by layer, and why |
 | [qualification/environments.md](qualification/environments.md) | Declaring the infrastructure a run can execute against |
 | [qualification/triage.md](qualification/triage.md) | Telling a site fault from a code defect on a failed hardware run |
