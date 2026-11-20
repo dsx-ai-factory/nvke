@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -29,6 +30,15 @@ func writeProfile(t *testing.T, body string) string {
 	path := filepath.Join(t.TempDir(), "profile.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
 	return path
+}
+
+// e2eSourceDir is this package's source directory. The suite binary can run
+// from anywhere, so tests that read the package's files find them from here.
+func e2eSourceDir(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	require.True(t, ok, "resolving the test's source path")
+	return filepath.Dir(file)
 }
 
 func TestUnit_ValidateProfileLoads(t *testing.T) {
@@ -70,7 +80,7 @@ func TestUnit_ValidateProfilePortTakesNumberOrName(t *testing.T) {
 }
 
 func TestUnit_ValidateProfileREADMEExampleLoads(t *testing.T) {
-	readme, err := os.ReadFile("README.md")
+	readme, err := os.ReadFile(filepath.Join(e2eSourceDir(t), "README.md"))
 	require.NoError(t, err)
 	example := regexp.MustCompile("(?s)```yaml\n(# yaml-language-server: [^\n]*validation-profile\\.schema\\.json\n.*?)```").FindSubmatch(readme)
 	require.NotNil(t, example, "the README's validation profile example")
@@ -118,10 +128,10 @@ func TestUnit_ValidateProfileRejects(t *testing.T) {
 
 func TestUnit_ValidateProfileSharedInputs(t *testing.T) {
 	p := validationProfile{
-		Controller: profileController{Namespace: "nke", Service: "nke-api", HealthTimeout: "90s"},
+		Controller: profileController{Namespace: "nke", Service: "my-controller", HealthTimeout: "90s"},
 		Auth:       profileAuth{Audience: "nke"},
 	}
-	env := map[string]string{controller.EnvService: "nke-api"}
+	env := map[string]string{controller.EnvService: "my-controller"}
 	notes, err := applyValidateProfile(p, envMap(env), func(key, value string) { env[key] = value })
 	require.NoError(t, err)
 	require.Equal(t, "nke", env[controller.EnvNamespace])
@@ -129,7 +139,7 @@ func TestUnit_ValidateProfileSharedInputs(t *testing.T) {
 	require.Equal(t, "nke", env[authtoken.EnvAudience])
 	require.Equal(t, []string{
 		"controller.namespace = nke (profile)",
-		"controller.service = nke-api (profile and NVKE_CONTROLLER_SERVICE)",
+		"controller.service = my-controller (profile and NVKE_CONTROLLER_SERVICE)",
 		"controller.healthTimeout = 90s (profile)",
 		"auth.audience = nke (profile)",
 	}, notes)
@@ -185,7 +195,7 @@ func TestUnit_ValidateProfileRetiredInputsPointAtFields(t *testing.T) {
 // The schema and the Go types name the same fields, and the schema refuses
 // any other, as the loader does.
 func TestUnit_ValidateProfileSchemaMatchesTypes(t *testing.T) {
-	data, err := os.ReadFile("validation-profile.schema.json")
+	data, err := os.ReadFile(filepath.Join(e2eSourceDir(t), "validation-profile.schema.json"))
 	require.NoError(t, err)
 	var schema map[string]any
 	require.NoError(t, json.Unmarshal(data, &schema))
@@ -288,13 +298,13 @@ func TestUnit_ValidateProfileCoversEveryInput(t *testing.T) {
 
 	input := regexp.MustCompile(`"((?:NVKE_SITE|NVKE_MGMT_CLUSTER|NVKE_TENANT|NVKE_CONTROLLER|NVKE_VALIDATE|NVKE_E2E|NKE_E2E)_[A-Z0-9_]*[A-Z0-9])"`)
 	found := map[string]bool{}
-	require.NoError(t, filepath.WalkDir(".", func(path string, entry fs.DirEntry, err error) error {
+	require.NoError(t, filepath.WalkDir(e2eSourceDir(t), func(path string, entry fs.DirEntry, err error) error {
 		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {
 			return err
 		}
 		// Unit tests name inputs that do not exist, to show they are
 		// ignored, and the profile names the retired ones to refuse them.
-		if strings.HasSuffix(path, "_unit_test.go") || path == "validate_profile_test.go" {
+		if strings.HasSuffix(path, "_unit_test.go") || filepath.Base(path) == "validate_profile_test.go" {
 			return nil
 		}
 		data, err := os.ReadFile(path)
