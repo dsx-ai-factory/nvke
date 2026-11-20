@@ -151,6 +151,7 @@ func Parse(r io.Reader) (Manifest, error) {
 	br := bufio.NewReader(r)
 	var (
 		pkgs   []Package
+		seen   = map[string]int{}
 		fields map[string]string
 		last   string
 		start  int
@@ -164,6 +165,11 @@ func Parse(r io.Reader) (Manifest, error) {
 		if err != nil {
 			return fmt.Errorf("%w: stanza at line %d: %w", ErrMalformed, start, err)
 		}
+		key := p.Name + ":" + p.Architecture
+		if first, dup := seen[key]; dup {
+			return fmt.Errorf("%w: stanza at line %d: package %s already appears at line %d", ErrMalformed, start, key, first)
+		}
+		seen[key] = start
 		pkgs = append(pkgs, p)
 		fields, last = nil, ""
 		return nil
@@ -196,8 +202,9 @@ func Parse(r io.Reader) (Manifest, error) {
 			if fields == nil {
 				fields, start = map[string]string{}, lineNo
 			}
-			// dpkg field names are case-insensitive, and dpkg rejects a field repeated in one stanza.
-			name = strings.ToLower(name)
+			// dpkg allows blanks before the colon, matches names without regard to
+			// case, and rejects a field repeated in one stanza.
+			name = strings.ToLower(strings.TrimRight(name, " \t"))
 			if _, dup := fields[name]; dup {
 				return Manifest{}, fmt.Errorf("%w: line %d: field %q repeated in one stanza", ErrMalformed, lineNo, name)
 			}
@@ -217,11 +224,6 @@ func Parse(r io.Reader) (Manifest, error) {
 	slices.SortFunc(pkgs, func(a, b Package) int {
 		return cmp.Or(cmp.Compare(a.Name, b.Name), cmp.Compare(a.Architecture, b.Architecture))
 	})
-	for i := 1; i < len(pkgs); i++ {
-		if pkgs[i].Name == pkgs[i-1].Name && pkgs[i].Architecture == pkgs[i-1].Architecture {
-			return Manifest{}, fmt.Errorf("%w: package %s:%s appears twice", ErrMalformed, pkgs[i].Name, pkgs[i].Architecture)
-		}
-	}
 	return Manifest{Packages: pkgs}, nil
 }
 

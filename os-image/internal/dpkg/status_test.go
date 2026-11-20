@@ -95,6 +95,13 @@ Version: 1.7.27-0ubuntu1
 			wantInstalled: []bool{false},
 		},
 		{
+			name:          "blanks before the colon",
+			input:         "Package : bash\nStatus\t: install ok installed\nArchitecture: amd64\nVersion: 5.2\n",
+			want:          []Package{{Name: "bash", Version: "5.2", Architecture: "amd64", Status: Status{WantInstall, FlagOK, StateInstalled}}},
+			wantHeld:      []bool{false},
+			wantInstalled: []bool{true},
+		},
+		{
 			name:          "field names are case-insensitive",
 			input:         "package: bash\nSTATUS: hold ok installed\nArchitecture: amd64\nversion: 5.2\n",
 			want:          []Package{{Name: "bash", Version: "5.2", Architecture: "amd64", Status: Status{WantHold, FlagOK, StateInstalled}}},
@@ -237,7 +244,7 @@ Homepage: https://www.openssh.com/
 			name:        "duplicate name and arch",
 			input:       "Package: a\nStatus: install ok installed\nArchitecture: all\nVersion: 1\n\nPackage: a\nStatus: install ok installed\nArchitecture: all\nVersion: 2\n",
 			wantErr:     ErrMalformed,
-			wantErrText: "appears twice",
+			wantErrText: "stanza at line 6: package a:all already appears at line 1",
 		},
 	}
 
