@@ -593,6 +593,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				capabilities, capabilitiesErr := runCapabilities()
 				gpuRuntime := planTenantGPURuntime(tenantGPURuntime, capabilities, capabilitiesErr)
 				Expect(requireNoMonitoringWithGPURuntime(gpuRuntime, monitoringWorkers)).To(Succeed())
+				Expect(requireKapsBenchTools(kapsBenchRunSpecs, kapsBenchDir)).To(Succeed())
 			}
 			test = expectSucceed(setupTenantTest(ctx, expectSucceed(resolve()), spec.options))
 			if spec.createVia == clientNvkectl {
