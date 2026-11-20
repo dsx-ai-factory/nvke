@@ -109,6 +109,13 @@ func (p Package) Installed() bool {
 	return p.Status.State == StateInstalled && p.Status.Flag == FlagOK
 }
 
+// Present reports whether dpkg counts the package as installed in any form:
+// every state but not-installed and config-files. These are the packages the
+// node image's CycloneDX SBOM lists (os-image/packer/scripts/finish-image-sbom.py).
+func (p Package) Present() bool {
+	return p.Status.State != StateNotInstalled && p.Status.State != StateConfigFiles
+}
+
 // Manifest is every package in a status database, sorted by name and then
 // architecture. It is the data a manifest verb prints.
 type Manifest struct {

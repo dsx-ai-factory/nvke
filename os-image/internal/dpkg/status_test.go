@@ -261,6 +261,26 @@ Homepage: https://www.openssh.com/
 
 const validStatus = "Package: bash\nStatus: hold ok installed\nArchitecture: amd64\nVersion: 5.2\n"
 
+func TestPresent(t *testing.T) {
+	want := map[State]bool{
+		StateNotInstalled:    false,
+		StateConfigFiles:     false,
+		StateHalfInstalled:   true,
+		StateUnpacked:        true,
+		StateHalfConfigured:  true,
+		StateTriggersAwaited: true,
+		StateTriggersPending: true,
+		StateInstalled:       true,
+	}
+	require.Len(t, want, len(states), "every dpkg state needs a case")
+	for state, present := range want {
+		t.Run(string(state), func(t *testing.T) {
+			p := Package{Name: "a", Status: Status{WantInstall, FlagOK, state}}
+			assert.Equal(t, present, p.Present())
+		})
+	}
+}
+
 func TestReadFS(t *testing.T) {
 	tests := []struct {
 		name     string
