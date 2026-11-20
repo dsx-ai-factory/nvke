@@ -145,8 +145,8 @@ systemctl is-enabled nvke-agent.service
 systemctl is-enabled spire-agent.service
 systemctl is-enabled nvke-spire-configure.service
 # multipathd must stay masked, both units: it races Longhorn for newly
-# attached volumes and leaves them unformattable (see provision.sh for the
-# mechanism). is-enabled exits non-zero for a masked unit, so compare its
+# attached volumes and leaves them unformattable (nvke-node-sysconfig's nfpm.yaml
+# has the mechanism). is-enabled exits non-zero for a masked unit, so compare its
 # output rather than relying on its status.
 test "$(systemctl is-enabled multipathd.service)" = masked
 test "$(systemctl is-enabled multipathd.socket)" = masked
@@ -158,7 +158,7 @@ if systemctl is-active --quiet multipathd.service; then
   exit 1
 fi
 # Background apt must stay masked: its first-boot run restarts systemd's
-# services under kubeadm and the kubelet never starts (see provision.sh).
+# services under kubeadm and the kubelet never starts (see nvke-node-sysconfig's nfpm.yaml).
 for unit in apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service; do
   test "$(systemctl is-enabled "${unit}")" = masked
 done
@@ -203,6 +203,33 @@ id -u spire >/dev/null
 test "$(. /etc/spire-agent/spire-agent.env; echo "${TPM_PLUGIN_CHECKSUM}")" \
     = "$(sha256sum /usr/local/lib/spire-agent/tpm_attestor_agent | cut -d' ' -f1)"
 grep -Fq -- -expandEnv /lib/systemd/system/spire-agent.service
+# The node's system configuration comes from nvke-node-sysconfig. dpkg must own
+# every file in it: the same paths would also pass against the loose files
+# provision.sh used to install, which an in-place update could not replace.
+dpkg-query -W -f='${Status}\n' nvke-node-sysconfig | grep -Fxq 'install ok installed'
+for path in /usr/lib/nvke/configure-conntrack.sh /lib/systemd/system/conntrack-tune.service \
+  /usr/lib/sysctl.d/50-nvke-conntrack-timeouts.conf /usr/lib/modules-load.d/50-nvke-conntrack.conf \
+  /usr/lib/sysusers.d/50-nvke-etcd.conf /usr/lib/tmpfiles.d/50-nvke-etcd.conf; do
+  test "$(dpkg-query -S "${path}" | cut -d: -f1)" = nvke-node-sysconfig
+done
+# Every masked unit is a link to /dev/null that the package owns. The
+# is-enabled checks above and below only say the unit is masked; a link left by
+# `systemctl mask` would pass them too, and an in-place update could not replace it.
+for unit in multipathd.service multipathd.socket apt-daily.timer apt-daily-upgrade.timer \
+  apt-daily.service apt-daily-upgrade.service unattended-upgrades.service ovs-exporter.service; do
+  test "$(readlink "/etc/systemd/system/${unit}")" = /dev/null
+  test "$(dpkg-query -S "/etc/systemd/system/${unit}" | cut -d: -f1)" = nvke-node-sysconfig
+done
+# The etcd data directory: etcd:etcd at 0700, so kubeadm reuses it rather than
+# creating a root:root one (CIS 1.1.12). The user is a system user with no login.
+test "$(stat -c '%U:%G %a' /var/lib/etcd)" = 'etcd:etcd 700'
+test "$(getent passwd etcd | cut -d: -f7)" = /bin/false
+test "$(getent passwd etcd | cut -d: -f3)" -lt 1000
+# The copies provision.sh used to write: a unit left in /etc would mask the
+# vendor unit the package ships in /lib.
+test ! -e /etc/systemd/system/conntrack-tune.service
+test ! -e /etc/sysctl.d/10-nke-conntrack-timeouts.conf
+test ! -e /etc/modules-load.d/nf_conntrack.conf
 # Persistent upload scratch must not remain in the golden image.
 test ! -e /var/tmp/nke-image
 

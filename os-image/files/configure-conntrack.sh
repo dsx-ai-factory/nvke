@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
-# Generates /run/sysctl.d/10-nke-conntrack.conf at every boot, sized from this
+# Generates /run/sysctl.d/50-nvke-conntrack.conf at every boot, sized from this
 # node's RAM, for systemd-sysctl.service to apply. Run by
 # conntrack-tune.service, which is ordered before systemd-sysctl.service. See
 # os-image/SPEC.md.
@@ -24,7 +24,7 @@
 # lowers the kernel's value; when nothing needs raising, no file is written.
 #
 # systemd-sysctl applies sysctl.d files in file-name order, and the last value
-# set for a key wins. The 10- prefix sorts this file before the ones operators
+# set for a key wins. The 50- prefix sorts this file before the ones operators
 # normally add, such as 60-conntrack.conf or 99-local.conf, so an operator's
 # value for the same key wins, higher or lower. A same-named file in
 # /etc/sysctl.d replaces this one outright.
@@ -46,7 +46,7 @@ SYSCTL_DIR="${CONNTRACK_SYSCTL_DIR:-/run/sysctl.d}"
 
 readonly MAX_ENTRIES=600000
 readonly MIN_ENTRIES=1024
-readonly DROPIN="${SYSCTL_DIR}/10-nke-conntrack.conf"
+readonly DROPIN="${SYSCTL_DIR}/50-nvke-conntrack.conf"
 
 mem_kib="$(awk '/^MemTotal:/ { print $2; exit }' "${MEMINFO}")"
 if [[ ! "${mem_kib}" =~ ^[0-9]+$ ]]; then
@@ -67,7 +67,7 @@ if [[ "${1:-}" == "--print-target" ]]; then
   exit 0
 fi
 
-# /etc/modules-load.d/nf_conntrack.conf loads the module before this runs, so
+# /usr/lib/modules-load.d/50-nvke-conntrack.conf loads the module before this runs, so
 # a missing key means it failed to load: there is nothing to compare against.
 if [[ ! -r "${NETFILTER_DIR}/nf_conntrack_max" ]]; then
   echo "conntrack-tune: ${NETFILTER_DIR}/nf_conntrack_max is missing; is nf_conntrack loaded?" >&2
@@ -107,7 +107,7 @@ ${body}"
 
 # Write atomically: a temporary file in the same directory, then a rename.
 install -d -m 0755 "${SYSCTL_DIR}"
-tmp="$(mktemp "${SYSCTL_DIR}/.10-nke-conntrack.conf.XXXXXX")"
+tmp="$(mktemp "${SYSCTL_DIR}/.50-nvke-conntrack.conf.XXXXXX")"
 trap 'rm -f "${tmp}"' EXIT
 printf '%s' "${content}" >"${tmp}"
 if cmp -s "${tmp}" "${DROPIN}"; then

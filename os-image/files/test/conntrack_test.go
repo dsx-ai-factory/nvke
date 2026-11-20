@@ -25,7 +25,7 @@ var conntrackScript = func() string {
 }()
 
 // dropIn is the file the script writes into its sysctl.d directory.
-const dropIn = "10-nke-conntrack.conf"
+const dropIn = "50-nvke-conntrack.conf"
 
 // node is the fake /proc a test runs the script against.
 type node struct {
@@ -236,7 +236,7 @@ func TestConntrackRewritesOnlyOnChange(t *testing.T) {
 func TestConntrackTimeoutsFile(t *testing.T) {
 	// The static file sets TIME_WAIT only; the UDP stream timeout stays at the
 	// kernel's own 120s default.
-	content, err := os.ReadFile(filepath.Join("..", "10-nke-conntrack-timeouts.conf"))
+	content, err := os.ReadFile(filepath.Join("..", "50-nvke-conntrack-timeouts.conf"))
 	require.NoError(t, err)
 	assert.Equal(t, []string{"net.netfilter.nf_conntrack_tcp_timeout_time_wait = 60"}, settings(string(content)))
 }

@@ -100,11 +100,15 @@ if [[ -n "${DOCA_VERSION:-}" ]]; then
 fi
 make -C "${repo_root}/os-image/packages/doca-ovs" debs "${doca_args[@]}"
 
+# The node's system configuration: conntrack tuning, the etcd user and data
+# directory, and the masks on multipathd, the background apt timers and DOCA's
+# ovs-exporter.
+# Architecture-independent, so there is no ARCH to pass.
+echo "building nvke-node-sysconfig deb (${repo_root}/os-image/packages/nvke-node-sysconfig)"
+make -C "${repo_root}/os-image/packages/nvke-node-sysconfig" debs OUT_DIR="${ARTIFACTS_DIR}/debs"
+
 files_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../files" && pwd)"
 install -m 0644 "${files_dir}/nvke-agent-spire.conf" "${ARTIFACTS_DIR}/nvke-agent-spire.conf"
 install -m 0644 "${files_dir}/00-dhcp-all.yaml" "${ARTIFACTS_DIR}/00-dhcp-all.yaml"
 install -m 0644 "${files_dir}/99-disable-network-config.cfg" "${ARTIFACTS_DIR}/99-disable-network-config.cfg"
 install -m 0755 "${files_dir}/wait-spiffe-socket.sh" "${ARTIFACTS_DIR}/wait-spiffe-socket.sh"
-install -m 0644 "${files_dir}/conntrack-tune.service" "${ARTIFACTS_DIR}/conntrack-tune.service"
-install -m 0755 "${files_dir}/configure-conntrack.sh" "${ARTIFACTS_DIR}/configure-conntrack.sh"
-install -m 0644 "${files_dir}/10-nke-conntrack-timeouts.conf" "${ARTIFACTS_DIR}/10-nke-conntrack-timeouts.conf"

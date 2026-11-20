@@ -1,0 +1,20 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Stop and disable the units this package masks, before dpkg unpacks the masks.
+# A mask keeps a unit from starting; it does not stop one that is running, and
+# once the link is in place systemd no longer lets us disable the unit. So an
+# in-place update does it here. Best effort: most of these units are absent on
+# most nodes, and a failure here must not block the install.
+set -e
+
+case "$1" in
+install | upgrade) ;;
+*) exit 0 ;;
+esac
+
+systemctl disable --now multipathd.socket multipathd.service >/dev/null 2>&1 || true
+systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service >/dev/null 2>&1 || true
+systemctl stop apt-daily.service apt-daily-upgrade.service ovs-exporter.service >/dev/null 2>&1 || true
+systemctl disable ovs-exporter.service >/dev/null 2>&1 || true

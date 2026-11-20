@@ -1,0 +1,18 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# On remove, take back the file the unit generated under /run, which dpkg does
+# not own. The kernel keeps the values it was given until the next boot; no
+# file means the next boot uses the kernel's defaults.
+#
+# The etcd user and /var/lib/etcd stay, even on purge: the directory holds a
+# control-plane node's data, and a package must not delete that.
+set -e
+
+case "$1" in
+remove | purge)
+  rm -f /run/sysctl.d/50-nvke-conntrack.conf
+  systemctl daemon-reload >/dev/null 2>&1 || true
+  ;;
+esac

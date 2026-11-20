@@ -21,21 +21,6 @@ fi
 
 sudo install -d -m 0755 /usr/lib/nvke /etc/nke /var/lib/nke /usr/local/bin
 sudo install -m 0755 "${SRC}/wait-spiffe-socket.sh" /usr/lib/nvke/wait-spiffe-socket.sh
-# Conntrack limits. conntrack-tune.service generates its sysctl.d file at
-# every boot from that node's RAM; nothing here computes it, so the build VM's
-# RAM never reaches the image. Only the RAM-independent TIME_WAIT file is
-# baked in.
-sudo install -m 0755 "${SRC}/configure-conntrack.sh" /usr/lib/nvke/configure-conntrack.sh
-sudo install -m 0644 "${SRC}/conntrack-tune.service" /etc/systemd/system/conntrack-tune.service
-sudo install -m 0644 "${SRC}/10-nke-conntrack-timeouts.conf" /etc/sysctl.d/10-nke-conntrack-timeouts.conf
-# Load nf_conntrack at boot, before systemd-sysctl.service, so its keys exist
-# when conntrack-tune.service compares against them and when systemd-sysctl
-# applies both conntrack files. Otherwise it loads on demand (a netfilter
-# rule, or the openvswitch module), after the boot pass. nvke-kubeadm-distro's
-# modules-load.d/k8s.conf lists it too, but only from cluster create on.
-echo 'nf_conntrack' | sudo tee /etc/modules-load.d/nf_conntrack.conf >/dev/null
-sudo systemctl enable conntrack-tune.service
-
 # Kata's erofs snapshotter: containerd converts image layers to erofs (with
 # dm-verity metadata) and hands them to the guest as block devices. Load both
 # modules at boot rather than relying on on-demand loading. 26.04 only,
@@ -43,22 +28,6 @@ sudo systemctl enable conntrack-tune.service
 if [[ "${UBUNTU_SERIES}" == 26.04 ]]; then
   printf '%s\n' erofs dm-verity | sudo tee /etc/modules-load.d/nvke-kata.conf >/dev/null
 fi
-
-# Own the etcd data directory as etcd:etcd (CIS 1.1.12). kubeadm creates
-# /var/lib/etcd as root:root during `kubeadm init` and exposes no knob for its
-# ownership, so the only way to influence it is to have the directory already
-# exist: kubeadm reuses one it finds rather than creating its own, and leaves
-# the ownership alone. Doing it at bake time also means it is in place before
-# any control-plane node is ever provisioned.
-#
-# There is no etcd user on a node otherwise -- etcd runs from
-# registry.k8s.io/etcd as a static pod, as root, mounting this directory as a
-# hostPath. Root bypasses directory permissions, so an etcd-owned 0700 data
-# directory stays writable by it; this changes what the node reports, not what
-# etcd can do. Mirrors how the SPIRE agent's own user and state directory are
-# created (files/spire-configure.sh).
-id -u etcd >/dev/null 2>&1 || sudo useradd -r -s /bin/false -d /var/lib/etcd etcd
-sudo install -d -m 0700 -o etcd -g etcd /var/lib/etcd
 
 # Keep image-specific identity ordering in a drop-in so agent upgrades retain it.
 sudo install -d -m 0755 /etc/systemd/system/nvke-agent.service.d
@@ -102,13 +71,24 @@ sudo dpkg -i "${spire_agent_deb}"
 # the Ubuntu archive.
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y doca-openvswitch-switch
-# DOCA adds ovs-exporter.service, which its postinst enables, wanted by
-# ovs-vswitchd: a Prometheus endpoint on TCP 6103 on every interface, with no
-# authentication. Stock Open vSwitch has no such listener; keep the node's open
-# ports what they were.
-sudo systemctl mask ovs-exporter.service
 # Ubuntu's package enables openvswitch-switch.service; DOCA's postinst does not.
 sudo systemctl enable openvswitch-switch.service
+
+# The node's system configuration, installed from a package so it is versioned
+# and an in-place update leaves a node identical to a new image: the conntrack
+# tuning, the etcd user and data directory, and the masks on multipathd, the
+# background apt timers and DOCA's ovs-exporter. The package's README says why
+# each is there.
+#
+# After DOCA on purpose: the package masks ovs-exporter.service, and DOCA's
+# postinst enables it. Installed in this order the unit is enabled and then
+# masked, as it always was here.
+sysconfig_deb="$(find "${SRC}/debs" -maxdepth 1 -type f -name 'nvke-node-sysconfig_*.deb' -print -quit 2>/dev/null || true)"
+if [[ -z "${sysconfig_deb}" ]]; then
+  echo "no nvke-node-sysconfig deb in ${SRC}/debs; the image would have no conntrack tuning, etcd directory or masks" >&2
+  exit 1
+fi
+sudo dpkg -i "${sysconfig_deb}"
 
 # Give cloud-image importers a stable root-filesystem identifier. Do not rely
 # on a device path because it can change between the build VM and a target.
@@ -132,43 +112,6 @@ fi
 if [[ "${UBUNTU_SERIES}" == 26.04 ]]; then
   sudo tune2fs -O verity "${root_device}"
 fi
-
-# Keep multipathd off the node. Ubuntu Server's installer pulls in
-# multipath-tools and leaves multipathd enabled, and with no blacklist it
-# claims Longhorn's iSCSI-exported volumes -- they present as
-# IET,VIRTUAL-DISK, so multipathd wraps each one in a device-mapper map.
-# device-mapper then holds the block device open, mkfs' O_EXCL open returns
-# EBUSY, and every newly provisioned Longhorn PVC fails to format with
-# "is apparently in use by the system; will not make a filesystem here".
-# Observed in the field blocking a Longhorn engine upgrade and a CloudNativePG
-# replica rebuild.
-#
-# Bake it in rather than leaving it to a provisioning step: on nodes whose
-# cloud-init came up with no datasource, the equivalent post-provision step
-# never ran and multipathd stayed active from first boot, undetected for
-# months. An image that ships it off cannot regress that way.
-#
-# No NVKE node boots from a multipath-backed disk -- the root filesystem is LVM
-# (optionally over LUKS) on a single local NVMe device, per
-# cidata/autoinstall-lvm.pkrtpl -- so nothing here depends on multipathd.
-#
-# Both units, and mask rather than disable: multipathd.socket socket-activates
-# the service, so disabling the service alone leaves it reachable (systemctl
-# says as much: "can still be activated by multipathd.socket"). Masking also
-# holds if multipath-tools is installed or reinstalled later, and works even
-# though the units may not exist on this image yet.
-sudo systemctl disable --now multipathd.socket multipathd.service >/dev/null 2>&1 || true
-sudo systemctl mask multipathd.socket multipathd.service
-
-# No background apt on a node. Ubuntu's apt-daily timers run a few minutes
-# after first boot and, via needrestart and dpkg triggers, restart journald,
-# networkd, udevd and friends. kubeadm's kubelet-start phase runs
-# `systemctl daemon-reload` right then on a fresh node and gets exit 1, so the
-# kubelet never starts and init or join fails for good. unattended-upgrades
-# also holds the dpkg lock against cloud-init's package step. Nodes get updates
-# through a new image, not in place.
-sudo systemctl disable --now apt-daily.timer apt-daily-upgrade.timer unattended-upgrades.service >/dev/null 2>&1 || true
-sudo systemctl mask apt-daily.timer apt-daily-upgrade.timer apt-daily.service apt-daily-upgrade.service unattended-upgrades.service
 
 # Golden image: next boot must look like a new instance, without the Packer
 # SSH key or a machine-id from this build VM.

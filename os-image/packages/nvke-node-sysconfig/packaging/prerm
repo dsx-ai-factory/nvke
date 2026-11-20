@@ -1,0 +1,11 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Stop the unit before its script goes away. Not on upgrade: dpkg unpacks the
+# new files and runs postinst.
+set -e
+
+[ "$1" = "remove" ] || exit 0
+
+systemctl disable --now conntrack-tune.service >/dev/null 2>&1 || true

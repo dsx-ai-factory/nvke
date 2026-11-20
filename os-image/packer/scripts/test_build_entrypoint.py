@@ -5,7 +5,6 @@
 import json
 import os
 import shutil
-import stat
 from pathlib import Path
 import subprocess
 import tempfile
@@ -230,9 +229,6 @@ class GuestUpdaterTest(unittest.TestCase):
                     "99-disable-network-config.cfg",
                     "nvke-agent-spire.conf",
                     "wait-spiffe-socket.sh",
-                    "conntrack-tune.service",
-                    "configure-conntrack.sh",
-                    "10-nke-conntrack-timeouts.conf",
                 ):
                     shutil.copy(PACKER_DIR.parent / "files" / name, files)
                 updater = repo / "agent/bin/linux_arm64/nvke-agent-updater"
@@ -265,22 +261,20 @@ class GuestUpdaterTest(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 calls = log.read_text().splitlines()
-                self.assertEqual(len(calls), 6, calls)
+                self.assertEqual(len(calls), 7, calls)
                 self.assertIn(f"-C {repo}/agent deb-arm64", calls[0])
                 self.assertIn(f"-C {repo}/os-image/packages/doca-ovs debs", calls[5])
                 self.assertIn("UBUNTU_SERIES=26.04", calls[5])
+                self.assertIn(f"-C {repo}/os-image/packages/nvke-node-sysconfig debs", calls[6])
+                self.assertIn(f"OUT_DIR={artifacts}/debs", calls[6])
                 self.assertTrue((artifacts / "00-dhcp-all.yaml").is_file())
                 self.assertTrue((artifacts / "99-disable-network-config.cfg").is_file())
                 self.assertTrue((artifacts / "nvke-agent-spire.conf").is_file())
-                # provision.sh installs these from the artifacts directory, so
-                # each must arrive byte-for-byte, with the mode it is installed with.
-                for name, mode in (("conntrack-tune.service", 0o644),
-                                   ("configure-conntrack.sh", 0o755),
-                                   ("10-nke-conntrack-timeouts.conf", 0o644)):
-                    staged = artifacts / name
-                    self.assertTrue(staged.is_file(), name)
-                    self.assertEqual(stat.S_IMODE(staged.stat().st_mode), mode, name)
-                    self.assertEqual(staged.read_bytes(), (files / name).read_bytes(), name)
+                # The conntrack files now travel inside the nvke-node-sysconfig
+                # deb, so they are not staged loose.
+                for name in ("conntrack-tune.service", "configure-conntrack.sh",
+                             "10-nke-conntrack-timeouts.conf", "50-nvke-conntrack-timeouts.conf"):
+                    self.assertFalse((artifacts / name).exists(), name)
 
 
 if __name__ == "__main__":
