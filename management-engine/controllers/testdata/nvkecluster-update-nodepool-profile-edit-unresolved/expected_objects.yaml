@@ -168,6 +168,9 @@ items:
         version: 1.36.1
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers-to-missing
+      readyReplicas: 1
+      replicas: 3
+      updatedReplicas: 2
     - conditions:
       - message: ""
         observedGeneration: 2
@@ -194,6 +197,9 @@ items:
         version: 1.36.3
       id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
       name: workers-to-deprecated
+      readyReplicas: 1
+      replicas: 2
+      updatedReplicas: 1
     - conditions:
       - message: ""
         observedGeneration: 2
@@ -220,5 +226,8 @@ items:
         version: 1.34.0
       id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
       name: workers-steady
+      readyReplicas: 1
+      replicas: 1
+      updatedReplicas: 1
     observedGeneration: 1
 metadata: {}

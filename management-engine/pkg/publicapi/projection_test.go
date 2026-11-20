@@ -41,6 +41,11 @@ func TestClusterProjection(t *testing.T) {
 	internal.Status = v1.NVKEClusterStatus{
 		ID: "observed-cluster", ObservedGeneration: 3,
 		Conditions: []metav1.Condition{{Type: "Ready", Status: metav1.ConditionTrue, ObservedGeneration: 3}},
+		NodePools: []v1.NodePoolStatus{
+			{Name: "workers", Replicas: new(int32(5)), ReadyReplicas: new(int32(2)), UpdatedReplicas: new(int32(4))},
+			{Name: "empty", Replicas: new(int32(0)), ReadyReplicas: new(int32(0)), UpdatedReplicas: new(int32(0))},
+			{Name: "legacy"},
+		},
 	}
 	public, err := internal.Convert()
 	require.NoError(t, err)
@@ -51,6 +56,15 @@ func TestClusterProjection(t *testing.T) {
 	var object map[string]any
 	require.NoError(t, json.Unmarshal(encoded, &object))
 	require.Len(t, object, 3)
+	status := object["status"].(map[string]any)
+	pools := status["nodePools"].([]any)
+	require.Equal(t, map[string]any{
+		"name": "workers", "replicas": float64(5), "readyReplicas": float64(2), "updatedReplicas": float64(4),
+	}, pools[0])
+	require.Equal(t, map[string]any{
+		"name": "empty", "replicas": float64(0), "readyReplicas": float64(0), "updatedReplicas": float64(0),
+	}, pools[1])
+	require.Equal(t, map[string]any{"name": "legacy"}, pools[2])
 	require.Equal(t, map[string]any{
 		"name": "prod-us-west", "uid": "cluster-uid",
 		"creationTimestamp": "2026-10-27T12:00:00Z", "deletionTimestamp": "2026-10-27T12:00:00Z",

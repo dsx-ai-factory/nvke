@@ -51,6 +51,7 @@ nodePools:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     name: workers-deprecated
     desiredNodeCount: 1
+    readyNodeCount: 0
     conditions:
       provisioned:
         status: "True"

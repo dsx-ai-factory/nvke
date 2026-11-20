@@ -156,6 +156,7 @@ nodePools:
   nodeNamePrefix: ""
   nodeTaints: null
   provisioningMonitorDisabled: false
+  readyNodeCount: 0
   recycleBudget: 0
 - autoModeDisabled: false
   autoProvisionDisabled: false
