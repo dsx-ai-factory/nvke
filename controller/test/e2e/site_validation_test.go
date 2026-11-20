@@ -155,11 +155,11 @@ func unstructuredNamespace(object unstructured.Unstructured) string {
 
 // reportOutsideScope records what a scoped check found outside its scope,
 // as problems holds it when the spec ends, failed or not. It fails nothing:
-// on a shared site those namespaces are other teams'.
+// on a shared management cluster those namespaces are other teams'.
 func reportOutsideScope(check string, problems *[]string) {
 	DeferCleanup(func() {
 		if len(*problems) > 0 {
-			AddReportEntry(check+" outside "+siteScopeEnv+", not failing the check", strings.Join(*problems, "\n"))
+			AddReportEntry(check+" outside "+fieldScope+", not failing the check", strings.Join(*problems, "\n"))
 		}
 	})
 }
@@ -177,11 +177,11 @@ func siteLaneChecks() siteChecks {
 }
 
 // siteLaneExpectations are what the site lane installs beyond what every
-// site has: cert-manager, which comes with CAPI, and the stack's default
+// management cluster has: cert-manager, which comes with CAPI, and the stack's default
 // StorageClass. It installs no other optional component.
 func siteLaneExpectations(storageClass string) siteExpectations {
 	return siteExpectations{
-		prefix:         sitePrefix,
+		section:        sectionManagementCluster,
 		components:     map[string]string{componentCertManager: siteComponentNamespaces[componentCertManager]},
 		storageClasses: []string{storageClass},
 	}
@@ -350,7 +350,7 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 				outside = certificateProblems(other)
 			}
 			if checks.scope != nil && len(in) == 0 {
-				return joinProblems("certificates", []string{"none in a namespace " + siteScopeEnv + " covers"})
+				return joinProblems("certificates", []string{"none in a namespace " + fieldScope + " covers"})
 			}
 			return joinProblems("certificates", certificateProblems(in))
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
@@ -834,7 +834,7 @@ func healthCheckProblems(endpoint, body string) error {
 // so it does not count as a mismatch.
 func versionProblems(want, server string, nodes []corev1.Node) []string {
 	if want == "" {
-		return []string{"no expected Kubernetes version is set (" + siteKubernetesVersionEnv + ")"}
+		return []string{"no expected Kubernetes version is set (managementCluster.kubernetesVersion or " + siteKubernetesVersionEnv + ")"}
 	}
 	wanted, err := utilversion.ParseGeneric(want)
 	if err != nil {

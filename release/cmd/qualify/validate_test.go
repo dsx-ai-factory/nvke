@@ -194,10 +194,10 @@ func TestLabelFilter(t *testing.T) {
 		full, tenant bool
 		only, want   string
 	}{
-		{want: "site-validate && !creates"},
-		{full: true, want: "site-validate"},
-		{tenant: true, want: "(site-validate || tenant-validate) && !creates"},
-		{only: "readiness", want: "(site-validate && !creates) && (readiness)"},
+		{want: "mgmt-cluster-validate && !creates"},
+		{full: true, want: "mgmt-cluster-validate"},
+		{tenant: true, want: "(mgmt-cluster-validate || tenant-validate) && !creates"},
+		{only: "readiness", want: "(mgmt-cluster-validate && !creates) && (readiness)"},
 	} {
 		if got := labelFilter(tc.full, tc.only, tc.tenant); got != tc.want {
 			t.Errorf("labelFilter(%t, %q, %t) = %q, want %q", tc.full, tc.only, tc.tenant, got, tc.want)
@@ -206,15 +206,15 @@ func TestLabelFilter(t *testing.T) {
 }
 
 func TestPassedEnv(t *testing.T) {
-	got := passedEnv([]string{"NVKE_SITE_SCOPE=namespaces", "NKE_E2E_TOKEN_NAMESPACE=x", "NVKE_SITE_KUBERNETES_VERSION=1", "HOME=/h", "NGC_API_KEY=secret"})
-	if !slices.Equal(got, []string{"NKE_E2E_TOKEN_NAMESPACE", "NVKE_SITE_SCOPE"}) {
+	got := passedEnv([]string{"NVKE_E2E_KEEP_ON_FAILURE=true", "NKE_E2E_TOKEN_NAMESPACE=x", "NVKE_MGMT_CLUSTER_KUBERNETES_VERSION=1", "HOME=/h", "NGC_API_KEY=secret"})
+	if !slices.Equal(got, []string{"NKE_E2E_TOKEN_NAMESPACE", "NVKE_E2E_KEEP_ON_FAILURE"}) {
 		t.Errorf("got %v", got)
 	}
 }
 
 func TestRunSwitchesSet(t *testing.T) {
-	got := runSwitchesSet([]string{"NVKE_SITE_VALIDATE=", "NKE_E2E_AUTH_DISABLE=true", "NVKE_TENANT_VALIDATE=true", "NVKE_SITE_VALIDATE_X=1"})
-	if !slices.Equal(got, []string{"NKE_E2E_AUTH_DISABLE", "NVKE_SITE_VALIDATE"}) {
+	got := runSwitchesSet([]string{"NVKE_MGMT_CLUSTER_VALIDATE=", "NKE_E2E_AUTH_DISABLE=true", "NVKE_TENANT_VALIDATE=true", "NVKE_MGMT_CLUSTER_VALIDATE_X=1"})
+	if !slices.Equal(got, []string{"NKE_E2E_AUTH_DISABLE", "NVKE_MGMT_CLUSTER_VALIDATE"}) {
 		t.Errorf("got %v; an empty value still turns a switch off, and adding a tenant is allowed", got)
 	}
 	t.Setenv("NVKE_E2E_REQUIRE_EXPECTED_VERSION", "false")
@@ -226,11 +226,11 @@ func TestRunSwitchesSet(t *testing.T) {
 
 func TestDockerArgs(t *testing.T) {
 	o := validateOptions{out: "/out", image: "nvke-validate:x", controllerVersion: "v1", kubernetesVersion: "1.36.3", profile: "/p.yaml", dryRun: true}
-	args := strings.Join(dockerArgs(o, "linux/arm64", "/out/container.kubeconfig", "site-validate", []string{"NVKE_SITE_SCOPE"}, "darwin"), " ")
+	args := strings.Join(dockerArgs(o, "linux/arm64", "/out/container.kubeconfig", "mgmt-cluster-validate", []string{"NVKE_E2E_KEEP_ON_FAILURE"}, "darwin"), " ")
 	for _, want := range []string{
-		"--platform linux/arm64", "-e NVKE_SITE_SCOPE ", "-v /out/artifacts:/artifacts",
+		"--platform linux/arm64", "-e NVKE_E2E_KEEP_ON_FAILURE ", "-v /out/artifacts:/artifacts",
 		"-v /out/container.kubeconfig:/kube/config:ro", "-e NVKE_CONTROLLER_EXPECTED_VERSION=v1",
-		"-v /p.yaml:/profile.yaml:ro", "nvke-validate:x -ginkgo.label-filter=site-validate -ginkgo.dry-run",
+		"-v /p.yaml:/profile.yaml:ro", "nvke-validate:x -ginkgo.label-filter=mgmt-cluster-validate -ginkgo.dry-run",
 	} {
 		if !strings.Contains(args, want) {
 			t.Errorf("args lack %q: %s", want, args)
@@ -242,20 +242,27 @@ func TestDockerArgs(t *testing.T) {
 	if linux := strings.Join(dockerArgs(o, "linux/amd64", "/k", "f", nil, "linux"), " "); !strings.Contains(linux, "--network host") {
 		t.Error("Linux needs the host network to reach the forward")
 	}
+	if !strings.Contains(args, "-e NVKE_MGMT_CLUSTER_KUBERNETES_VERSION=1.36.3") {
+		t.Errorf("args lack the Kubernetes version: %s", args)
+	}
+	o.controllerVersion, o.kubernetesVersion = "", ""
+	if fromProfile := strings.Join(dockerArgs(o, "linux/amd64", "/k", "f", nil, "darwin"), " "); strings.Contains(fromProfile, "VERSION=") {
+		t.Errorf("a version left to the profile is not passed: %s", fromProfile)
+	}
 }
 
 func TestSummarizeJUnit(t *testing.T) {
 	report := `<testsuites><testsuite>
 <testcase name="[BeforeSuite]"></testcase>
-<testcase name="[It] site validation runs every workload"><properties>
-  <property name="workloads outside NVKE_SITE_SCOPE, not failing the check" value="&#34;Deployment other-team/broken: 0 of 1 available\nDeployment other-team/b: 0 of 1 available&#34;"></property>
+<testcase name="[It] management cluster validation runs every workload"><properties>
+  <property name="workloads outside managementCluster.scope, not failing the check" value="&#34;Deployment other-team/broken: 0 of 1 available\nDeployment other-team/b: 0 of 1 available&#34;"></property>
 </properties></testcase>
-<testcase name="[It] site validation has no pod failing outside its scope"><properties>
-  <property name="pods outside NVKE_SITE_SCOPE, not failing the check" value="&#34;other-team/p: CrashLoopBackOff&#34;"></property>
+<testcase name="[It] management cluster validation has no pod failing outside its scope"><properties>
+  <property name="pods outside managementCluster.scope, not failing the check" value="&#34;other-team/p: CrashLoopBackOff&#34;"></property>
 </properties></testcase>
-<testcase name="[It] site validation has no pod failing"><failure message="pods: ns/p CrashLoopBackOff&#xA;more"></failure></testcase>
-<testcase name="[It] site validation runs Argo CD"><skipped message="NVKE_SITE_COMPONENTS does not list argocd"></skipped></testcase>
-<testcase name="[It] site validation issues a certificate"><properties>
+<testcase name="[It] management cluster validation has no pod failing"><failure message="pods: ns/p CrashLoopBackOff&#xA;more"></failure></testcase>
+<testcase name="[It] management cluster validation runs Argo CD"><skipped message="managementCluster.components does not list argocd"></skipped></testcase>
+<testcase name="[It] management cluster validation issues a certificate"><properties>
   <property name="certificate request denied, not failing the check" value="&#34;ns/r denied (policy)&#34;"></property>
 </properties></testcase>
 <testcase name="[AfterSuite]"><failure message="cleanup&#xA;more"></failure></testcase>
@@ -271,10 +278,10 @@ func TestSummarizeJUnit(t *testing.T) {
 		"3 passed, 1 failed, 1 skipped",
 		"FAILED  [AfterSuite]: cleanup, which is the suite's, not a check's\n",
 		"certificate request denied, not failing the check:\n    ns/r denied (policy)",
-		"FAILED  [It] site validation has no pod failing: pods: ns/p CrashLoopBackOff\n",
-		"skipped [It] site validation runs Argo CD: NVKE_SITE_COMPONENTS does not list argocd",
-		"workloads outside NVKE_SITE_SCOPE, not failing the check:\n    Deployment other-team/broken: 0 of 1 available\n    Deployment other-team/b",
-		"pods outside NVKE_SITE_SCOPE, not failing the check:\n    other-team/p: CrashLoopBackOff",
+		"FAILED  [It] management cluster validation has no pod failing: pods: ns/p CrashLoopBackOff\n",
+		"skipped [It] management cluster validation runs Argo CD: managementCluster.components does not list argocd",
+		"workloads outside managementCluster.scope, not failing the check:\n    Deployment other-team/broken: 0 of 1 available\n    Deployment other-team/b",
+		"pods outside managementCluster.scope, not failing the check:\n    other-team/p: CrashLoopBackOff",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("summary lacks %q:\n%s", want, got)

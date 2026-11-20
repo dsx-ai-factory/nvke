@@ -473,7 +473,7 @@ Beside the key, `<run-dir>/node-keys/<node>.json` records how the node is
 reached: its address, login and jump host, and the kept kubeconfig, with no
 credential. `qualify validate` reads it to run the
 [validation image](../../controller/test/e2e/README.md#from-a-workstation)
-against the kept site, through the same jump host, with the run's versions:
+against the kept management cluster, through the same jump host, with the run's versions:
 
 ```bash
 go run ./release/cmd/qualify validate --run-dir <run-dir>          # read-only

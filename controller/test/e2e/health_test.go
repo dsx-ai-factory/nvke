@@ -32,13 +32,23 @@ type healthConfig struct {
 	Timeout                time.Duration
 }
 
-// expectedVersionRequireEnv sets healthConfig.RequireExpectedVersion.
-const expectedVersionRequireEnv = "NVKE_E2E_REQUIRE_EXPECTED_VERSION"
+const (
+	// expectedVersionRequireEnv sets healthConfig.RequireExpectedVersion.
+	expectedVersionRequireEnv = "NVKE_E2E_REQUIRE_EXPECTED_VERSION"
+	// expectedVersionEnv is the controller version the version spec expects.
+	expectedVersionEnv         = "NVKE_CONTROLLER_EXPECTED_VERSION"
+	controllerHealthTimeoutEnv = "NVKE_CONTROLLER_HEALTH_TIMEOUT"
+)
+
+// parseHealthTimeout reads how long the health specs wait for the controller.
+func parseHealthTimeout(raw string) (time.Duration, error) {
+	return time.ParseDuration(raw)
+}
 
 func loadHealthConfig() (healthConfig, error) {
-	timeout, err := time.ParseDuration(cmp.Or(os.Getenv("NVKE_CONTROLLER_HEALTH_TIMEOUT"), "60s"))
+	timeout, err := parseHealthTimeout(cmp.Or(os.Getenv(controllerHealthTimeoutEnv), "60s"))
 	if err != nil {
-		return healthConfig{}, fmt.Errorf("parsing NVKE_CONTROLLER_HEALTH_TIMEOUT: %w", err)
+		return healthConfig{}, fmt.Errorf("parsing %s: %w", controllerHealthTimeoutEnv, err)
 	}
 
 	requireVersion, err := parseRequireEnv(expectedVersionRequireEnv, os.Getenv(expectedVersionRequireEnv))
@@ -53,7 +63,7 @@ func loadHealthConfig() (healthConfig, error) {
 		Namespace:              controller.Namespace(),
 		Service:                controller.Service(),
 		ServicePort:            controller.Port(),
-		ExpectedVersion:        os.Getenv("NVKE_CONTROLLER_EXPECTED_VERSION"),
+		ExpectedVersion:        os.Getenv(expectedVersionEnv),
 		RequireExpectedVersion: requireVersion,
 		Timeout:                timeout,
 	}, nil
@@ -101,12 +111,13 @@ func envOrDefault(key, def string) string {
 // anonymous surface in auth/authn/routes.go. If /api/version ever stops
 // being anonymous, this file goes red before anything else does.
 //
-// site-validate marks what the validation image runs against a production
-// site: specs that create, change and install nothing, so they can run under a
+// mgmt-cluster-validate marks what the validation image runs against a
+// production management cluster: specs that create, change and install nothing, so they can run under a
 // read-only identity. The authn specs are not among them because they mint
 // tokens for the scaffolding identities in deploy/k8s/nvke-auth-dev.yaml, which
-// a site does not install. tenant-validate too: a tenant has no controller of
-// its own, so a run for a tenant alone checks the site's.
+// a management cluster does not install. tenant-validate too: a tenant has no
+// controller of its own, so a run for a tenant alone checks the management
+// cluster's.
 var _ = Describe("controller management-plane health", Label("health", siteValidateLabel, tenantValidateLabel), func() {
 	var (
 		hc        healthConfig
@@ -152,9 +163,9 @@ var _ = Describe("controller management-plane health", Label("health", siteValid
 
 		if hc.ExpectedVersion == "" {
 			if hc.RequireExpectedVersion {
-				Fail(fmt.Sprintf("NVKE_CONTROLLER_EXPECTED_VERSION is not set, and %s requires it", expectedVersionRequireEnv))
+				Fail(fmt.Sprintf("%s is not set, nor controller.expectedVersion in the profile, and %s requires it", expectedVersionEnv, expectedVersionRequireEnv))
 			}
-			Skip("NVKE_CONTROLLER_EXPECTED_VERSION is not set")
+			Skip(expectedVersionEnv + " is not set")
 		}
 
 		statusCode, body, err := forwarder.Get(tctx, "/api/version")

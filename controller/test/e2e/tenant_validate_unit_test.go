@@ -39,8 +39,8 @@ func TestUnit_LaneTenantProbesKeepOutOfDefault(t *testing.T) {
 	require.Equal(t, defaultTenantNamespace, laneTenantSettings.checks.excusedNamespace)
 }
 
-func TestUnit_TenantValidateFromEnvDefaults(t *testing.T) {
-	settings, err := tenantValidateFromEnv(envMap(map[string]string{tenantClusterEnv: " blue "}), filepath.Join(t.TempDir(), "absent"))
+func TestUnit_TenantValidateFromProfileDefaults(t *testing.T) {
+	settings, err := tenantValidateFromProfile(profileTenant{}, envMap(map[string]string{tenantClusterEnv: " blue "}), filepath.Join(t.TempDir(), "absent"))
 	require.NoError(t, err)
 	require.Equal(t, "blue", settings.cluster)
 	require.Equal(t, "nvke-validate-blue", settings.tokenSecret)
@@ -54,11 +54,11 @@ func TestUnit_TenantValidateFromEnvDefaults(t *testing.T) {
 	require.True(t, settings.checks.tenant)
 	require.False(t, settings.checks.certManager)
 	require.False(t, settings.checks.failFast)
-	require.Equal(t, tenantPrefix, settings.expect.prefix)
+	require.Equal(t, sectionTenant, settings.expect.section)
 }
 
-func TestUnit_TenantValidateFromEnvUnsetSkipsEverything(t *testing.T) {
-	settings, err := tenantValidateFromEnv(envMap(nil), filepath.Join(t.TempDir(), "absent"))
+func TestUnit_TenantValidateFromProfileUnsetSkipsEverything(t *testing.T) {
+	settings, err := tenantValidateFromProfile(profileTenant{}, envMap(nil), filepath.Join(t.TempDir(), "absent"))
 	require.NoError(t, err)
 	require.False(t, settings.enabled)
 	require.Empty(t, settings.cluster)
@@ -68,58 +68,66 @@ func TestUnit_TenantValidateFromEnvUnsetSkipsEverything(t *testing.T) {
 func TestUnit_TenantValidateToggle(t *testing.T) {
 	absent := filepath.Join(t.TempDir(), "absent")
 
-	settings, err := tenantValidateFromEnv(envMap(map[string]string{tenantClusterEnv: "blue"}), absent)
+	settings, err := tenantValidateFromProfile(profileTenant{}, envMap(map[string]string{tenantClusterEnv: "blue"}), absent)
 	require.NoError(t, err)
 	require.False(t, settings.enabled, "naming a tenant alone does not turn the tenant checks on")
 
-	settings, err = tenantValidateFromEnv(envMap(map[string]string{tenantValidateEnv: "true", tenantClusterEnv: "blue"}), absent)
+	settings, err = tenantValidateFromProfile(profileTenant{}, envMap(map[string]string{tenantValidateEnv: "true", tenantClusterEnv: "blue"}), absent)
 	require.NoError(t, err)
 	require.True(t, settings.enabled)
 
-	_, err = tenantValidateFromEnv(envMap(map[string]string{tenantValidateEnv: "true"}), absent)
+	_, err = tenantValidateFromProfile(profileTenant{}, envMap(map[string]string{tenantValidateEnv: "true"}), absent)
 	require.ErrorContains(t, err, tenantClusterEnv, "on with no tenant fails rather than skipping")
 
-	_, err = tenantValidateFromEnv(envMap(map[string]string{tenantValidateEnv: "yes please", tenantClusterEnv: "blue"}), absent)
+	_, err = tenantValidateFromProfile(profileTenant{}, envMap(map[string]string{tenantValidateEnv: "yes please", tenantClusterEnv: "blue"}), absent)
 	require.ErrorContains(t, err, tenantValidateEnv)
 }
 
-func TestUnit_TenantValidateFromEnvOverrides(t *testing.T) {
+func TestUnit_TenantValidateFromProfileOverrides(t *testing.T) {
 	namespaceFile := filepath.Join(t.TempDir(), "namespace")
 	require.NoError(t, os.WriteFile(namespaceFile, []byte("validation-runner\n"), 0o600))
-	settings, err := tenantValidateFromEnv(envMap(map[string]string{
+	settings, err := tenantValidateFromProfile(profileTenant{
+		profileExpectations: profileExpectations{
+			Namespaces:       []string{"kube-system", " gpu-operator"},
+			Components:       []profileComponent{{Name: componentCertManager}},
+			WorkloadVersions: map[string]string{"kube-system/calico-node": "v3.29.1"},
+		},
+		Namespace: "qa",
+		Probe:     profileProbe{Image: "registry.local/probe:1", PullSecrets: []string{" tenant-pull ", ""}},
+		GPU:       profileGPU{Nodes: ptr.To(4), Image: "registry.local/cuda:1"},
+	}, envMap(map[string]string{
 		tenantClusterEnv:           "blue",
 		tenantTokenSecretEnv:       "blue-reader",
-		tenantNamespaceEnv:         "qa",
 		tenantKubernetesVersionEnv: "v1.33.2",
-		tenantNamespacesEnv:        "kube-system, gpu-operator",
-		tenantProbeImageEnv:        "registry.local/probe:1",
-		tenantProbePullSecretsEnv:  " tenant-pull ,",
-		tenantGPUNodesEnv:          "4",
-		tenantGPUImageEnv:          "registry.local/cuda:1",
-		"NVKE_TENANT_COMPONENTS":   "cert-manager",
+		tenantWorkloadVersionsEnv:  "kube-system/calico-node=v3.30.0",
 	}), namespaceFile)
 	require.NoError(t, err)
 	require.Equal(t, "blue-reader", settings.tokenSecret)
 	require.Equal(t, "validation-runner", settings.runnerNamespace)
 	require.Equal(t, "qa", settings.checks.probeNamespace)
 	require.Equal(t, "v1.33.2", settings.kubernetesVersion)
-	require.Equal(t, []siteNamespace{{name: "kube-system", source: tenantNamespacesEnv}, {name: "gpu-operator", source: tenantNamespacesEnv}}, settings.checks.namespaces)
+	require.Equal(t, []siteNamespace{{name: "kube-system", source: "tenant.namespaces"}, {name: "gpu-operator", source: "tenant.namespaces"}}, settings.checks.namespaces)
 	require.Equal(t, probeImage{ref: "registry.local/probe:1", pullSecrets: []corev1.LocalObjectReference{{Name: "tenant-pull"}}}, settings.checks.probeImage)
 	require.Equal(t, ptr.To(4), settings.gpuNodes)
 	require.Equal(t, "registry.local/cuda:1", settings.gpuImage)
 	require.True(t, settings.checks.certManager, "a tenant that lists cert-manager gets the cert-manager checks")
+	require.Equal(t, []workloadVersion{{namespace: "kube-system", name: "calico-node", version: "v3.30.0"}}, settings.expect.workloadVersions,
+		"NVKE_TENANT_WORKLOAD_VERSIONS overrides the profile's for one run")
+	require.Contains(t, settings.describe(), "tenant.gpu.nodes: 4")
 }
 
-func TestUnit_TenantValidateFromEnvRejects(t *testing.T) {
-	for name, env := range map[string]map[string]string{
-		"GPU count not a number": {tenantGPUNodesEnv: "four"},
-		"GPU count negative":     {tenantGPUNodesEnv: "-1"},
-		"namespaces empty":       {tenantNamespacesEnv: " , "},
-		"unknown component":      {"NVKE_TENANT_COMPONENTS": "flux"},
+func TestUnit_TenantValidateFromProfileRejects(t *testing.T) {
+	for name, tc := range map[string]struct {
+		profile profileTenant
+		want    string
+	}{
+		"GPU count negative": {profileTenant{GPU: profileGPU{Nodes: ptr.To(-1)}}, "tenant.gpu.nodes"},
+		"namespaces empty":   {profileTenant{profileExpectations: profileExpectations{Namespaces: []string{}}}, "tenant.namespaces names no namespace"},
+		"unknown component":  {profileTenant{profileExpectations: profileExpectations{Components: []profileComponent{{Name: "flux"}}}}, "tenant.components"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := tenantValidateFromEnv(envMap(env), filepath.Join(t.TempDir(), "absent"))
-			require.Error(t, err)
+			_, err := tenantValidateFromProfile(tc.profile, envMap(nil), filepath.Join(t.TempDir(), "absent"))
+			require.ErrorContains(t, err, tc.want)
 		})
 	}
 }
@@ -253,7 +261,7 @@ func TestUnit_TenantPoolTaints(t *testing.T) {
 }
 
 func TestUnit_TenantChecksIdentity(t *testing.T) {
-	settings, err := tenantValidateFromEnv(envMap(map[string]string{tenantClusterEnv: "blue"}), filepath.Join(t.TempDir(), "absent"))
+	settings, err := tenantValidateFromProfile(profileTenant{}, envMap(map[string]string{tenantClusterEnv: "blue"}), filepath.Join(t.TempDir(), "absent"))
 	require.NoError(t, err)
 	require.True(t, tenantBehaviorSettings(settings, settings.checks, api.Cluster{}).checkIdentity,
 		"the image reaches a tenant as the provisioned ServiceAccount, in a pod or not")
@@ -317,27 +325,28 @@ func TestUnit_TenantGPUPod(t *testing.T) {
 }
 
 func TestUnit_ValidateInputsDescribed(t *testing.T) {
-	settings, err := tenantValidateFromEnv(envMap(map[string]string{
-		tenantClusterEnv:                 "blue",
-		tenantGPUNodesEnv:                "2",
-		"NVKE_TENANT_COMPONENTS":         "kube-vip",
-		"NVKE_TENANT_APISERVER_FLAGS":    "profiling=false",
-		"NVKE_TENANT_RESERVED_MEMORY":    "1Gi",
-		"NVKE_TENANT_REQUIRED_WORKLOADS": "gpu-operator/nvidia-device-plugin-daemonset",
-	}), filepath.Join(t.TempDir(), "absent"))
+	settings, err := tenantValidateFromProfile(profileTenant{
+		profileExpectations: profileExpectations{
+			Components:        []profileComponent{{Name: componentKubeVIP}},
+			APIServer:         profileAPIServer{Flags: map[string]string{"profiling": "false"}},
+			ReservedMemory:    "1Gi",
+			RequiredWorkloads: []string{"gpu-operator/nvidia-device-plugin-daemonset"},
+		},
+		GPU: profileGPU{Nodes: ptr.To(2)},
+	}, envMap(map[string]string{tenantClusterEnv: "blue"}), filepath.Join(t.TempDir(), "absent"))
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"NVKE_TENANT_CLUSTER=blue",
 		"credential Secret: default/nvke-validate-blue",
-		"NVKE_TENANT_GPU_NODES=2",
+		"tenant.gpu.nodes: 2",
 		"GPU image: " + defaultTenantGPUImage,
 		"required namespaces: kube-system",
 		"probe namespace: " + defaultTenantNamespace,
 		"probe image: " + kube.KubectlImage,
-		"NVKE_TENANT_COMPONENTS=kube-vip=kube-system",
-		"NVKE_TENANT_REQUIRED_WORKLOADS=gpu-operator/nvidia-device-plugin-daemonset",
-		"NVKE_TENANT_APISERVER_FLAGS=profiling=false",
-		"NVKE_TENANT_RESERVED_MEMORY=1Gi",
+		"tenant.components: kube-vip=kube-system",
+		"tenant.requiredWorkloads: gpu-operator/nvidia-device-plugin-daemonset",
+		"tenant.apiServer.flags: profiling=false",
+		"tenant.reservedMemory: 1Gi",
 	}, settings.describe())
 
 	target := &tenantTarget{
@@ -352,10 +361,10 @@ func TestUnit_ValidateInputsDescribed(t *testing.T) {
 
 func TestUnit_ValidateKeepOnFailureRejectsGarbage(t *testing.T) {
 	absent := filepath.Join(t.TempDir(), "absent")
-	_, err := tenantValidateFromEnv(envMap(map[string]string{keepOnFailureEnv: "sometimes"}), absent)
+	_, err := tenantValidateFromProfile(profileTenant{}, envMap(map[string]string{keepOnFailureEnv: "sometimes"}), absent)
 	require.ErrorContains(t, err, keepOnFailureEnv)
-	_, err = siteValidateFromEnv(envMap(map[string]string{keepOnFailureEnv: "sometimes"}), absent)
+	_, err = siteValidateFromProfile(profileManagementCluster{}, envMap(map[string]string{keepOnFailureEnv: "sometimes"}), absent)
 	require.ErrorContains(t, err, keepOnFailureEnv)
-	_, err = siteValidateFromEnv(envMap(map[string]string{keepOnFailureEnv: "true"}), absent)
+	_, err = siteValidateFromProfile(profileManagementCluster{}, envMap(map[string]string{keepOnFailureEnv: "true"}), absent)
 	require.NoError(t, err)
 }

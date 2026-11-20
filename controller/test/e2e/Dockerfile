@@ -1,11 +1,11 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# The E2E suite as an image, for validating a running site from inside its
-# cluster, under an in-cluster test runner. It carries the whole suite and runs
-# the specs NVKE_SITE_VALIDATE and NVKE_TENANT_VALIDATE select, the site's by
-# default: specs that install and change nothing lasting on the site or the
-# tenant. Those labeled creates, and the DNS probe, make short-lived objects in
+# The E2E suite as an image, for validating a running management cluster from
+# inside it, under an in-cluster test runner. It carries the whole suite and
+# runs the specs NVKE_MGMT_CLUSTER_VALIDATE and NVKE_TENANT_VALIDATE select,
+# the management cluster's by default: specs that install and change nothing
+# lasting on the management cluster or the tenant. Those labeled creates, and the DNS probe, make short-lived objects in
 # the probe namespace and delete them.
 #
 # Build from the REPOSITORY ROOT, so the context includes controller/api,
@@ -63,10 +63,10 @@ USER 65532:65532
 
 # A run that names no expected version fails rather than skipping the check,
 # which a report would show as a pass. The two switches choose the specs, the
-# site's alone unless a run turns on its tenant's; an explicit
+# management cluster's alone unless a run turns on its tenant's; an explicit
 # -ginkgo.label-filter overrides them.
 ENV NVKE_E2E_REQUIRE_EXPECTED_VERSION=true \
-    NVKE_SITE_VALIDATE=true \
+    NVKE_MGMT_CLUSTER_VALIDATE=true \
     NVKE_TENANT_VALIDATE=false
 
 # Build args rather than --label, so a rebuild that passes the same values
@@ -76,7 +76,7 @@ ARG VALIDATE_REVISION=""
 LABEL org.opencontainers.image.licenses="Apache-2.0" \
       org.opencontainers.image.title="nvke-validate" \
       org.opencontainers.image.source="https://github.com/dsx-ai-factory/nvke" \
-      org.opencontainers.image.description="NVKE site validation suite" \
+      org.opencontainers.image.description="NVKE management cluster and tenant validation suite" \
       org.opencontainers.image.version="${VALIDATE_VERSION}" \
       org.opencontainers.image.revision="${VALIDATE_REVISION}"
 
@@ -91,7 +91,7 @@ LABEL org.opencontainers.image.licenses="Apache-2.0" \
 # running after two minutes reports its current step and stack every minute,
 # so a hung wait shows where it is rather than only its final error.
 #
-# -ginkgo.timeout because Ginkgo's default is an hour: a healthy site finishes
+# -ginkgo.timeout because Ginkgo's default is an hour: a healthy cluster finishes
 # well inside it, but on a broken one every check waits out its own limit,
 # which together run past two hours, and the checks still to run when the
 # suite times out are reported as interrupted, not as what they found. A

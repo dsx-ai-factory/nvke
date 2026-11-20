@@ -216,7 +216,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 		removeStaleBundles()
 		cfg = expectSucceed(config.Load(cfgPath))
 		if cfg.Lifecycle.ReuseCluster != "" {
-			Fail(fmt.Sprintf("lifecycle.reuseCluster names tenant %q, but this lane builds a new site, which has no tenant to reuse", cfg.Lifecycle.ReuseCluster))
+			Fail(fmt.Sprintf("lifecycle.reuseCluster names tenant %q, but this lane builds a new management cluster, which has no tenant to reuse", cfg.Lifecycle.ReuseCluster))
 		}
 		provider = expectSucceed(newInfraProvider(cfg))
 		capabilities = siteCapabilities(expectSucceed(runCapabilities()))
@@ -371,7 +371,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			}
 			checks := siteLaneChecks()
 			checks.restConfig = func() (*rest.Config, error) { return kube.RESTConfig(cluster.Kubeconfig, "") }
-			return siteValidateSettings{enabled: true, kubernetesVersion: spec.KubernetesVersion, checks: checks, expect: siteLaneExpectations(stack.StorageClass())}
+			return siteValidateSettings{enabled: true, kubernetesVersion: resolvedVersion{field: "kubernetesVersion", value: spec.KubernetesVersion, source: "the site lane's spec"}, checks: checks, expect: siteLaneExpectations(stack.StorageClass())}
 		})
 
 		It("delivers the site's telemetry through NKTP", func(ctx SpecContext) {
@@ -482,17 +482,17 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 				}
 				if cluster.Kubeconfig != "" {
 					if path, err := site.KeepKubeconfig(cluster, dir, node.Name); err != nil {
-						GinkgoLogr.Error(err, "writing the kept site's kubeconfig")
+						GinkgoLogr.Error(err, "writing the kept management cluster's kubeconfig")
 					} else {
 						record.Kubeconfig = path
-						GinkgoLogr.Info("the site's admin kubeconfig reaches it once the node's API server port is forwarded through the jump host",
+						GinkgoLogr.Info("the management cluster's admin kubeconfig reaches it once the node's API server port is forwarded through the jump host",
 							"kubeconfig", path, "forward", fmt.Sprintf("127.0.0.1:%d to %s:127.0.0.1:%d", cluster.APIServerPort, node.IP, cluster.APIServerPort))
 					}
 				}
 				if err := provision.SaveRecord(dir, record); err != nil {
-					GinkgoLogr.Error(err, "writing the kept site's record")
+					GinkgoLogr.Error(err, "writing the kept management cluster's record")
 				} else {
-					GinkgoLogr.Info("qualify validate reads the kept site from its record", "record", provision.RecordPath(dir, node.Name))
+					GinkgoLogr.Info("qualify validate reads the kept management cluster from its record", "record", provision.RecordPath(dir, node.Name))
 				}
 			}
 			GinkgoLogr.Info("the instance survives this run and must be released by hand", "name", node.Name)

@@ -10,17 +10,19 @@ import (
 )
 
 // The validation image chooses what a run covers with two switches rather
-// than a label filter a caller has to write: the site, a tenant, or both.
+// than a label filter a caller has to write: the management cluster, a
+// tenant, or both.
 // Each selects the specs carrying its label. Specs that belong to both, such
 // as the controller health specs a tenant's checks rely on, carry both labels.
 const (
-	siteValidateLabel   = "site-validate"
+	siteValidateLabel   = "mgmt-cluster-validate"
 	tenantValidateLabel = "tenant-validate"
 
-	// siteValidateEnv selects the site-validate specs. The image sets it.
-	siteValidateEnv = "NVKE_SITE_VALIDATE"
+	// siteValidateEnv selects the mgmt-cluster-validate specs. The image
+	// sets it.
+	siteValidateEnv = "NVKE_MGMT_CLUSTER_VALIDATE"
 	// tenantValidateEnv selects the tenant-validate specs. The image sets it
-	// false, so a run validates the site alone unless it asks for a tenant.
+	// false, so a run validates the management cluster alone unless it asks for a tenant.
 	tenantValidateEnv = "NVKE_TENANT_VALIDATE"
 
 	labelFilterFlag = "ginkgo.label-filter"

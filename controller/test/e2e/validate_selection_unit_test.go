@@ -21,12 +21,12 @@ func TestUnit_ValidationLabelFilter(t *testing.T) {
 		env  map[string]string
 		want string
 	}{
-		"neither set leaves the filter alone": {nil, ""},
-		"the site":                            {map[string]string{siteValidateEnv: "true", tenantValidateEnv: "false"}, "site-validate"},
-		"the site, tenant unset":              {map[string]string{siteValidateEnv: "true"}, "site-validate"},
-		"the site, tenant blank":              {map[string]string{siteValidateEnv: "true", tenantValidateEnv: ""}, "site-validate"},
-		"the site and a tenant":               {map[string]string{siteValidateEnv: "true", tenantValidateEnv: "true"}, "site-validate || tenant-validate"},
-		"a tenant alone":                      {map[string]string{siteValidateEnv: "false", tenantValidateEnv: "true"}, "tenant-validate"},
+		"neither set leaves the filter alone":  {nil, ""},
+		"the management cluster":               {map[string]string{siteValidateEnv: "true", tenantValidateEnv: "false"}, "mgmt-cluster-validate"},
+		"the management cluster, tenant unset": {map[string]string{siteValidateEnv: "true"}, "mgmt-cluster-validate"},
+		"the management cluster, tenant blank": {map[string]string{siteValidateEnv: "true", tenantValidateEnv: ""}, "mgmt-cluster-validate"},
+		"the management cluster and a tenant":  {map[string]string{siteValidateEnv: "true", tenantValidateEnv: "true"}, "mgmt-cluster-validate || tenant-validate"},
+		"a tenant alone":                       {map[string]string{siteValidateEnv: "false", tenantValidateEnv: "true"}, "tenant-validate"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			got, err := validationLabelFilter(lookupIn(tc.env))
@@ -38,11 +38,11 @@ func TestUnit_ValidationLabelFilter(t *testing.T) {
 
 func TestUnit_ValidationLabelFilterRejects(t *testing.T) {
 	for name, env := range map[string]map[string]string{
-		"both false":     {siteValidateEnv: "false", tenantValidateEnv: "false"},
-		"both blank":     {siteValidateEnv: "", tenantValidateEnv: " "},
-		"site blank":     {siteValidateEnv: ""},
-		"site garbage":   {siteValidateEnv: "yes please"},
-		"tenant garbage": {siteValidateEnv: "true", tenantValidateEnv: "sometimes"},
+		"both false":                 {siteValidateEnv: "false", tenantValidateEnv: "false"},
+		"both blank":                 {siteValidateEnv: "", tenantValidateEnv: " "},
+		"management cluster blank":   {siteValidateEnv: ""},
+		"management cluster garbage": {siteValidateEnv: "yes please"},
+		"tenant garbage":             {siteValidateEnv: "true", tenantValidateEnv: "sometimes"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			_, err := validationLabelFilter(lookupIn(env))

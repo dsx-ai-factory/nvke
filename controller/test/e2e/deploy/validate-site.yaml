@@ -1,13 +1,14 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-# Runs the validation image against the site it is applied to, as a Job in
-# its own namespace, with the RBAC "Running the image" in ../README.md lists
-# and nothing more. "Running it on a site" there fills in the placeholders:
+# Runs the validation image against the management cluster it is applied to,
+# as a Job in its own namespace, with the RBAC "Running the image" in
+# ../README.md lists and nothing more. "Running it on a management cluster"
+# there fills in the placeholders:
 #
 #   __IMAGE__                 the image built from the controller's release tag
 #   __CONTROLLER_VERSION__    that tag's version, such as v0.3.0
-#   __KUBERNETES_VERSION__    the site's Kubernetes version, such as v1.34.2
+#   __KUBERNETES_VERSION__    the cluster's Kubernetes version, such as v1.34.2
 #   __CONTROLLER_NAMESPACE__  the namespace the controller runs in
 #   __CONTROLLER_NAME__       its Deployment, which names its Service too
 #   __TOKEN_NAMESPACE__       the identity the suite presents to the controller
@@ -56,7 +57,7 @@ rules:
   - apiGroups: [cert-manager.io]
     resources: [certificates]
     verbs: [get, list]
-  # Only where NVKE_SITE_CERT_MANAGER_APPROVAL is policy, for the creates
+  # Only where managementCluster.certManager.approval is policy, for the creates
   # specs; namespaces only where a policy selects namespaces by label:
   # - apiGroups: [policy.cert-manager.io]
   #   resources: [certificaterequestpolicies]
@@ -64,7 +65,7 @@ rules:
   # - apiGroups: [""]
   #   resources: [namespaces]
   #   verbs: [get]
-  # Only where NVKE_SITE_COMPONENTS lists argocd or cnpg:
+  # Only where managementCluster.components lists argocd or cnpg:
   # - apiGroups: [argoproj.io]
   #   resources: [applications]
   #   verbs: [get, list]
@@ -166,7 +167,7 @@ rules:
   - apiGroups: [""]
     resources: [secrets]
     verbs: [get, delete]
-  # Only where NVKE_SITE_CERT_MANAGER_APPROVAL is policy:
+  # Only where managementCluster.certManager.approval is policy:
   # - apiGroups: [cert-manager.io]
   #   resources: [certificaterequests]
   #   verbs: [list]
@@ -223,12 +224,14 @@ spec:
         - name: validate
           image: "__IMAGE__"
           env:
-            # These win over a validation profile, even blank: delete one to
-            # take it from the profile instead.
+            # The versions override a validation profile's. Delete them to
+            # take them from the profile instead.
             - name: NVKE_CONTROLLER_EXPECTED_VERSION
               value: "__CONTROLLER_VERSION__"
-            - name: NVKE_SITE_KUBERNETES_VERSION
+            - name: NVKE_MGMT_CLUSTER_KUBERNETES_VERSION
               value: "__KUBERNETES_VERSION__"
+            # A validation profile may set these instead, under controller
+            # and auth. Set both to different values and the run fails.
             - name: NVKE_CONTROLLER_NAMESPACE
               value: "__CONTROLLER_NAMESPACE__"
             - name: NVKE_CONTROLLER_SERVICE

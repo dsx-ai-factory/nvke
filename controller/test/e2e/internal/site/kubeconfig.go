@@ -49,13 +49,13 @@ func (b bootstrap) forwardKubeconfig(ctx context.Context) (string, int, error) {
 }
 
 // KeepKubeconfig writes the cluster's admin kubeconfig into dir as
-// name.kubeconfig, for a site that outlives the run. The run's forward ends
+// name.kubeconfig, for a management cluster that outlives the run. The run's forward ends
 // with it, so the copy points at 127.0.0.1 on the API server's own port,
 // which a forward to the node's loopback on that port reaches, and keeps the
 // server name its certificate covers.
 func KeepKubeconfig(cluster Cluster, dir, name string) (string, error) {
 	if cluster.Kubeconfig == "" || cluster.APIServerPort == 0 {
-		return "", fmt.Errorf("site %s was not bootstrapped, so it has no kubeconfig", name)
+		return "", fmt.Errorf("management cluster %s was not bootstrapped, so it has no kubeconfig", name)
 	}
 	forwarded, err := os.ReadFile(cluster.Kubeconfig)
 	if err != nil {

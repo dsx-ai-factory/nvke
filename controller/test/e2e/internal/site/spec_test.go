@@ -428,7 +428,7 @@ func TestKeepKubeconfig(t *testing.T) {
 	}
 
 	if _, err := KeepKubeconfig(Cluster{}, keepDir, "site-b"); err == nil {
-		t.Error("a site with no kubeconfig was kept without an error")
+		t.Error("a management cluster with no kubeconfig was kept without an error")
 	}
 }
 

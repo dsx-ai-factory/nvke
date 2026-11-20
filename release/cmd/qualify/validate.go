@@ -39,7 +39,7 @@ const validateJUnit = "junit-test-report.xml"
 
 // imageInputs are the variables validate sets on the image itself, so the
 // environment's own values of them are not passed through.
-var imageInputs = []string{"NVKE_VALIDATE_PROFILE", "NVKE_CONTROLLER_EXPECTED_VERSION", "NVKE_SITE_KUBERNETES_VERSION"}
+var imageInputs = []string{"NVKE_VALIDATE_PROFILE", "NVKE_CONTROLLER_EXPECTED_VERSION", "NVKE_MGMT_CLUSTER_KUBERNETES_VERSION"}
 
 type validateOptions struct {
 	runDir, teleportCluster, kubeconfig, kubeContext string
@@ -53,22 +53,24 @@ func validateCmd() *cobra.Command {
 	var o validateOptions
 	cmd := &cobra.Command{
 		Use:   "validate",
-		Short: "Run the validation image against a site",
-		Long: `Run the validation image against a site from this checkout.
+		Short: "Run the validation image against a management cluster",
+		Long: `Run the validation image against a management cluster from this checkout.
 
-Name the site one of three ways:
+Name the management cluster one of three ways:
 
-  --run-dir           a site kept by qualify local --keep-site. The node, its
+  --run-dir           a management cluster kept by qualify local --keep-site. The node, its
                       key, its kubeconfig and both versions come from the run,
                       and the node is reached through its jump host.
-  --teleport-cluster  a site reached through Teleport; run tsh login first.
-  --kubeconfig        a site any kubeconfig reaches.
+  --teleport-cluster  a management cluster reached through Teleport; run tsh login first.
+  --kubeconfig        a management cluster any kubeconfig reaches.
 
---profile names the site's validation profile, which says what the site is.
-The versions change with every upgrade, so they are flags, not profile keys.
+--profile names the management cluster's ValidationProfile, which says what
+the management cluster is. It may set the controller and Kubernetes versions;
+--controller-version and --kubernetes-version override them for one run, and
+are required without a profile.
 
 The image is built from this checkout unless --image names one. The run is
-read-only, as a runner that may create nothing on the site needs, unless
+read-only, as a runner that may create nothing on the management cluster needs, unless
 --full adds the specs that create short-lived objects. Any NVKE_* or NKE_E2E_*
 variable in the environment reaches the image as it is.
 
@@ -81,15 +83,15 @@ default validate-<time> under --run-dir, or under the user cache.`,
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&o.runDir, "run-dir", "", "the --run-dir of a qualify local --keep-site run whose site to validate")
+	f.StringVar(&o.runDir, "run-dir", "", "the --run-dir of a qualify local --keep-site run whose management cluster to validate")
 	f.StringVar(&o.teleportCluster, "teleport-cluster", "", "the Teleport kube cluster to validate")
-	f.StringVar(&o.kubeconfig, "kubeconfig", "", "a kubeconfig that reaches the site to validate")
+	f.StringVar(&o.kubeconfig, "kubeconfig", "", "a kubeconfig that reaches the management cluster to validate")
 	f.StringVar(&o.kubeContext, "context", "", "the --kubeconfig context to use (default: its current one)")
-	f.StringVar(&o.profile, "profile", "", "the site's validation profile")
+	f.StringVar(&o.profile, "profile", "", "the management cluster's validation profile")
 	f.StringVar(&o.controllerVersion, "controller-version", "", "the version the controller should report (default with --run-dir: the run's)")
-	f.StringVar(&o.kubernetesVersion, "kubernetes-version", "", "the Kubernetes version the site was built with (default with --run-dir: the run's)")
+	f.StringVar(&o.kubernetesVersion, "kubernetes-version", "", "the Kubernetes version the management cluster was built with (default with --run-dir: the run's)")
 	f.StringVar(&o.image, "image", "", "the validation image to run (default: build one from this checkout)")
-	f.BoolVar(&o.full, "full", false, "also run the specs that create short-lived objects on the site")
+	f.BoolVar(&o.full, "full", false, "also run the specs that create short-lived objects on the management cluster")
 	f.StringVar(&o.only, "only", "", "a Ginkgo label expression the run is narrowed to")
 	f.StringVar(&o.out, "out", "", "where the run's files are kept")
 	f.BoolVar(&o.dryRun, "dry-run", false, "list the specs the run would run, and run none")
@@ -111,7 +113,7 @@ type keptRecord struct {
 	HostKey    string `json:"hostKey"`
 }
 
-// keptSite reads the site node a qualify local run kept, and the versions
+// keptSite reads the management cluster node a qualify local run kept, and the versions
 // the run built it with.
 func keptSite(runDir string) (keptRecord, map[string]string, error) {
 	records, err := filepath.Glob(filepath.Join(runDir, "node-keys", "*.json"))
@@ -119,7 +121,7 @@ func keptSite(runDir string) (keptRecord, map[string]string, error) {
 		return keptRecord{}, nil, err
 	}
 	if len(records) != 1 {
-		return keptRecord{}, nil, fmt.Errorf("%s: want one kept site record in node-keys, found %d; was the run kept with --keep-site?", runDir, len(records))
+		return keptRecord{}, nil, fmt.Errorf("%s: want one kept management cluster record in node-keys, found %d; was the run kept with --keep-site?", runDir, len(records))
 	}
 	data, err := os.ReadFile(records[0])
 	if err != nil {
@@ -138,7 +140,7 @@ func keptSite(runDir string) (keptRecord, map[string]string, error) {
 		return keptRecord{}, nil, fmt.Errorf("%s names no jump host", records[0])
 	}
 	if r.HostKey == "" {
-		return keptRecord{}, nil, fmt.Errorf("%s names no host key to hold the node to; it comes from a run that recorded none, so keep the site again", records[0])
+		return keptRecord{}, nil, fmt.Errorf("%s names no host key to hold the node to; it comes from a run that recorded none, so keep the management cluster again", records[0])
 	}
 	if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(r.HostKey)); err != nil {
 		return keptRecord{}, nil, fmt.Errorf("%s: hostKey: %w", records[0], err)
@@ -182,7 +184,7 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 		}
 	}
 
-	name := "site"
+	name := "mgmt-cluster"
 	var kept keptRecord
 	switch {
 	case o.runDir != "":
@@ -199,8 +201,8 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 	case o.kubeconfig != "":
 		name = strings.TrimSuffix(filepath.Base(o.kubeconfig), filepath.Ext(o.kubeconfig))
 	}
-	if o.controllerVersion == "" || o.kubernetesVersion == "" {
-		return errors.New("--controller-version and --kubernetes-version are required: they are what the checks hold the site to")
+	if o.profile == "" && (o.controllerVersion == "" || o.kubernetesVersion == "") {
+		return errors.New("--controller-version and --kubernetes-version are required without a --profile that sets them: they are what the checks hold the management cluster to")
 	}
 	if o.profile != "" {
 		var err error
@@ -290,7 +292,8 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 		return err
 	}
 
-	fmt.Fprintf(out, "site %s, image %s\nexpecting controller %s, Kubernetes %s\nfilter: %s\n", name, o.image, o.controllerVersion, o.kubernetesVersion, filter)
+	fmt.Fprintf(out, "management cluster %s, image %s\nexpecting controller %s, Kubernetes %s\nfilter: %s\n", name, o.image,
+		cmp.Or(o.controllerVersion, "from the profile"), cmp.Or(o.kubernetesVersion, "from the profile"), filter)
 	logFile, err := os.OpenFile(filepath.Join(o.out, "run.log"), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
 		return err
@@ -300,7 +303,7 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 	run.Stdout = io.MultiWriter(out, logFile)
 	run.Stderr = run.Stdout
 	// docker run passes the interrupt to the suite, which deletes what it
-	// made before it exits; a kill would leave a probe pod on the site. Its
+	// made before it exits; a kill would leave a probe pod on the management cluster. Its
 	// own process group keeps a terminal's interrupt from reaching it as well,
 	// since Ginkgo skips its cleanup on a second one.
 	run.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
@@ -324,16 +327,16 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 		return fmt.Errorf("validation: %w", runErr)
 	}
 	// Ginkgo exits 0 when every selected spec skips, or when --only selects
-	// none, which would read as a site that passed.
+	// none, which would read as a management cluster that passed.
 	if !o.dryRun && passedChecks == 0 {
-		return errors.New("validation: no check passed, so the run says nothing about the site; see the skips above")
+		return errors.New("validation: no check passed, so the run says nothing about the management cluster; see the skips above")
 	}
 	return nil
 }
 
 // runSwitches are the image's ENV that decide whether a run checks anything.
 // A validation profile cannot set them either.
-var runSwitches = []string{"NVKE_SITE_VALIDATE", "NVKE_E2E_REQUIRE_EXPECTED_VERSION", "NKE_E2E_AUTH_DISABLE"}
+var runSwitches = []string{"NVKE_MGMT_CLUSTER_VALIDATE", "NVKE_E2E_REQUIRE_EXPECTED_VERSION", "NKE_E2E_AUTH_DISABLE"}
 
 // runSwitchesSet is the runSwitches env sets, even to nothing: docker passes
 // an empty value through, which turns the switch off.
@@ -388,7 +391,7 @@ func buildValidateImage(ctx context.Context, out io.Writer) (string, error) {
 	return image, nil
 }
 
-// connect reaches the site and returns a kubeconfig the host can use. What
+// connect reaches the management cluster and returns a kubeconfig the host can use. What
 // it starts in the background ends with ctx.
 func connect(ctx context.Context, o validateOptions, kept keptRecord) (string, error) {
 	switch {
@@ -461,7 +464,7 @@ func waitForPort(ctx context.Context, port int, exited <-chan struct{}, out stri
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-exited:
-			return fmt.Errorf("the connection to the site exited; see %s", logPath)
+			return fmt.Errorf("the connection to the management cluster exited; see %s", logPath)
 		case <-time.After(2 * time.Second):
 		}
 	}
@@ -498,7 +501,7 @@ func relayArgs(kept keptRecord) []string {
 // sshHandshakeTimeout bounds the SSH handshake with the node.
 var sshHandshakeTimeout = time.Minute
 
-// forwardThroughJumpHost forwards the kept site's API server port to the
+// forwardThroughJumpHost forwards the kept management cluster's API server port to the
 // host's loopback, reaching the node as the suite does: an SSH session with
 // the run's key, carried by tsh through the jump host. It runs no ssh
 // binary. What it starts ends with ctx.
@@ -610,7 +613,7 @@ func checkHostKey(recorded string, key ssh.PublicKey) error {
 		return err
 	}
 	if !bytes.Equal(key.Marshal(), want.Marshal()) {
-		return fmt.Errorf("the node's host key is %s, not the %s its site record holds", ssh.FingerprintSHA256(key), ssh.FingerprintSHA256(want))
+		return fmt.Errorf("the node's host key is %s, not the %s its management cluster record holds", ssh.FingerprintSHA256(key), ssh.FingerprintSHA256(want))
 	}
 	return nil
 }
@@ -762,14 +765,14 @@ func isLoopback(host string) bool {
 }
 
 // labelFilter is read-only by default: the specs labeled creates make
-// short-lived objects on the site.
+// short-lived objects on the management cluster.
 func labelFilter(full bool, only string, tenant bool) string {
-	filter := "site-validate && !creates"
+	filter := "mgmt-cluster-validate && !creates"
 	if full {
-		filter = "site-validate"
+		filter = "mgmt-cluster-validate"
 	}
 	if tenant {
-		filter = strings.ReplaceAll(filter, "site-validate", "(site-validate || tenant-validate)")
+		filter = strings.ReplaceAll(filter, "mgmt-cluster-validate", "(mgmt-cluster-validate || tenant-validate)")
 	}
 	if only != "" {
 		filter = "(" + filter + ") && (" + only + ")"
@@ -805,9 +808,13 @@ func dockerArgs(o validateOptions, platform, kubeconfig, filter string, passed [
 		"-v", filepath.Join(o.out, "artifacts")+":/artifacts",
 		"-v", kubeconfig+":/kube/config:ro",
 		"-e", "KUBECONFIG=/kube/config",
-		"-e", "NVKE_CONTROLLER_EXPECTED_VERSION="+o.controllerVersion,
-		"-e", "NVKE_SITE_KUBERNETES_VERSION="+o.kubernetesVersion,
 	)
+	if o.controllerVersion != "" {
+		args = append(args, "-e", "NVKE_CONTROLLER_EXPECTED_VERSION="+o.controllerVersion)
+	}
+	if o.kubernetesVersion != "" {
+		args = append(args, "-e", "NVKE_MGMT_CLUSTER_KUBERNETES_VERSION="+o.kubernetesVersion)
+	}
 	if o.profile != "" {
 		args = append(args, "-v", o.profile+":/profile.yaml:ro", "-e", "NVKE_VALIDATE_PROFILE=/profile.yaml")
 	}
@@ -828,7 +835,7 @@ func writeInputs(o validateOptions, name, filter string, passed []string) error 
 			return err
 		}
 	}
-	inputs := fmt.Sprintf("SITE=%s\nRUN_DIR=%s\nTELEPORT_CLUSTER=%s\nKUBECONFIG=%s\nIMAGE=%s\nPROFILE=%s\nCONTROLLER_VERSION=%s\nKUBERNETES_VERSION=%s\nFILTER=%s\nDRY_RUN=%t\nPASSED_ENV=%s\n",
+	inputs := fmt.Sprintf("MANAGEMENT_CLUSTER=%s\nRUN_DIR=%s\nTELEPORT_CLUSTER=%s\nKUBECONFIG=%s\nIMAGE=%s\nPROFILE=%s\nCONTROLLER_VERSION=%s\nKUBERNETES_VERSION=%s\nFILTER=%s\nDRY_RUN=%t\nPASSED_ENV=%s\n",
 		name, o.runDir, o.teleportCluster, o.kubeconfig, o.image, o.profile, o.controllerVersion, o.kubernetesVersion, filter, o.dryRun, strings.Join(passed, " "))
 	return os.WriteFile(filepath.Join(o.out, "inputs.env"), []byte(inputs), 0o600)
 }
