@@ -29,6 +29,17 @@ type nodeAgentEncryptionClient interface {
 
 type nodeAgentClientDialer func(context.Context, rollout.Node) (nodeAgentEncryptionClient, func(), error)
 
+// nodeAgentDefragClient is the defragmentation half of the agent surface.
+// GetEtcdStatus is read-only and is what decides whether a member is worth
+// restarting at all; the other two drive the asynchronous restart.
+type nodeAgentDefragClient interface {
+	GetEtcdStatus(ctx context.Context, req *nvkeproto.GetEtcdStatusRequest, opts ...grpc.CallOption) (*nvkeproto.GetEtcdStatusResponse, error)
+	StartEtcdDefrag(ctx context.Context, req *nvkeproto.StartEtcdDefragRequest, opts ...grpc.CallOption) (*nvkeproto.StartEtcdDefragResponse, error)
+	GetEtcdDefragStatus(ctx context.Context, req *nvkeproto.GetEtcdDefragStatusRequest, opts ...grpc.CallOption) (*nvkeproto.GetEtcdDefragStatusResponse, error)
+}
+
+type nodeAgentDefragClientDialer func(context.Context, rollout.Node) (nodeAgentDefragClient, func(), error)
+
 // EncryptionKey holds key material and its Kubernetes storage identity.
 // It is read only inside activities and must never be placed in a rollout payload.
 type EncryptionKey struct {

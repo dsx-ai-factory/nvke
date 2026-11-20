@@ -31,4 +31,5 @@ func RegisterDefaults(reg *rollout.Registry, dialer nodeagent.Dialer, k8sClient 
 		WithDialer(dialer),
 		WithEncryptionKeyReader(keyReader),
 	)))
+	reg.RegisterOperation(rollout.Compile(NewDefragOperation(WithDefragDialer(dialer))))
 }
