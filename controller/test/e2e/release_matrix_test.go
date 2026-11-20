@@ -134,7 +134,9 @@ func nicoVMSReleaseTestSpec(profile nicoVMSReleaseEntry, index int) testSpec {
 				NodeNamePrefix:   fmt.Sprintf("wp%02d", index+1),
 				DesiredNodeCount: 1,
 				Release:          profile.name,
-				InstanceTypeID:   nicoVMSInstanceTypeID,
+				// ovnkube-node keeps its chart requests (1312Mi on 2.4.2), which
+				// a cpu2-mem2gb worker cannot fit.
+				InstanceTypeID: nicoVMSLargeInstanceID,
 			}},
 		},
 		options: nvke.Options{
@@ -429,8 +431,8 @@ func TestNicoVMSReleaseMatrix(t *testing.T) {
 	if productionSpec.shape.kubernetesVersion != defaultKubernetesVersion {
 		t.Errorf("injected profile uses Kubernetes %q, want suite default %q", productionSpec.shape.kubernetesVersion, defaultKubernetesVersion)
 	}
-	if productionSpec.shape.workerPools[0].InstanceTypeID != nicoVMSInstanceTypeID {
-		t.Errorf("production profile uses instance type %q, want %q", productionSpec.shape.workerPools[0].InstanceTypeID, nicoVMSInstanceTypeID)
+	if productionSpec.shape.workerPools[0].InstanceTypeID != nicoVMSLargeInstanceID {
+		t.Errorf("production profile uses instance type %q, want %q", productionSpec.shape.workerPools[0].InstanceTypeID, nicoVMSLargeInstanceID)
 	}
 	built := nicoVMSSpec(config.Config{}, "matrix", productionSpec.shape)
 	if got := builtControlPlaneInstanceType(built); got != nicoVMSLargeInstanceID {
@@ -445,7 +447,7 @@ func TestNicoVMSReleaseMatrix(t *testing.T) {
 		t.Fatalf("matrix missing expected nico-vms profile %q", nicoVMSRelease)
 	}
 	nicoVMSProfileSpec := nicoVMSReleaseTestSpec(nicoVMSProfile, 2)
-	if nicoVMSProfileSpec.shape.workerPools[0].InstanceTypeID != nicoVMSInstanceTypeID {
-		t.Errorf("nico-vms profile uses instance type %q, want %q", nicoVMSProfileSpec.shape.workerPools[0].InstanceTypeID, nicoVMSInstanceTypeID)
+	if nicoVMSProfileSpec.shape.workerPools[0].InstanceTypeID != nicoVMSLargeInstanceID {
+		t.Errorf("nico-vms profile uses instance type %q, want %q", nicoVMSProfileSpec.shape.workerPools[0].InstanceTypeID, nicoVMSLargeInstanceID)
 	}
 }
