@@ -17,6 +17,8 @@ func TestExitCodeContract(t *testing.T) {
 		CodeInternal:    1,
 		CodeUsage:       2,
 		CodeUnsupported: 10,
+		CodeUnavailable: 30,
+		CodeTimeout:     31,
 	}
 	if len(AllCodes) != len(snapshot) || len(exitCodes) != len(snapshot) {
 		t.Fatalf("AllCodes=%d exitCodes=%d snapshot=%d; add a new code to all three", len(AllCodes), len(exitCodes), len(snapshot))
@@ -59,6 +61,29 @@ func TestExitCode(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := ExitCode(tc.err); got != tc.want {
 				t.Errorf("ExitCode = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRetryable(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, false},
+		{"timeout", New(CodeTimeout, "x"), true},
+		{"unavailable", New(CodeUnavailable, "x"), true},
+		{"wrapped timeout", fmt.Errorf("outer: %w", New(CodeTimeout, "x")), true},
+		{"usage", New(CodeUsage, "x"), false},
+		{"internal", New(CodeInternal, "x"), false},
+		{"plain", stderrors.New("boom"), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := Retryable(tc.err); got != tc.want {
+				t.Errorf("Retryable = %v, want %v", got, tc.want)
 			}
 		})
 	}

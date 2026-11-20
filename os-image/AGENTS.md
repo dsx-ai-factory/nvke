@@ -23,7 +23,7 @@ cmd/nvke-os-image-check/   # checker entrypoint
 cmd/nvke-os/              # image CLI: every verb, including build-only ones
 cmd/nvke-os-node/         # node CLI: manifest and verify only
 internal/check/           # dial + gRPC reflection / GetKubeadmStatus
-internal/oscli/           # shared command layer: flags, -o json envelope, logging
+internal/oscli/           # shared command layer: usage contract, per-verb --format, exit codes
 internal/errors/          # coded errors and their banded exit statuses
 ```
 

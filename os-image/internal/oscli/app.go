@@ -9,23 +9,19 @@ package oscli
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
-	"log/slog"
-	"os"
 
 	"github.com/urfave/cli/v2"
 
 	oserr "github.com/dsx-ai-factory/nvke/os-image/internal/errors"
 )
 
-const loggerKey = "nvke-os.logger"
-
-// NewApp builds a CLI with the global flags every nvke-os binary shares. Each
-// binary passes the verbs it ships, so build-only verbs never reach the node
-// binary.
+// NewApp builds a CLI that keeps nvkr's usage contract at every level of the
+// command tree. Each binary passes the verbs it ships, so build-only verbs
+// never reach the node binary. Verbs add their own flags (--format, --verbose)
+// rather than sharing global ones, as nvkr's do.
 func NewApp(name, usage, version string, commands ...*cli.Command) *cli.App {
 	app := &cli.App{
 		Name:            name,
@@ -33,13 +29,6 @@ func NewApp(name, usage, version string, commands ...*cli.Command) *cli.App {
 		Version:         version,
 		HideHelpCommand: true,
 		OnUsageError:    codedUsageError,
-		Metadata:        map[string]any{},
-		Flags: []cli.Flag{
-			&cli.StringFlag{Name: "output", Aliases: []string{"o"}, Value: "text", Usage: "result format: text or json"},
-			&cli.StringFlag{Name: "log-level", Value: "info", Usage: "debug, info, warn, or error"},
-			&cli.StringFlag{Name: "log-format", Value: "auto", Usage: "auto, text, or json (auto is json when CI is set)"},
-		},
-		Before: configure,
 		Action: func(c *cli.Context) error {
 			if c.Args().Present() {
 				return oserr.New(oserr.CodeUsage, "unknown command %q", c.Args().First())
@@ -49,35 +38,55 @@ func NewApp(name, usage, version string, commands ...*cli.Command) *cli.App {
 		Commands: commands,
 	}
 	for _, command := range commands {
-		command.OnUsageError = codedUsageError
-		// urfave/cli ignores stray arguments; a verb that declares none refuses
-		// them, as nvkectl's do with cobra.NoArgs. A verb with subcommands is
-		// skipped: its Before sees the subcommand name as an argument.
-		if command.ArgsUsage == "" && len(command.Subcommands) == 0 {
-			command.Before = chainRejectArgs(command.Before)
-		}
+		configureCommandUsage(command)
 	}
 	return app
 }
 
+// configureCommandUsage applies the usage contract to command and every
+// subcommand: a bad flag or a stray argument is a coded usage error, and a verb
+// that only groups subcommands rejects an unknown one instead of letting
+// urfave/cli exit on its own. Required flags are checked in the action, not
+// with urfave's Required, so a missing one is a coded usage error too.
+func configureCommandUsage(command *cli.Command) {
+	command.OnUsageError = codedUsageError
+	if len(command.Subcommands) > 0 {
+		if command.Action == nil {
+			command.Action = func(c *cli.Context) error {
+				if c.Args().Present() {
+					return oserr.New(oserr.CodeUsage, "unknown %s subcommand %q", c.Command.Name, c.Args().First())
+				}
+				return cli.ShowSubcommandHelp(c)
+			}
+		}
+		for _, child := range command.Subcommands {
+			configureCommandUsage(child)
+		}
+		return
+	}
+	// urfave/cli ignores stray arguments; a leaf verb that declares none
+	// refuses them, as nvkectl's do with cobra.NoArgs.
+	if command.ArgsUsage == "" {
+		command.Before = chainRejectArgs(command.Before)
+	}
+}
+
 // Run executes app with args (args[0] is the program name), writes results to
-// stdout and diagnostics to stderr, and returns the process exit status.
+// stdout and diagnostics to stderr, and returns the process exit status. An
+// uncoded error from a cancelled or timed-out run reports CodeTimeout, so a
+// caller can retry it.
 func Run(ctx context.Context, app *cli.App, args []string, stdout, stderr io.Writer) int {
 	app.Writer, app.ErrWriter = stdout, stderr
 	err := app.RunContext(ctx, args)
+	var coded *oserr.Error
+	if err != nil && !errors.As(err, &coded) &&
+		(ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+		err = oserr.Wrap(oserr.CodeTimeout, err, "run canceled")
+	}
 	if err != nil {
 		fmt.Fprintf(stderr, "%s: %v\n", app.Name, err)
 	}
 	return oserr.ExitCode(err)
-}
-
-// Logger returns the invocation's logger, configured once from the global
-// flags and tagged with a run ID.
-func Logger(c *cli.Context) *slog.Logger {
-	if logger, ok := c.App.Metadata[loggerKey].(*slog.Logger); ok {
-		return logger
-	}
-	return slog.New(slog.DiscardHandler)
 }
 
 // chainRejectArgs refuses stray arguments before running the command's own
@@ -96,41 +105,4 @@ func chainRejectArgs(next cli.BeforeFunc) cli.BeforeFunc {
 
 func codedUsageError(_ *cli.Context, err error, _ bool) error {
 	return oserr.Wrap(oserr.CodeUsage, err, "invalid command usage")
-}
-
-func configure(c *cli.Context) error {
-	switch c.String("output") {
-	case "text", "json":
-	default:
-		return oserr.New(oserr.CodeUsage, "--output must be text or json, got %q", c.String("output"))
-	}
-	var level slog.Level
-	if err := level.UnmarshalText([]byte(c.String("log-level"))); err != nil {
-		return oserr.Wrap(oserr.CodeUsage, err, "invalid --log-level")
-	}
-	opts := &slog.HandlerOptions{Level: level}
-	var handler slog.Handler
-	switch format := c.String("log-format"); {
-	case format == "json", format == "auto" && os.Getenv("CI") != "":
-		handler = slog.NewJSONHandler(c.App.ErrWriter, opts)
-	case format == "text", format == "auto":
-		if os.Getenv("JOURNAL_STREAM") != "" {
-			// journald stamps each line itself, so drop slog's timestamp.
-			opts.ReplaceAttr = func(groups []string, a slog.Attr) slog.Attr {
-				if len(groups) == 0 && a.Key == slog.TimeKey {
-					return slog.Attr{}
-				}
-				return a
-			}
-		}
-		handler = slog.NewTextHandler(c.App.ErrWriter, opts)
-	default:
-		return oserr.New(oserr.CodeUsage, "--log-format must be auto, text, or json, got %q", format)
-	}
-	runID := make([]byte, 8)
-	_, _ = rand.Read(runID) // crypto/rand.Read never returns an error.
-	logger := slog.New(handler).With("run_id", hex.EncodeToString(runID))
-	c.App.Metadata[loggerKey] = logger
-	logger.Debug("starting", "command", c.Args().First())
-	return nil
 }

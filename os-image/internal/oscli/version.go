@@ -5,10 +5,14 @@ package oscli
 
 import "github.com/urfave/cli/v2"
 
-// versionResult is the data of a Version result.
+// VersionResultSchema versions the version verb's JSON result. A breaking
+// change to its shape moves it.
+const VersionResultSchema = "os.nvke.dev/version-result/v1"
+
 type versionResult struct {
-	Name    string `json:"name"`
-	Version string `json:"version"`
+	SchemaVersion string `json:"schemaVersion"`
+	Name          string `json:"name"`
+	Version       string `json:"version"`
 }
 
 // VersionCommand prints the binary's stamped version.
@@ -16,9 +20,10 @@ func VersionCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "version",
 		Usage: "print the version",
+		Flags: []cli.Flag{formatFlag()},
 		Action: func(c *cli.Context) error {
-			result := versionResult{Name: c.App.Name, Version: c.App.Version}
-			return writeResult(c, "Version", result, result.Name+" version "+result.Version)
+			result := versionResult{SchemaVersion: VersionResultSchema, Name: c.App.Name, Version: c.App.Version}
+			return writeResult(c, result, result.Name+" version "+result.Version)
 		},
 	}
 }

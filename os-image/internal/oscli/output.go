@@ -12,28 +12,27 @@ import (
 	oserr "github.com/dsx-ai-factory/nvke/os-image/internal/errors"
 )
 
-// APIVersion versions every JSON result. A breaking change to any result's
-// shape moves it.
-const APIVersion = "os.nvke.dev/v1alpha1"
-
-// envelope wraps every JSON result so a consumer can check what it is reading.
-type envelope struct {
-	APIVersion string `json:"apiVersion"`
-	Kind       string `json:"kind"`
-	Data       any    `json:"data"`
+// formatFlag is the per-verb result format flag, as nvkr's verbs declare it.
+func formatFlag() cli.Flag {
+	return &cli.StringFlag{Name: "format", Value: "text", Usage: "text or json"}
 }
 
-// writeResult writes one result to stdout, as text or as a JSON envelope
-// according to the global --output flag.
-func writeResult(c *cli.Context, kind string, data any, text string) error {
-	if c.String("output") != "json" {
+// writeResult writes one result to stdout as text, or as result's flat JSON
+// object when --format is json. Each JSON result carries its own
+// schemaVersion field.
+func writeResult(c *cli.Context, result any, text string) error {
+	switch format := c.String("format"); format {
+	case "text":
 		_, err := fmt.Fprintln(c.App.Writer, text)
 		return err
+	case "json":
+		raw, err := json.Marshal(result)
+		if err != nil {
+			return oserr.Wrap(oserr.CodeInternal, err, "encoding %s result", c.Command.Name)
+		}
+		_, err = fmt.Fprintf(c.App.Writer, "%s\n", raw)
+		return err
+	default:
+		return oserr.New(oserr.CodeUsage, "--format must be text or json, got %q", format)
 	}
-	raw, err := json.Marshal(envelope{APIVersion: APIVersion, Kind: kind, Data: data})
-	if err != nil {
-		return oserr.Wrap(oserr.CodeInternal, err, "encoding %s result", kind)
-	}
-	_, err = fmt.Fprintf(c.App.Writer, "%s\n", raw)
-	return err
 }

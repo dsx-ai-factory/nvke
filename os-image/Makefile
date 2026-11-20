@@ -63,9 +63,9 @@ build: ## Build nvke-os-image-check, nvke-os and nvke-os-node into bin/.
 	@# know the stamping worked is to ask each binary. Cheap, and it fails loudly.
 	@for b in $(BINARIES); do \
 	  $(GO) build -ldflags "$(CHECK_LDFLAGS)" -o bin/$$b ./cmd/$$b || exit 1; \
-	  out="$$(bin/$$b --version)"; \
+	  out="$$(bin/$$b --version)" || { echo "ERROR: bin/$$b --version failed"; exit 1; }; \
 	  case "$$out" in \
-	    *dev*|*unknown*|*v0.0.0*) \
+	    ""|*dev*|*unknown*|*v0.0.0*) \
 	      echo "ERROR: $$b was built without version information: $$out"; \
 	      echo "       The -X symbol in CHECK_LDFLAGS no longer matches the variable in cmd/$$b."; \
 	      exit 1;; \

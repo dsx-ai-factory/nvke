@@ -12,7 +12,8 @@
 //	0-3    Semantic (non-error)                      success 0, internal 1, usage 2
 //	10-19  Input / preflight                         unsupported 10
 //	20-29  Build / verify                            (none yet)
-//	30-39  Retryable / transient                     (none yet)
+//	30-31  Retryable / transient                     unavailable 30, timeout 31
+//	32-39  Reserved                                  (none yet)
 //	40-59  Release / repository                      (none yet)
 package errors
 
@@ -31,6 +32,12 @@ const (
 	CodeUsage Code = "NVKE-OS-E-USAGE"
 	// CodeUnsupported is a verb or option this build does not implement yet.
 	CodeUnsupported Code = "NVKE-OS-E-UNSUPPORTED"
+	// CodeUnavailable is a dependency that is down or unreachable; retrying
+	// may succeed.
+	CodeUnavailable Code = "NVKE-OS-E-UNAVAILABLE"
+	// CodeTimeout is a run that was cancelled or ran out of time; retrying may
+	// succeed.
+	CodeTimeout Code = "NVKE-OS-E-TIMEOUT"
 )
 
 // exitCodes is the frozen Code to exit-status map. TestExitCodeContract
@@ -39,11 +46,16 @@ var exitCodes = map[Code]int{
 	CodeInternal:    1,
 	CodeUsage:       2,
 	CodeUnsupported: 10,
+	CodeUnavailable: 30,
+	CodeTimeout:     31,
 }
+
+// retryable marks the codes a caller may retry unchanged.
+var retryable = map[Code]bool{CodeUnavailable: true, CodeTimeout: true}
 
 // AllCodes lists every declared Code in exit-status order. Go cannot enumerate
 // a const block, so a new Code is added here as well as to exitCodes.
-var AllCodes = []Code{CodeInternal, CodeUsage, CodeUnsupported}
+var AllCodes = []Code{CodeInternal, CodeUsage, CodeUnsupported, CodeUnavailable, CodeTimeout}
 
 // Error is a coded, wrappable error.
 type Error struct {
@@ -84,4 +96,10 @@ func ExitCode(err error) int {
 		}
 	}
 	return 1
+}
+
+// Retryable reports whether err carries a code a caller may retry unchanged.
+func Retryable(err error) bool {
+	var e *Error
+	return errors.As(err, &e) && retryable[e.Code]
 }
