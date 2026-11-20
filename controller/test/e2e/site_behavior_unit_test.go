@@ -214,6 +214,7 @@ func TestUnit_SiteExpectationsFromProfileRejects(t *testing.T) {
 		"version without name":    {profileExpectations{WorkloadVersions: map[string]string{"kube-system": "v1"}}, "managementCluster.workloadVersions"},
 		"version without value":   {profileExpectations{WorkloadVersions: map[string]string{"kube-system/calico-node": " "}}, "managementCluster.workloadVersions"},
 		"flag without name":       {profileExpectations{APIServer: profileAPIServer{Flags: map[string]string{"--": "x"}}}, "managementCluster.apiServer.flags"},
+		"flag given twice":        {profileExpectations{APIServer: profileAPIServer{Flags: map[string]string{"profiling": "false", "--profiling": "true"}}}, "--profiling is given twice"},
 		"workload without name":   {profileExpectations{RequiredWorkloads: []string{"spire-server"}}, "managementCluster.requiredWorkloads"},
 		"workload with two parts": {profileExpectations{RequiredWorkloads: []string{"a/b/c"}}, "managementCluster.requiredWorkloads"},
 		"memory not a quantity":   {profileExpectations{ReservedMemory: "two gigs"}, "managementCluster.reservedMemory"},

@@ -92,11 +92,16 @@ func (c *profileComponent) UnmarshalYAML(n *yaml.Node) error {
 		c.Name = n.Value
 		return nil
 	case yaml.MappingNode:
+		seen := map[string]bool{}
 		for i := 0; i+1 < len(n.Content); i += 2 {
 			key, value := n.Content[i], n.Content[i+1]
 			if value.Kind != yaml.ScalarNode {
 				return fmt.Errorf("line %d: component field %s takes a string", value.Line, key.Value)
 			}
+			if seen[key.Value] {
+				return fmt.Errorf("line %d: component field %s is given twice", key.Line, key.Value)
+			}
+			seen[key.Value] = true
 			switch key.Value {
 			case "name":
 				c.Name = value.Value

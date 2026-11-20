@@ -34,11 +34,17 @@ func writeProfile(t *testing.T, body string) string {
 
 // e2eSourceDir is this package's source directory. The suite binary can run
 // from anywhere, so tests that read the package's files find them from here.
+// The e2e images run the compiled binary without a checkout, and the go test
+// lane that runs from one still fails on a missing file.
 func e2eSourceDir(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
 	require.True(t, ok, "resolving the test's source path")
-	return filepath.Dir(file)
+	dir := filepath.Dir(file)
+	if _, err := os.Stat(dir); os.IsNotExist(err) {
+		t.Skipf("no source tree beside the test binary: %v", err)
+	}
+	return dir
 }
 
 func TestUnit_ValidateProfileLoads(t *testing.T) {
@@ -101,6 +107,7 @@ func TestUnit_ValidateProfileRejects(t *testing.T) {
 		"a count not a number":      {profileHeader + "tenant:\n  gpu: {nodes: four}\n", "cannot unmarshal"},
 		"a map for a list":          {profileHeader + "managementCluster:\n  components: {argocd: argocd}\n", "cannot unmarshal"},
 		"a component's unknown key": {profileHeader + "managementCluster:\n  components: [{name: cnpg, ns: databases}]\n", "field ns not found in a component"},
+		"a component's key twice":   {profileHeader + "managementCluster:\n  components: [{name: cnpg, name: argocd}]\n", "component field name is given twice"},
 		"a component listed twice":  {profileHeader + "managementCluster:\n  components: [cnpg, {name: cnpg, namespace: databases}]\n", "managementCluster.components: cnpg is listed twice"},
 		"not YAML":                  {profileHeader + "managementCluster: [\n", "did not find expected"},
 		"a field set twice":         {profileHeader + "tenant: {namespace: a}\ntenant: {namespace: b}\n", "already defined"},
