@@ -365,39 +365,31 @@ spec:
                       minimum: 0
                       type: integer
                     rollout:
-                      description: Rollout configures node replacement when the node
-                        profile changes.
+                      description: |-
+                        Rollout limits selection of outdated nodes for replacement after node profile changes.
+                        Omission stops new selections after reconciliation. Already-selected nodes may still be replaced.
+                        Scaling and fault remediation are unaffected.
                       properties:
                         strategy:
-                          description: RolloutStrategy selects the replacement method
-                            and disruption limits.
+                          description: RolloutStrategy selects the recycle-selection
+                            policy.
                           properties:
                             disruption:
-                              description: Disruption limits how many nodes may be
-                                disrupted during replacement.
+                              description: Disruption governs new recycle selections,
+                                not a guarantee of workload availability.
                               properties:
                                 budgets:
-                                  description: Budgets apply the smallest active limit.
-                                    Percentages round up to whole nodes.
+                                  description: Budgets apply the smallest continuous
+                                    limit. Percentages use desired replicas and round
+                                    up.
                                   items:
-                                    description: DisruptionBudget limits disruption
-                                      continuously or during a scheduled window.
+                                    description: DisruptionBudget continuously limits
+                                      new recycle selections.
                                     properties:
-                                      duration:
-                                        description: Duration is the active window
-                                          length, expressed in hours, minutes or seconds,
-                                          such as 8h or 30m.
-                                        maxLength: 32
-                                        minLength: 1
-                                        pattern: ^([0-9]+h)?([0-9]+m)?([0-9]+s)?$
-                                        type: string
-                                        x-kubernetes-validations:
-                                        - message: duration must be positive
-                                          rule: duration(self) > duration('0s')
                                       nodes:
-                                        description: Nodes is a nonnegative count
-                                          or a percentage from 0% to 100%. Zero blocks
-                                          disruption.
+                                        description: |-
+                                          Nodes is a nonnegative count or a percentage from 0% to 100% of desired replicas, rounded up.
+                                          Zero stops only new recycle selections after the policy is applied. Existing work may proceed.
                                         maxLength: 10
                                         pattern: ^((0|[1-9][0-9]*)|([0-9]|[1-9][0-9]|100)%)$
                                         type: string
@@ -405,20 +397,9 @@ spec:
                                         - message: node count must not exceed 2147483647
                                           rule: self.endsWith('%') || int(self) <=
                                             2147483647
-                                      schedule:
-                                        description: |-
-                                          Schedule starts each active window using five-field cron or a standard alias such as @daily.
-                                          Omit for a continuous budget.
-                                        maxLength: 256
-                                        minLength: 1
-                                        pattern: ^[[:space:]]*(@(annually|yearly|monthly|weekly|daily|midnight|hourly)|([^[:space:]]+[[:space:]]+){4}[^[:space:]]+)[[:space:]]*$
-                                        type: string
                                     required:
                                     - nodes
                                     type: object
-                                    x-kubernetes-validations:
-                                    - message: schedule and duration must be set together
-                                      rule: has(self.schedule) == has(self.duration)
                                   maxItems: 64
                                   minItems: 1
                                   type: array

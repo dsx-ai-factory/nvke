@@ -13,8 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"net/netip"
 	"slices"
+	"strconv"
 	"strings"
 	"text/template"
 	"time"
@@ -575,6 +577,8 @@ func infraTemplateVariables(cluster *internalv1.NVKECluster, pool *internalv1.No
 	return variables
 }
 
+// reconcileNodePool creates or updates a worker pool and reports its observed state.
+// Existing pools can receive scaling and rollout changes even if profile resolution fails.
 func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, observedCluster *api.Cluster) error {
 	var status *internalv1.NodePoolStatus
 	for i := range cluster.Status.NodePools {
@@ -629,10 +633,26 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 	if pool.Replicas == nil || *pool.Replicas < 0 {
 		return invalidNVKEControllerRequest("Node pool replicas must be a nonnegative count")
 	}
+	recycleBudget, err := nodePoolRecycleBudget(pool.Rollout, *pool.Replicas)
+	if err != nil {
+		return err
+	}
 	desiredCount := int(*pool.Replicas)
 	var update api.UpdateNodePoolRequest
 	if observedPool.DesiredNodeCount != desiredCount {
 		update.DesiredNodeCount = &desiredCount
+	}
+	if observedPool.RecycleBudget != recycleBudget {
+		update.RecycleBudget = &recycleBudget
+	}
+	if pool.Rollout != nil {
+		if recycleBudget > 0 && observedPool.AutoModeDisabled {
+			update.AutoModeDisabled = new(false)
+		}
+		// First-cut worker rollouts use no surge capacity.
+		if observedPool.MaxSurge != nil && *observedPool.MaxSurge != 0 {
+			update.MaxSurge = new(0)
+		}
 	}
 	resolved, infra, resolveErr := r.resolveExistingNodeProfile(ctx, cluster, pool, nodePoolTemplate, status, observedPool)
 	if infra != nil {
@@ -648,7 +668,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 			return errors.Join(fmt.Errorf("update infra of nvke controller node pool %q for release %q: %w", pool.Name, resolved.Name, err), resolveErr)
 		}
 		if err != nil {
-			return errors.Join(fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err), resolveErr)
+			return errors.Join(fmt.Errorf("update nvke controller node pool %q: %w", pool.Name, err), resolveErr)
 		}
 		observedPool = updatedPool
 	}
@@ -799,7 +819,7 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 	return observedCluster, nil
 }
 
-// ClusterRemoteName returns the backing cluster name used by the management engine.
+// ClusterRemoteName returns the backing cluster name used by the service.
 func ClusterRemoteName(cluster *internalv1.NVKECluster) string {
 	hash := sha256.Sum256([]byte(cluster.Namespace + "/" + cluster.Name))
 	suffix := fmt.Sprintf("-%x%s", hash[:4], clusterNameSuffix)
@@ -877,6 +897,8 @@ func (r *NVKEClusterReconciler) resolveNVKEControllerRequest(ctx context.Context
 	return request, nil
 }
 
+// resolveNodePoolRequest validates a pool's desired state and builds its creation request.
+// The caller supplies infrastructure after rendering the resolved node profile.
 func resolveNodePoolRequest(clusterID uuid.UUID, pool *internalv1.NodePool) (api.CreateNodePoolRequest, error) {
 	var request api.CreateNodePoolRequest
 	if clusterID == uuid.Nil {
@@ -885,6 +907,10 @@ func resolveNodePoolRequest(clusterID uuid.UUID, pool *internalv1.NodePool) (api
 	if pool.Replicas == nil || *pool.Replicas < 0 {
 		return request, invalidNVKEControllerRequest("Node pool replicas must be a nonnegative count")
 	}
+	recycleBudget, err := nodePoolRecycleBudget(pool.Rollout, *pool.Replicas)
+	if err != nil {
+		return request, err
+	}
 	request = api.CreateNodePoolRequest{
 		ClusterID:                   clusterID,
 		Name:                        string(pool.Name),
@@ -892,6 +918,9 @@ func resolveNodePoolRequest(clusterID uuid.UUID, pool *internalv1.NodePool) (api
 		NodeNamePrefix:              string(pool.Name),
 		ProvisioningMonitorDisabled: new(true),
 		SystemReservedMemory:        "1Gi",
+	}
+	if pool.Rollout != nil {
+		request.RecycleBudget = &recycleBudget
 	}
 	if params := pool.UserParams; params != nil {
 		request.NodeLabels = make(map[string]string, len(params.Labels))
@@ -908,6 +937,35 @@ func resolveNodePoolRequest(clusterID uuid.UUID, pool *internalv1.NodePool) (api
 		}
 	}
 	return request, nil
+}
+
+// nodePoolRecycleBudget resolves the smallest continuous budget against desired replicas.
+// Omission or zero stops selecting further nodes for recycling.
+func nodePoolRecycleBudget(rollout *internalv1.Rollout, desiredReplicas int32) (int, error) {
+	if rollout == nil {
+		return 0, nil
+	}
+	strategy := rollout.Strategy
+	if strategy.Type != "RollingUpdate" || len(strategy.Disruption.Budgets) == 0 {
+		return 0, invalidNVKEControllerRequest("Node pool rollout requires RollingUpdate with at least one disruption budget")
+	}
+	recycleBudget := int64(math.MaxInt32)
+	for _, budget := range strategy.Disruption.Budgets {
+		numericPart := strings.TrimSuffix(budget.Nodes, "%")
+		value, err := strconv.ParseUint(numericPart, 10, 31)
+		if err != nil || strconv.FormatUint(value, 10) != numericPart {
+			return 0, invalidNVKEControllerRequest("Node pool rollout budget nodes must be a nonnegative integer count or a percentage from 0% to 100%")
+		}
+		limit := int64(value)
+		if strings.HasSuffix(budget.Nodes, "%") {
+			if value > 100 {
+				return 0, invalidNVKEControllerRequest("Node pool rollout budget percentage must be from 0% to 100%")
+			}
+			limit = (int64(desiredReplicas)*int64(value) + 99) / 100
+		}
+		recycleBudget = min(recycleBudget, limit)
+	}
+	return int(recycleBudget), nil
 }
 
 func invalidNVKEControllerRequest(message string) error { return &InvalidSpecError{Message: message} }

@@ -25,54 +25,45 @@ type NodePool struct {
 	// UserParams configures labels and taints for the pool's nodes.
 	// +optional
 	UserParams *UserParams `json:"userParams,omitempty"`
-	// Rollout configures node replacement when the node profile changes.
+	// Rollout limits selection of outdated nodes for replacement after node profile changes.
+	// Omission stops new selections after reconciliation. Already-selected nodes may still be replaced.
+	// Scaling and fault remediation are unaffected.
 	// +optional
 	Rollout *Rollout `json:"rollout,omitempty"`
 }
 
-// Rollout configures how changes are applied to nodes.
+// Rollout configures the selection budget for downstream worker replacement.
 type Rollout struct {
 	Strategy RolloutStrategy `json:"strategy"`
 }
 
-// RolloutStrategy selects the replacement method and disruption limits.
+// RolloutStrategy selects the recycle-selection policy.
 type RolloutStrategy struct {
 	// +kubebuilder:validation:Enum=RollingUpdate
 	Type       string     `json:"type"`
 	Disruption Disruption `json:"disruption"`
 }
 
-// Disruption limits how many nodes may be disrupted during replacement.
+// Disruption governs new recycle selections, not a guarantee of workload availability.
 type Disruption struct {
-	// Budgets apply the smallest active limit. Percentages round up to whole nodes.
+	// Budgets apply the smallest continuous limit. Percentages use desired replicas and round up.
 	// +listType=atomic
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=64
 	Budgets []DisruptionBudget `json:"budgets"`
 }
 
-// DisruptionBudget limits disruption continuously or during a scheduled window.
-// +kubebuilder:validation:XValidation:rule="has(self.schedule) == has(self.duration)",message="schedule and duration must be set together"
+// DisruptionBudget continuously limits new recycle selections.
 type DisruptionBudget struct {
-	// Nodes is a nonnegative count or a percentage from 0% to 100%. Zero blocks disruption.
+	// Nodes is a nonnegative count or a percentage from 0% to 100% of desired replicas, rounded up.
+	// Zero stops only new recycle selections after the policy is applied. Existing work may proceed.
 	// +kubebuilder:validation:MaxLength=10
 	// +kubebuilder:validation:Pattern=`^((0|[1-9][0-9]*)|([0-9]|[1-9][0-9]|100)%)$`
 	// +kubebuilder:validation:XValidation:rule="self.endsWith('%') || int(self) <= 2147483647",message="node count must not exceed 2147483647"
 	Nodes string `json:"nodes"`
-	// Schedule starts each active window using five-field cron or a standard alias such as @daily.
-	// Omit for a continuous budget.
-	// +optional
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=256
-	// +kubebuilder:validation:Pattern=`^[[:space:]]*(@(annually|yearly|monthly|weekly|daily|midnight|hourly)|([^[:space:]]+[[:space:]]+){4}[^[:space:]]+)[[:space:]]*$`
-	Schedule string `json:"schedule,omitempty"`
-	// Duration is the active window length, expressed in hours, minutes or seconds, such as 8h or 30m.
-	// +optional
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=32
-	// +kubebuilder:validation:Pattern=`^([0-9]+h)?([0-9]+m)?([0-9]+s)?$`
-	// +kubebuilder:validation:XValidation:rule="duration(self) > duration('0s')",message="duration must be positive"
-	Duration string `json:"duration,omitempty"`
+	// Scheduled windows are deferred until selection and replacement can be coordinated.
+	// Schedule string `json:"schedule,omitempty"`
+	// Duration string `json:"duration,omitempty"`
 }
 
 // NodeProfileReference identifies a node profile and version as <profile>:<tag>.

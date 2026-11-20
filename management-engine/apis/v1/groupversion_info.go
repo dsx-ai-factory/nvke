@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package v1 defines the persisted internal management-engine API.
+// Package v1 defines the persisted internal service API.
 // Future public APIs must version their contracts independently.
 // +kubebuilder:object:generate=true
 // +groupName=service.nvke.nvidia.com
