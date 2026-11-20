@@ -31,6 +31,7 @@ func TestUnit_DialRejectsNodeWithNoIP(t *testing.T) {
 			require.Nil(t, conn)
 			require.Nil(t, cleanup)
 			require.ErrorIs(t, err, ErrNoAddress)
+			require.Equal(t, ProbeCauseNoAddress, CauseOf(err))
 		})
 	}
 }
