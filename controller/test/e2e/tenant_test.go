@@ -776,7 +776,11 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			// or stuck tenant.
 			defer func() {
 				if removeProbeNamespace != nil && !deleted && !deleteAccepted {
-					if err := removeProbeNamespace(ctx); err != nil && !apierrors.IsNotFound(err) {
+					// Ginkgo cancels ctx when AfterAll times out, which is when
+					// the namespace is most likely to be left behind.
+					cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+					defer cancel()
+					if err := removeProbeNamespace(cleanupCtx); err != nil && !apierrors.IsNotFound(err) {
 						GinkgoLogr.Error(err, "removing the probe namespace from the tenant", "namespace", laneTenantSettings.checks.probeNamespace)
 					}
 				}

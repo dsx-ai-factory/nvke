@@ -368,3 +368,24 @@ func TestUnit_ValidateKeepOnFailureRejectsGarbage(t *testing.T) {
 	_, err = siteValidateFromProfile(profileManagementCluster{}, envMap(map[string]string{keepOnFailureEnv: "true"}), absent)
 	require.NoError(t, err)
 }
+
+func TestUnit_WritePrivateFile(t *testing.T) {
+	dir := t.TempDir()
+	for name, existing := range map[string]bool{"a new file": false, "an existing 0644 file": true} {
+		path := filepath.Join(dir, strings.ReplaceAll(name, " ", "-")+".kubeconfig")
+		if existing {
+			require.NoError(t, os.WriteFile(path, []byte("old"), 0o644))
+			require.NoError(t, os.Chmod(path, 0o644))
+		}
+		require.NoError(t, writePrivateFile(path, []byte("new")), name)
+		info, err := os.Stat(path)
+		require.NoError(t, err, name)
+		require.Equal(t, os.FileMode(0o600), info.Mode().Perm(), name)
+		data, err := os.ReadFile(path)
+		require.NoError(t, err, name)
+		require.Equal(t, "new", string(data), name)
+	}
+	entries, err := os.ReadDir(dir)
+	require.NoError(t, err)
+	require.Len(t, entries, 2, "no temporary file is left beside the kubeconfigs")
+}
