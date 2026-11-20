@@ -12,10 +12,13 @@
 // exactly those values, so hostnames, paths, CA hashes and the rest of the text are
 // untouched. The credentials kubeadm generates, which are not in any input, are
 // found by their context: the "Using token:" and "Using certificate key:" lines it
-// prints and the flags of the join commands it prints.
+// prints and the flags of the join commands it prints. Text the agent saved
+// earlier, such as its logs, is redacted with Saved, which also matches by shape
+// and field name.
 package redact
 
 import (
+	"bufio"
 	"errors"
 	"io"
 	"regexp"
@@ -33,6 +36,27 @@ const Redacted = "<redacted>"
 // unrelated text. Values after a credential flag are always redacted.
 const minKnownLength = 8
 
+const (
+	// tokenPattern is a bootstrap token: a 6 character ID, a dot and a 16 character secret.
+	tokenPattern = `[a-z0-9]{6}\.[a-z0-9]{16}`
+
+	// certificateKeyPattern is a certificate key: 64 hex digits.
+	certificateKeyPattern = `[0-9a-fA-F]{64}`
+
+	// fieldQuote is a quote, escaped any number of times.
+	fieldQuote = `\\*["']`
+
+	// flagSeparator follows a credential flag: "=", spaces, or "," in a JSON array,
+	// whose quotes can be escaped.
+	flagSeparator = `(?:=|[ \t]+|` + fieldQuote + `\s*,\s*` + fieldQuote + `)`
+
+	// fieldSeparator follows a field name: an optional quote, then ":" or "=".
+	fieldSeparator = `(?:` + fieldQuote + `)?[ \t]*[:=]`
+
+	// usingCertificateKeyLabel is what kubeadm prints on the line before a certificate key.
+	usingCertificateKeyLabel = "Using certificate key:"
+)
+
 var (
 	// tokenFlagNames are the kubeadm join flags whose value is a bootstrap token.
 	// --token-ttl and --discovery-token-ca-cert-hash are not credentials.
@@ -42,16 +66,26 @@ var (
 	// generates. Matching the shape, and not any word after the flag, leaves prose
 	// that names a flag alone, as in "flag --token is required". Values that were
 	// given to the agent are known from its inputs, and are replaced whatever their shape.
-	tokenFlag          = regexp.MustCompile(`(?m)((?:^|[\s\["'(])--(?:token|discovery-token|tls-bootstrap-token)(?:=|[ \t]+))([a-z0-9]{6}\.[a-z0-9]{16})`)
-	certificateKeyFlag = regexp.MustCompile(`(?m)((?:^|[\s\["'(])--certificate-key(?:=|[ \t]+))([0-9a-fA-F]{64})`)
+	tokenFlag          = regexp.MustCompile(`(?m)((?:^|[\s\["'(])--(?:token|discovery-token|tls-bootstrap-token)` + flagSeparator + `)(` + tokenPattern + `)`)
+	certificateKeyFlag = regexp.MustCompile(`(?m)((?:^|[\s\["'(])--certificate-key` + flagSeparator + `)(` + certificateKeyPattern + `)`)
 
 	// usingToken and usingCertificateKey match the lines kubeadm init and
-	// upload-certs print the credentials they generate on.
-	usingToken          = regexp.MustCompile(`(Using token:\s*)([a-z0-9]{6}\.[a-z0-9]{16})`)
-	usingCertificateKey = regexp.MustCompile(`(Using certificate key:\s*)[0-9a-fA-F]{64}`)
+	// upload-certs print. The certificate key is on the next line.
+	usingToken          = regexp.MustCompile(`(Using token:\s*)(` + tokenPattern + `)`)
+	usingCertificateKey = regexp.MustCompile(`(` + usingCertificateKeyLabel + `(?:\s|\\[nrt])*)` + certificateKeyPattern)
 
-	// tokenShape is a bootstrap token: a 6 character ID, a dot and a 16 character secret.
-	tokenShape = regexp.MustCompile(`^([a-z0-9]{6})\.[a-z0-9]{16}$`)
+	// tokenShape matches a value that is a bootstrap token.
+	tokenShape = regexp.MustCompile(`^` + tokenPattern + `$`)
+
+	// tokenCandidate is a bootstrap token's shape anywhere in text.
+	tokenCandidate = regexp.MustCompile(tokenPattern)
+
+	// certificateKeyField matches a certificate key after its YAML, JSON or Go field name.
+	certificateKeyField = regexp.MustCompile(`((?:certificateKey|certificate_key|CertificateKey)` + fieldSeparator + `[ \t]*(?:` + fieldQuote + `)?)` + certificateKeyPattern + `\b`)
+
+	// encryptionKeyField matches the etcd encryption key after its proto, JSON or Go
+	// field name. An unquoted value must start right after the separator.
+	encryptionKeyField = regexp.MustCompile(`((?:api_encryption_key|apiEncryptionKey|ApiEncryptionKey)` + fieldSeparator + `(?:[ \t]*` + fieldQuote + `)?)[^\s"'\\,}]+`)
 
 	// quotedScalar matches a double or single quoted YAML scalar, which can write a
 	// character as an escape sequence.
@@ -222,12 +256,46 @@ func (credentials *Credentials) String(text string) string {
 	return text
 }
 
-// Args returns a copy of args with the values of the credential flags redacted. The
-// input is not modified.
+// Saved redacts text the agent saved earlier, such as its logs. Besides what String
+// redacts, it redacts bootstrap tokens by shape, keeping the ID, and certificate and
+// etcd encryption keys by field name.
+func (credentials *Credentials) Saved(text string) string {
+	text = credentials.String(text)
+	text = certificateKeyField.ReplaceAllString(text, "${1}"+Redacted)
+	text = encryptionKeyField.ReplaceAllString(text, "${1}"+Redacted)
+	return redactTokenShapes(text)
+}
+
+// CopySaved writes src to dst with Saved applied line by line. A "Using certificate
+// key:" line is joined with the line holding the key.
+func (credentials *Credentials) CopySaved(dst io.Writer, src io.Reader) error {
+	reader := bufio.NewReader(src)
+	writer := bufio.NewWriter(dst)
+	for {
+		line, err := reader.ReadString('\n')
+		for err == nil && strings.HasSuffix(strings.TrimRight(line, " \t\r\n"), usingCertificateKeyLabel) {
+			var next string
+			next, err = reader.ReadString('\n')
+			line += next
+		}
+		if _, writeErr := writer.WriteString(credentials.Saved(line)); writeErr != nil {
+			return writeErr
+		}
+		if errors.Is(err, io.EOF) {
+			return writer.Flush()
+		}
+		if err != nil {
+			return err
+		}
+	}
+}
+
+// Args returns a copy of args with each argument redacted as Saved does, and the
+// values of the credential flags redacted. The input is not modified.
 func (credentials *Credentials) Args(args []string) []string {
 	redactedArgs := make([]string, len(args))
 	for i, arg := range args {
-		redactedArgs[i] = credentials.String(arg)
+		redactedArgs[i] = credentials.Saved(arg)
 	}
 	// A flag and its value are separate arguments, so the contextual match above
 	// does not see the pair.
@@ -245,7 +313,7 @@ func (credentials *Credentials) Args(args []string) []string {
 	return redactedArgs
 }
 
-// Args returns a copy of args with the values of the credential flags redacted.
+// Args returns a copy of args with credentials redacted, as Credentials.Args does.
 func Args(args []string) []string {
 	credentials := New()
 	credentials.AddArgs(args)
@@ -256,8 +324,9 @@ func Args(args []string) []string {
 // whole value replaced if it is not a bootstrap token. A redacted value is left as
 // it is.
 func redactToken(token string) string {
-	if groups := tokenShape.FindStringSubmatch(token); groups != nil {
-		return groups[1] + "." + Redacted
+	if tokenShape.MatchString(token) {
+		id, _, _ := strings.Cut(token, ".")
+		return id + "." + Redacted
 	}
 	if token == Redacted || strings.HasSuffix(token, "."+Redacted) {
 		return token
@@ -272,4 +341,40 @@ func redactFlag(text string, pattern *regexp.Regexp, redactValue func(string) st
 		groups := pattern.FindStringSubmatch(match)
 		return groups[1] + redactValue(groups[2])
 	})
+}
+
+// redactTokenShapes redacts the secret of each bootstrap token that stands alone,
+// keeping its ID.
+func redactTokenShapes(text string) string {
+	var out strings.Builder
+	last := 0
+	for _, match := range tokenCandidate.FindAllStringIndex(text, -1) {
+		start, end := match[0], match[1]
+		if !standsAlone(text, start, end) {
+			continue
+		}
+		idEnd := start + strings.IndexByte(text[start:end], '.')
+		out.WriteString(text[last:idEnd])
+		out.WriteString("." + Redacted)
+		last = end
+	}
+	if last == 0 {
+		return text
+	}
+	out.WriteString(text[last:])
+	return out.String()
+}
+
+// standsAlone reports whether no letter, digit or dot is next to text[start:end],
+// ignoring a JSON escape before it.
+func standsAlone(text string, start, end int) bool {
+	escaped := start >= 2 && text[start-2] == '\\' && strings.IndexByte("nrt", text[start-1]) >= 0
+	before := start == 0 || !isTokenByte(text[start-1]) || escaped
+	after := end == len(text) || !isTokenByte(text[end])
+	return before && after
+}
+
+// isTokenByte reports whether c is an ASCII letter, a digit or a dot.
+func isTokenByte(c byte) bool {
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '.'
 }
