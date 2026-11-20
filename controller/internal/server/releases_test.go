@@ -294,6 +294,9 @@ func TestUpdateNodePool_RejectsSwitchToDeprecatedRelease(t *testing.T) {
 			tx.On("GetClusterForUpdate", mock.Anything, cluster.ID).Return(cluster, nil)
 			tx.On("GetNodePoolForUpdate", mock.Anything, nodePool.ID).Return(nodePool, nil)
 			tx.On("UpdateNodePool", mock.Anything, mock.Anything).Maybe().Return(nodePool, nil)
+			if tt.want400 == "" {
+				tx.On("ListNodePoolCounts", mock.Anything, []db.NodePool{nodePool}).Return(map[uuid.UUID]db.NodePoolCounts{nodePool.ID: {}}, nil).Once()
+			}
 			database := &testutil.MockDB{MockTx: tx}
 			database.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 			service := NewNodePoolService(slog.Default(), database, config.TeleportConfig{}, nil)

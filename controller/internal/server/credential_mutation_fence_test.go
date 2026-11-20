@@ -38,6 +38,9 @@ func TestCredentialOperationFencesControlPlaneNodePoolAPIsAndPreservesWorkerChan
 				if !cp {
 					tx.On("UpdateNodePool", mock.Anything, mock.Anything).Return(pool, nil).Once()
 				}
+				if op == "update_worker" {
+					tx.On("ListNodePoolCounts", mock.Anything, []db.NodePool{pool}).Return(map[uuid.UUID]db.NodePoolCounts{pool.ID: {}}, nil).Once()
+				}
 				if op == "update_cp" || op == "update_worker" {
 					response, err := service.UpdateNodePool(t.Context(), api.UpdateNodePoolRequestObject{NodePoolID: pool.ID, Body: &api.UpdateNodePoolRequest{}})
 					require.NoError(t, err)

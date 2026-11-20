@@ -561,6 +561,24 @@ func (m *MockDB) ListNodeConditions(ctx context.Context) ([]db.NodeConditionStat
 	return v, args.Error(1)
 }
 
+func (m *MockDB) ListNodePoolCounts(ctx context.Context, pools []db.NodePool) (map[uuid.UUID]db.NodePoolCounts, error) {
+	args := m.Called(ctx, pools)
+	if result, ok := args.Get(0).(func(context.Context, []db.NodePool) map[uuid.UUID]db.NodePoolCounts); ok {
+		return result(ctx, pools), args.Error(1)
+	}
+	counts, _ := args.Get(0).(map[uuid.UUID]db.NodePoolCounts)
+	return counts, args.Error(1)
+}
+
+func (m *MockTx) ListNodePoolCounts(ctx context.Context, pools []db.NodePool) (map[uuid.UUID]db.NodePoolCounts, error) {
+	args := m.Called(ctx, pools)
+	if result, ok := args.Get(0).(func(context.Context, []db.NodePool) map[uuid.UUID]db.NodePoolCounts); ok {
+		return result(ctx, pools), args.Error(1)
+	}
+	counts, _ := args.Get(0).(map[uuid.UUID]db.NodePoolCounts)
+	return counts, args.Error(1)
+}
+
 func (m *MockDB) ListNodePoolMetrics(ctx context.Context) ([]db.NodePoolMetrics, error) {
 	args := m.Called(ctx)
 	v, ok := args.Get(0).([]db.NodePoolMetrics)

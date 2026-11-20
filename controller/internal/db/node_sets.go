@@ -44,26 +44,29 @@ type NodeSet struct {
 
 // NodePoolNeedsNewNodeSet reports whether reconciling nodePool requires a replacement node set.
 func NodePoolNeedsNewNodeSet(nodePool NodePool, current NodeSet) bool {
-	if nodePool.CurrentNodeSetID == nil ||
-		nodePool.KubernetesVersion != current.KubernetesVersion ||
+	return nodePool.CurrentNodeSetID == nil || !NodePoolMatchesNodeSet(nodePool, current)
+}
+
+// NodePoolMatchesNodeSet reports whether the supplied NodeSet matches the pool's requested
+// rollout configuration. It does not depend on the active generation's ID, so a
+// previous generation can match again after a rollback.
+func NodePoolMatchesNodeSet(nodePool NodePool, current NodeSet) bool {
+	if nodePool.KubernetesVersion != current.KubernetesVersion ||
 		nodePool.SystemReservedMemory != current.SystemReservedMemory ||
 		nodePool.KubeReservedMemory != current.KubeReservedMemory ||
 		nodePool.TeleportEnabled != current.TeleportEnabled {
-		return true
+		return false
 	}
 
 	switch {
 	case nodePool.Nico != nil:
-		currentProvider, _ := current.NicoProvider()
-		return !nodePool.Nico.Equal(currentProvider)
+		return current.Nico != nil && nodePool.Nico.Equal(*current.Nico)
 	case nodePool.Capi != nil:
-		currentProvider, _ := current.CAPIProvider()
-		return !nodePool.Capi.Equal(currentProvider)
+		return current.Capi != nil && nodePool.Capi.Equal(*current.Capi)
 	case nodePool.LaunchLayer != nil:
-		currentProvider, _ := current.LaunchLayerProvider()
-		return !nodePool.LaunchLayer.Equal(currentProvider)
+		return current.LaunchLayer != nil && nodePool.LaunchLayer.Equal(*current.LaunchLayer)
 	default:
-		return true
+		return false
 	}
 }
 

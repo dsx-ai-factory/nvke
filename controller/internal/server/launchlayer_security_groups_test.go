@@ -42,7 +42,7 @@ func TestLaunchLayerSecurityGroups_CreateReadPersistence(t *testing.T) {
 			loaded, err := queries.GetNodePool(ctx, pool.ID)
 			require.NoError(t, err)
 			require.Equal(t, pool.LaunchLayer, loaded.LaunchLayer)
-			poolOutput := apiNodePoolFromDB(&loaded).LaunchLayer
+			poolOutput := apiNodePoolFromDB(&loaded, db.NodePoolCounts{}).LaunchLayer
 			require.NotNil(t, poolOutput)
 			require.Equal(t, input.SecurityGroupRefs, poolOutput.SecurityGroupRefs)
 			if name == "empty" {
