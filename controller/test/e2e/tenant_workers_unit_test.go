@@ -182,6 +182,39 @@ func TestTenantMonitoringWorkers(t *testing.T) {
 	})
 }
 
+func TestNoMonitoringWithGPURuntime(t *testing.T) {
+	gb200 := map[string]string{infra.CapabilityGPU: "gb200", "ubuntu": "24.04"}
+	perf := map[string]string{infra.CapabilityMachineType: infra.MachineTypeCPU, "ubuntu": "24.04"}
+	tests := []struct {
+		name         string
+		gpuRuntime   bool
+		capabilities map[string]string
+		monitoring   int
+		refused      bool
+	}{
+		{name: "the GPU runtime installs and the tenant asks for a monitoring node", gpuRuntime: true, capabilities: gb200, monitoring: 1, refused: true},
+		{name: "the GPU runtime installs on a tenant with no monitoring node", gpuRuntime: true, capabilities: gb200},
+		{name: "a monitoring node on a GPU tenant without the GPU runtime", capabilities: gb200, monitoring: 1},
+		{name: "the GPU runtime is on for a run with no GPU, as on the perf stream", gpuRuntime: true, capabilities: perf, monitoring: 1},
+		{name: "neither", capabilities: gb200},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Log("Doing: planning the GPU runtime the way the tenant checks do")
+			plan := planTenantGPURuntime(tc.gpuRuntime, tc.capabilities, nil)
+			err := requireNoMonitoringWithGPURuntime(plan, tc.monitoring)
+			if !tc.refused {
+				t.Log("Testing: the run goes ahead")
+				require.NoError(t, err)
+				return
+			}
+			t.Log("Testing: the run is refused, naming both flags")
+			require.ErrorContains(t, err, "-e2e.monitoring-workers is 1")
+			require.ErrorContains(t, err, "-e2e.tenant-gpu-runtime")
+		})
+	}
+}
+
 func TestAllowTenantNodeLabels(t *testing.T) {
 	saved := monitoringWorkers
 	t.Cleanup(func() { monitoringWorkers = saved })

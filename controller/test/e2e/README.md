@@ -974,6 +974,8 @@ builds then allowlists both label keys in its controller, and the capacity
 check asks for N + M workers. A site the suite did not build, as in the
 `nico-forge` and `nico-dsx` lanes, answers the create with a 400 unless its
 controller's `nodeMetadata.allowlistedLabelKeys` already lists both keys.
+M above 0 cannot be combined with a GPU runtime `-e2e.tenant-gpu-runtime`
+installs: such a run fails before a machine is taken.
 
 `-e2e.tenant-gpu-runtime`, off by default, gives the tenant a GPU runtime so
 checks 36 and 37 run there too. Before the tenant checks, two specs labeled

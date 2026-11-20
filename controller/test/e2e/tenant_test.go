@@ -542,6 +542,14 @@ func tenantRoleLabelKeys(monitoring int) []string {
 	return []string{workerRoleLabelKey, monitoringRoleLabelKey}
 }
 
+// requireNoMonitoringWithGPURuntime refuses monitoring nodes when plan installs the GPU runtime.
+func requireNoMonitoringWithGPURuntime(plan tenantGPURuntimePlan, monitoring int) error {
+	if monitoring > 0 && plan.installs() {
+		return fmt.Errorf("-e2e.monitoring-workers is %d, and a tenant with monitoring nodes cannot take the GPU runtime -e2e.tenant-gpu-runtime installs for this run", monitoring)
+	}
+	return nil
+}
+
 // nicoDSXTenant is nicoForgeTenant on a DSX datahall: one control-plane node
 // and the -e2e.tenant-workers workers, provisioned and deleted, validating
 // nothing that needs a cluster held open.
@@ -581,6 +589,11 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 		AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
 
 		It("creates the cluster", func(ctx context.Context) {
+			if spec.validate.tenantChecks {
+				capabilities, capabilitiesErr := runCapabilities()
+				gpuRuntime := planTenantGPURuntime(tenantGPURuntime, capabilities, capabilitiesErr)
+				Expect(requireNoMonitoringWithGPURuntime(gpuRuntime, monitoringWorkers)).To(Succeed())
+			}
 			test = expectSucceed(setupTenantTest(ctx, expectSucceed(resolve()), spec.options))
 			if spec.createVia == clientNvkectl {
 				// Torn down in AfterAll. A DeferCleanup registered here would run

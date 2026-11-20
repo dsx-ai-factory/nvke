@@ -236,6 +236,8 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			Expect(requireRunCapacity(context.Background(), provider, siteStage, tenantWorkers, monitoringWorkers)).To(Succeed())
 		}
 		if siteStage == siteStageFull {
+			run, runErr := runCapabilities()
+			Expect(requireNoMonitoringWithGPURuntime(planTenantGPURuntime(tenantGPURuntime, run, runErr), monitoringWorkers)).To(Succeed())
 			Expect(requireKapsBenchTools(kapsBenchRunSpecs, kapsBenchDir)).To(Succeed())
 		}
 	})
