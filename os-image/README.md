@@ -369,12 +369,12 @@ packer/scripts/patch-installer-iso.sh \
 ```
 
 The `agent` binding is one bare `.deb` file. `calico`, `kubeadm-distro`, `ovn`,
-`spire-agent`, and `doca-ovs` are uncompressed GNU/USTAR archives of flat regular `.deb`
+`spire-agent`, `doca-ovs`, and `nvke-node-sysconfig` are uncompressed GNU/USTAR archives of flat regular `.deb`
 files, with filenames unique across all bindings. Only the optional root `.`
 directory entry is accepted; omit `Packages`, subdirectories, links, and PAX/GNU
 extended metadata headers. The package builders are `packages/cni-calico`,
-`packages/kubeadm-distro`, `packages/cni-ovn`, `packages/spire-agent`, and
-`packages/doca-ovs`.
+`packages/kubeadm-distro`, `packages/cni-ovn`, `packages/spire-agent`, `packages/doca-ovs`, and
+`packages/nvke-node-sysconfig`.
 Run their `debs` targets and archive only the resulting `.deb` files with
 `tar --format=ustar -cf component.tar -C "$OUT_DIR" <package filenames>`.
 `packages/doca-ovs` also needs `UBUNTU_SERIES`: DOCA builds each Ubuntu release
@@ -382,14 +382,13 @@ separately and its filenames do not say which, so the composer cannot catch a
 `doca-ovs` binding fetched for the wrong release.
 The composer regenerates `Packages` itself. The SPIRE binding must contain
 exactly one `spire-agent_*.deb`, the inputs exactly one
-`doca-openvswitch-switch_*.deb`; Calico inputs may contain at most one
+`doca-openvswitch-switch_*.deb` and exactly one `nvke-node-sysconfig_*.deb`; Calico inputs may contain at most one
 `nvke-cni-calico-manifests-*.deb`. Every package must declare the requested
 `--architecture` or `all`, checked with `dpkg-deb`.
 
 `--source-files-dir` supplies the checkout's image-owned provisioning files:
-`nvke-agent-spire.conf`, `wait-spiffe-socket.sh`, `conntrack-tune.service`,
-`configure-conntrack.sh`, `10-nke-conntrack-timeouts.conf`,
-`99-disable-network-config.cfg`, and `00-dhcp-all.yaml`. All seven are required,
+`nvke-agent-spire.conf`, `wait-spiffe-socket.sh`,
+`99-disable-network-config.cfg`, and `00-dhcp-all.yaml`. All four are required,
 copied unchanged, and staged with the same modes as the Make build.
 
 The runner must authenticate these files before calling the composer and keep
@@ -599,24 +598,24 @@ see [Checker](#checker).
 ## Conntrack limits
 
 At every boot, `conntrack-tune.service` writes
-`/run/sysctl.d/10-nke-conntrack.conf`, sizing `nf_conntrack_max` from the
+`/run/sysctl.d/50-nvke-conntrack.conf`, sizing `nf_conntrack_max` from the
 node's RAM: 600000 on nodes with 9375 MiB of RAM or more, less on smaller VMs.
 It only ever raises the kernel's values, and `systemd-sysctl` applies the file
-early in boot. `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` sets TIME_WAIT
-to 60s. On Calico clusters kube-proxy re-sets the limit from the node's CPU
+early in boot. `/usr/lib/sysctl.d/50-nvke-conntrack-timeouts.conf` sets
+TIME_WAIT to 60s. Both come from the `nvke-node-sysconfig` package. On Calico clusters kube-proxy re-sets the limit from the node's CPU
 count when it starts, which is lower than 600000 on nodes with 18 or fewer
 logical CPUs; see [SPEC.md](SPEC.md#conntrack-limits).
 
 To check a node:
 
 ```bash
-cat /run/sysctl.d/10-nke-conntrack.conf   # what boot generated, and from how much RAM
+cat /run/sysctl.d/50-nvke-conntrack.conf   # what boot generated, and from how much RAM
 sysctl net.netfilter.nf_conntrack_max net.netfilter.nf_conntrack_buckets net.netfilter.nf_conntrack_count
 journalctl -u conntrack-tune
 ```
 
 To override, add a file to `/etc/sysctl.d`: a same-named
-`10-nke-conntrack.conf` replaces the generated one, and any later-sorting
+`50-nvke-conntrack.conf` replaces the generated one, and any later-sorting
 file, such as `60-conntrack.conf` or `99-local.conf`, overrides individual
 keys, higher or lower. `boot-smoke.sh` and
 `demo-fde.sh` run `packer/scripts/check-conntrack.sh` against each built

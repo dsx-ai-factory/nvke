@@ -1,0 +1,110 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# nfpm package spec for nvke-node-sysconfig. build-deb.sh exports the
+# environment this file expands: DEB_VERSION.
+#
+# The files are read straight out of ../../../files/, where the image's own
+# copies have always lived -- the .deb takes ownership of them rather than
+# forking a second copy.
+#
+# Everything lands in a vendor directory (/usr/lib, /lib), never /etc, so
+# nothing here is a conffile and an operator's override in /etc/sysctl.d
+# or /etc/systemd/system always wins.
+
+name: "nvke-node-sysconfig"
+arch: "all"
+platform: "linux"
+version: "${DEB_VERSION}"
+version_schema: none
+section: admin
+priority: optional
+maintainer: "NVKE <nke-dev@exchange.nvidia.com>"
+# Fixed rather than the build time, so two builds of the same input produce a
+# byte-identical .deb.
+mtime: "2026-01-01T00:00:00Z"
+description: |
+  System configuration for an NVKE node
+  Kernel and service settings every NVKE node carries, versioned and installed
+  the same way on a new image and by an in-place update: the nf_conntrack
+  settings (conntrack-tune.service, the TIME_WAIT timeout, early module
+  loading), the etcd system user and its 0700 data directory, and masks for the
+  units a node must not run (multipathd, the background apt timers and
+  unattended-upgrades, and the DOCA Open vSwitch metrics exporter).
+depends:
+  - systemd
+
+scripts:
+  preinstall: "preinst"
+  postinstall: "postinst"
+  preremove: "prerm"
+  postremove: "postrm"
+
+contents:
+  - src: "../../../files/configure-conntrack.sh"
+    dst: "/usr/lib/nvke/configure-conntrack.sh"
+    file_info: { mode: 0755 }
+  - src: "../../../files/conntrack-tune.service"
+    dst: "/lib/systemd/system/conntrack-tune.service"
+    file_info: { mode: 0644 }
+  - src: "../../../files/50-nvke-conntrack-timeouts.conf"
+    dst: "/usr/lib/sysctl.d/50-nvke-conntrack-timeouts.conf"
+    file_info: { mode: 0644 }
+  - src: "../../../files/50-nvke-conntrack-modules.conf"
+    dst: "/usr/lib/modules-load.d/50-nvke-conntrack.conf"
+    file_info: { mode: 0644 }
+
+  # The etcd data directory. sysusers.d declares the user; tmpfiles.d creates
+  # the directory with that owner at install (postinst runs both) and at every
+  # boot. The directory itself cannot be a packaged entry: its owner does not
+  # exist when dpkg unpacks.
+  - src: "../../../files/50-nvke-etcd-sysusers.conf"
+    dst: "/usr/lib/sysusers.d/50-nvke-etcd.conf"
+    file_info: { mode: 0644 }
+  - src: "../../../files/50-nvke-etcd-tmpfiles.conf"
+    dst: "/usr/lib/tmpfiles.d/50-nvke-etcd.conf"
+    file_info: { mode: 0644 }
+
+  # Masked units: a symlink to /dev/null in /etc/systemd/system, which is what
+  # `systemctl mask` writes. It has to live in /etc: the vendor units are in
+  # /lib, and a link there would collide with the owning package's file. Each
+  # stays masked if its package is installed or reinstalled later, and the
+  # link works before the unit exists on the image.
+  #
+  # multipathd, both units. Ubuntu Server's installer pulls in multipath-tools
+  # and leaves multipathd enabled, and with no blacklist it claims Longhorn's
+  # iSCSI-exported volumes (they present as IET,VIRTUAL-DISK), so multipathd
+  # wraps each one in a device-mapper map. device-mapper then holds the block
+  # device open, mkfs' O_EXCL open returns EBUSY, and every newly provisioned
+  # Longhorn PVC fails to format ("is apparently in use by the system; will not
+  # make a filesystem here"). Observed in the field blocking a Longhorn engine
+  # upgrade and a CloudNativePG replica rebuild. It is baked in rather than left
+  # to a provisioning step: on nodes whose cloud-init came up with no
+  # datasource, that step never ran and multipathd stayed active from first
+  # boot, undetected for months. An image that ships it off cannot regress that
+  # way. No NVKE node boots from a multipath-backed
+  # disk (the root filesystem is LVM, optionally over LUKS, on one local NVMe
+  # device), so nothing depends on it. Both units, and mask rather than
+  # disable: multipathd.socket socket-activates the service, so disabling the
+  # service alone leaves it reachable.
+  - { src: /dev/null, dst: /etc/systemd/system/multipathd.service, type: symlink }
+  - { src: /dev/null, dst: /etc/systemd/system/multipathd.socket, type: symlink }
+  #
+  # No background apt on a node. Ubuntu's apt-daily timers run a few minutes
+  # after first boot and, via needrestart and dpkg triggers, restart journald,
+  # networkd, udevd and friends. kubeadm's kubelet-start phase runs
+  # `systemctl daemon-reload` right then on a fresh node and gets exit 1, so the
+  # kubelet never starts and init or join fails for good. unattended-upgrades
+  # also holds the dpkg lock against cloud-init's package step. Nodes get
+  # updates through a new image, not in place.
+  - { src: /dev/null, dst: /etc/systemd/system/apt-daily.timer, type: symlink }
+  - { src: /dev/null, dst: /etc/systemd/system/apt-daily-upgrade.timer, type: symlink }
+  - { src: /dev/null, dst: /etc/systemd/system/apt-daily.service, type: symlink }
+  - { src: /dev/null, dst: /etc/systemd/system/apt-daily-upgrade.service, type: symlink }
+  - { src: /dev/null, dst: /etc/systemd/system/unattended-upgrades.service, type: symlink }
+  #
+  # DOCA adds ovs-exporter.service, which its postinst enables, wanted by
+  # ovs-vswitchd: a Prometheus endpoint on TCP 6103 on every interface, with no
+  # authentication. Stock Open vSwitch has no such listener; keep the node's
+  # open ports what they were.
+  - { src: /dev/null, dst: /etc/systemd/system/ovs-exporter.service, type: symlink }
