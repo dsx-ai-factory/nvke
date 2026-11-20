@@ -78,12 +78,13 @@ release archives. It needs Python 3, Bash, curl, tar, awk, and GNU coreutils.
 Revision 5 restores optional IMDS packaging. IMDS and non-IMDS packages share
 version `-5`, so a publisher distributing both variants must set a distinct
 `DEB_REVISION` for each to let APT distinguish them. Supply all three inputs
-together:
+together, replacing the quoted digest placeholder with the authenticated
+expected digest before running the command:
 
 ```bash
 make debs OUT_DIR=/absolute/output ARCH=arm64 \
   IMDS_AGENT_FILE=/absolute/materials/dsx-imds-node-attestor-agent \
-  IMDS_AGENT_SHA256=<expected-64-character-lowercase-sha256> \
+  IMDS_AGENT_SHA256='<expected-64-character-lowercase-sha256>' \
   IMDS_AGENT_ARCH=arm64
 ```
 

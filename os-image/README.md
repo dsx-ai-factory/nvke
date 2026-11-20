@@ -441,12 +441,13 @@ remove the selected variant's completed output.
 ### Optional IMDS node attestor
 
 Pass a local executable, its authenticated expected SHA-256 and architecture
-through the standalone Make/Packer path:
+through the standalone Make/Packer path. Replace the quoted digest placeholder
+with the authenticated expected digest before running the command:
 
 ```bash
 make -C packer os-image-non-fde ARCH=arm64 \
   IMDS_AGENT_FILE=/absolute/materials/dsx-imds-node-attestor-agent \
-  IMDS_AGENT_SHA256=<expected-64-character-lowercase-sha256> \
+  IMDS_AGENT_SHA256='<expected-64-character-lowercase-sha256>' \
   IMDS_AGENT_ARCH=arm64
 ```
 
