@@ -18,8 +18,8 @@ func TestJSONEqual(t *testing.T) {
 	}{
 		{"exponent", `{"spec":{"value":1e-7}}`, `{"spec":{"value":0.0000001}}`, true},
 		{"nested numbers", `{"values":[1,1e3,-0,true,null,"x"]}`, `{"values":[1.0,1000,0,true,null,"x"]}`, true},
-		{"large equivalent integers", `{"value":9007199254740993}`, `{"value":9007199254740993.0}`, true},
-		{"distinct large integers", `{"value":9007199254740992}`, `{"value":9007199254740993}`, false},
+		{"large equivalent integers", `{"value":18014398509481985}`, `{"value":18014398509481985.0}`, true},
+		{"distinct large integers", `{"value":18014398509481984}`, `{"value":18014398509481985}`, false},
 		{"number and string", `{"value":1}`, `{"value":"1"}`, false},
 		{"array order", `[1,2]`, `[2,1]`, false},
 		{"object keys", `{"a":null}`, `{"b":null}`, false},

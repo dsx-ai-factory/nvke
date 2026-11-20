@@ -53,7 +53,7 @@ func TestListNodePoolCountsPostgres(t *testing.T) {
 		updated               int
 	}{
 		{"equivalent exponent", `{"value":1e-7}`, `{"value":1e-7}`, 1},
-		{"distinct large integers", `{"value":9007199254740992}`, `{"value":9007199254740993}`, 0},
+		{"distinct large integers", `{"value":18014398509481984}`, `{"value":18014398509481985}`, 0},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			pool := db.NodePool{ID: uuid.New(), SystemReservedMemory: "16Gi"}
