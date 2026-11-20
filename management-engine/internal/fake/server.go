@@ -104,7 +104,7 @@ func handle[T any](s *Server, collection *resourceCollection[T], handler http.Ha
 	}
 }
 
-// SeedFromYAML loads existing records and the declared defaults for newly created records.
+// validateStatusCodes requires configured failures to use HTTP error status codes.
 func (seed *serverSeed) validateStatusCodes() error {
 	for name, code := range map[string]int{
 		"clusters.statusCode":        seed.Clusters.StatusCode,
@@ -120,6 +120,7 @@ func (seed *serverSeed) validateStatusCodes() error {
 	return nil
 }
 
+// SeedFromYAML loads existing records and the declared defaults for newly created records.
 func (s *Server) SeedFromYAML(input string) error {
 	var seed serverSeed
 	if err := yaml.UnmarshalStrict([]byte(input), &seed); err != nil {
@@ -165,13 +166,21 @@ func (s *Server) SeedFromYAML(input string) error {
 	s.create = seed.Create
 	s.nodePools.StatusCode = seed.NodePools.StatusCode
 	for _, pool := range seed.NodePools.Resources {
-		s.nodePools.Resources[pool.ID] = pool
+		s.nodePools.Resources[pool.ID] = normalizeNodePool(pool)
 	}
 	s.createPool = seed.NodePools.Create
 	s.createPoolStatus = seed.NodePools.CreateStatusCode
 	s.updatePoolStatus = seed.NodePools.UpdateStatusCode
 	s.updateStatusCode = seed.UpdateStatusCode
 	return nil
+}
+
+// normalizeNodePool omits zero surge values to match NVKE controller responses.
+func normalizeNodePool(pool api.NodePool) api.NodePool {
+	if pool.MaxSurge != nil && *pool.MaxSurge == 0 {
+		pool.MaxSurge = nil
+	}
+	return pool
 }
 
 // Dump snapshots stored records and deduplicated writes without counting read polling.
@@ -365,6 +374,7 @@ func (s *Server) getNodePool(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, pool)
 }
 
+// createNodePool records a creation request and merges it with fixture defaults.
 func (s *Server) createNodePool(w http.ResponseWriter, r *http.Request) {
 	var request api.CreateNodePoolRequest
 	decoder := json.NewDecoder(r.Body)
@@ -412,17 +422,22 @@ func (s *Server) createNodePool(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "cannot apply node pool create request")
 		return
 	}
+	pool = normalizeNodePool(pool)
 	s.nodePools.Resources[pool.ID] = pool
 	writeJSON(w, http.StatusCreated, pool)
 }
 
+// updateNodePool records PATCH requests and applies supported changes to seeded pools.
+// Configured failures leave the stored pool unchanged.
 func (s *Server) updateNodePool(w http.ResponseWriter, r *http.Request) {
 	var request api.UpdateNodePoolRequest
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil || (request.DesiredNodeCount == nil && request.Infra == nil) ||
+	if err := decoder.Decode(&request); err != nil ||
+		(request.DesiredNodeCount == nil && request.Infra == nil && request.RecycleBudget == nil &&
+			request.AutoModeDisabled == nil && request.MaxSurge == nil) ||
 		(request.DesiredNodeCount != nil && *request.DesiredNodeCount < 0) {
-		writeError(w, http.StatusBadRequest, "invalid node pool scale request")
+		writeError(w, http.StatusBadRequest, "invalid node pool update request")
 		return
 	}
 	s.mu.Lock()
@@ -441,6 +456,15 @@ func (s *Server) updateNodePool(w http.ResponseWriter, r *http.Request) {
 	if request.DesiredNodeCount != nil {
 		pool.DesiredNodeCount = *request.DesiredNodeCount
 	}
+	if request.RecycleBudget != nil {
+		pool.RecycleBudget = *request.RecycleBudget
+	}
+	if request.AutoModeDisabled != nil {
+		pool.AutoModeDisabled = *request.AutoModeDisabled
+	}
+	if request.MaxSurge != nil {
+		pool.MaxSurge = request.MaxSurge
+	}
 	if request.Infra != nil {
 		pool.Infra = &api.InfraNodePoolProvider{
 			BootstrapFiles:     request.Infra.BootstrapFiles,
@@ -448,6 +472,7 @@ func (s *Server) updateNodePool(w http.ResponseWriter, r *http.Request) {
 			PreKubeadmCommands: request.Infra.PreKubeadmCommands,
 		}
 	}
+	pool = normalizeNodePool(pool)
 	s.nodePools.Resources[id] = pool
 	writeJSON(w, http.StatusOK, pool)
 }
