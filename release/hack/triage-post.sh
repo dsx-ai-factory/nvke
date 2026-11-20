@@ -15,7 +15,9 @@ set -euo pipefail
 # Environment:
 #   RUN_URL     the failed run's URL, which the message links to (required)
 #   STATE_DIR   where the saved thread is (default: .notify/cache)
-#   NOTIFY      the notify command (default: go run ./release/cmd/notify)
+#   NOTIFY      the notify command, such as a built binary or
+#               "go run ./release/cmd/notify" (required: a repository that
+#               borrows this script must say which notify it means)
 #   NOTIFY_CONFIG the notify config (default: release/notify.yml)
 #   DRY_RUN     true prints what would be sent and needs no token (default: true)
 #   MAX         the most findings to post per run (default: 4)
@@ -39,7 +41,12 @@ if [[ ! "${max}" =~ ^[0-9]+$ ]]; then
     exit 2
 fi
 
-read -r -a notify <<<"${NOTIFY:-go run ./release/cmd/notify}"
+if [[ -z "${NOTIFY:-}" ]]; then
+    echo "set NOTIFY to the notify command" >&2
+    exit 2
+fi
+
+read -r -a notify <<<"${NOTIFY}"
 state="${STATE_DIR:-.notify/cache}"
 config="${NOTIFY_CONFIG:-release/notify.yml}"
 

@@ -1,0 +1,230 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+name: Qualify triage (reusable)
+
+# The engine of a repository's qualification triage: it names why the jobs of a
+# run failed, from the repository's own rules, prints the result in the run
+# summary and, for a tag run, replies with it in the tag's Slack thread. A
+# repository calls it from a thin workflow of its own, such as
+# qualify-triage.yml, which keeps the triggers. A `workflow_run` trigger cannot
+# live here: it fires for the workflow that declares it.
+#
+# WHAT A CALLER SUPPLIES. Its rules files and its notify configuration, as paths
+# in its own checkout; the name of the environment that holds its Slack bot
+# token as NOTIFY_SLACK_BOT_TOKEN and the variable QUALIFY_TRIAGE_POST, the
+# switch for an automatic post, which is off unless it is "true"; and the commit
+# of the tools to run. The
+# tools (the triage and notify programs and the two scripts) come from a public
+# checkout of tools-repository at tools-ref, a full commit, so the caller runs
+# exactly what it reviewed.
+#
+# Diagnosis only: it re-runs nothing, deletes nothing and takes no machine.
+on:
+  workflow_call:
+    inputs:
+      rules:
+        description: The rules files in the caller's checkout, separated by spaces. Tried in order, so a repository's own rules go before shared ones.
+        type: string
+        required: true
+      notify-config:
+        description: The notify configuration in the caller's checkout. It must have a qualification:triage event.
+        type: string
+        required: true
+      tools-ref:
+        description: The full commit of tools-repository to run.
+        type: string
+        required: true
+      tools-repository:
+        description: The repository that holds the triage and notify programs.
+        type: string
+        required: false
+        default: dsx-ai-factory/nvke
+      environment:
+        description: The environment that holds the NOTIFY_SLACK_BOT_TOKEN secret.
+        type: string
+        required: true
+      dispatch-run-id:
+        description: For a manual run, the id of the run to triage. Unused for an automatic one.
+        type: string
+        required: false
+        default: ''
+      attempt:
+        description: For a manual run, only this attempt. Empty is the latest in a post and every attempt in the summary.
+        type: string
+        required: false
+        default: ''
+      post:
+        description: For a manual run, post in the thread. Off prints what would be posted.
+        type: boolean
+        required: false
+        default: false
+
+permissions:
+  contents: read
+  # Lists a run's jobs, downloads their logs, and downloads the saved thread.
+  actions: read
+
+jobs:
+  triage:
+    name: Classify the failed jobs
+    environment: ${{ inputs.environment }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check the tools commit
+        env:
+          TOOLS_REF: ${{ inputs.tools-ref }}
+        run: |
+          [[ "${TOOLS_REF}" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::tools-ref must be a full commit"; exit 1; }
+
+      - name: Checkout the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout the tools
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.tools-repository }}
+          ref: ${{ inputs.tools-ref }}
+          path: _triage-tools
+          sparse-checkout: release
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: _triage-tools/release/go.mod
+          cache: true
+          cache-dependency-path: _triage-tools/release/go.sum
+
+      # The release module needs nothing else of the repository, so it builds
+      # alone, with no workspace.
+      - name: Build triage and notify
+        working-directory: _triage-tools/release
+        env:
+          GOWORK: 'off'
+        run: |
+          go build -o "${RUNNER_TEMP}/triage" ./cmd/triage
+          go build -o "${RUNNER_TEMP}/notify" ./cmd/notify
+
+      - name: Check the rules
+        env:
+          RULES: ${{ inputs.rules }}
+        run: |
+          set -Eeuo pipefail
+          args=()
+          for r in ${RULES}; do args+=(--rules "${r}"); done
+          "${RUNNER_TEMP}/triage" validate "${args[@]}"
+
+      # Everything after this reads the run from the API, not from the event
+      # payload, and only a validated tag is ever written to an output.
+      - name: Read the run
+        id: run
+        env:
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.dispatch-run-id }}
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_ATTEMPT: ${{ inputs.attempt }}
+          EVENT_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          INPUT_POST: ${{ inputs.post }}
+          VAR_POST: ${{ vars.QUALIFY_TRIAGE_POST }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+
+          [[ "${RUN_ID}" =~ ^[0-9]+$ ]] || { echo "::error::the run id is not a number"; exit 1; }
+          [[ -z "${INPUT_ATTEMPT}" || "${INPUT_ATTEMPT}" =~ ^[0-9]+$ ]] || { echo "::error::the attempt is not a number"; exit 1; }
+
+          IFS=$'\t' read -r head event attempt url < <(
+            gh api "repos/${GH_REPO}/actions/runs/${RUN_ID}" \
+              --jq '[.head_branch, .event, .run_attempt, .html_url] | @tsv'
+          )
+
+          # A beta tag run: a push whose branch is a version tag.
+          tag=""
+          if [[ "${event}" == push && "${head}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            tag="${head}"
+          fi
+
+          echo "Automatic posting switch (QUALIFY_TRIAGE_POST): \`${VAR_POST:-unset}\`" >> "${GITHUB_STEP_SUMMARY}"
+
+          # A tag's thread is only posted to when told to: by the variable for
+          # an automatic run, by `post` for a manual one.
+          post=false
+          if [[ -n "${tag}" ]]; then
+            if [[ "${EVENT_NAME}" == workflow_run && "${VAR_POST}" == true ]]; then post=true; fi
+            if [[ "${EVENT_NAME}" == workflow_dispatch && "${INPUT_POST}" == true ]]; then post=true; fi
+          fi
+
+          # An automatic run reads the attempt that finished, from the event and
+          # not the API: a re-run started before this step runs makes the API's
+          # latest attempt the new one, which has no failed jobs yet. A manual
+          # run reads what it was given, else every attempt for the summary and
+          # the latest for a post.
+          want_attempt="${INPUT_ATTEMPT}"
+          if [[ "${EVENT_NAME}" == workflow_run ]]; then
+            [[ "${EVENT_ATTEMPT}" =~ ^[0-9]+$ ]] || { echo "::error::the event's attempt is not a number"; exit 1; }
+            want_attempt="${EVENT_ATTEMPT}"
+          fi
+
+          {
+            echo "run-id=${RUN_ID}"
+            echo "tag=${tag}"
+            echo "url=${url}"
+            echo "post=${post}"
+            echo "post-attempt=${want_attempt:-${attempt}}"
+            echo "summary-attempt=${want_attempt}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Classify
+        env:
+          RUN_ID: ${{ steps.run.outputs.run-id }}
+          ATTEMPT: ${{ steps.run.outputs.summary-attempt }}
+          RULES: ${{ inputs.rules }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+          TRIAGE="${RUNNER_TEMP}/triage" RULES="${RULES}" \
+            _triage-tools/release/hack/triage-run.sh "${RUN_ID}" | tee -a "${GITHUB_STEP_SUMMARY}"
+
+      # A dry run needs the thread too: a reply is only rendered when there is a
+      # thread to reply in. Downloading it takes no secret. A run with no saved
+      # thread, or an expired one, previews nothing; the summary above still
+      # names every failure.
+      - name: Restore the thread
+        if: steps.run.outputs.tag != ''
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: notify-state-${{ steps.run.outputs.run-id }}
+          path: ${{ runner.temp }}/notify-state
+          run-id: ${{ steps.run.outputs.run-id }}
+          github-token: ${{ github.token }}
+
+      # A notification is a courtesy: it must not turn a diagnosis into a
+      # failure. The token reaches this step and no other, and only for a real
+      # post.
+      - name: Reply in the tag's thread
+        if: steps.run.outputs.tag != ''
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          RUN_ID: ${{ steps.run.outputs.run-id }}
+          ATTEMPT: ${{ steps.run.outputs.post-attempt }}
+          RUN_URL: ${{ steps.run.outputs.url }}
+          DRY_RUN: ${{ steps.run.outputs.post == 'true' && 'false' || 'true' }}
+          NOTIFY_STATE_KEY: ${{ steps.run.outputs.tag }}
+          STATE_DIR: ${{ runner.temp }}/notify-state
+          NOTIFY: ${{ runner.temp }}/notify
+          NOTIFY_CONFIG: ${{ inputs.notify-config }}
+          RULES: ${{ inputs.rules }}
+          SLACK_BOT_TOKEN: ${{ steps.run.outputs.post == 'true' && secrets.NOTIFY_SLACK_BOT_TOKEN || '' }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+          FORMAT=jsonl TRIAGE="${RUNNER_TEMP}/triage" \
+            _triage-tools/release/hack/triage-run.sh "${RUN_ID}" | _triage-tools/release/hack/triage-post.sh

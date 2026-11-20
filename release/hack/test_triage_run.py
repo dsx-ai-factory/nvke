@@ -47,6 +47,7 @@ if grep -q CLASSIFY-FAILS "${log}"; then
   echo "triage: reading the job log: bufio.Scanner: token too long" >&2
   exit 1
 fi
+printf '%s\\n' "$*" >>"${STUB_ARGS}"
 cat "${STUB_RESULT}"
 """
 
@@ -96,6 +97,7 @@ class TriageRunTest(unittest.TestCase):
             STUB_JOBS=str(self.jobs),
             STUB_LOGS=str(self.logs),
             STUB_RESULT=str(self.result),
+            STUB_ARGS=str(self.root / "args"),
             **extra,
         )
         return subprocess.run([str(SCRIPT), *args], capture_output=True, text=True, env=env)
@@ -154,6 +156,15 @@ class TriageRunTest(unittest.TestCase):
         r = self.run_script("1")
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertIn("| job-a | 1 | none |", r.stdout)
+
+    def test_every_rules_file_and_the_job_name_reach_the_classifier(self):
+        self.write_jobs("11\t1\tPlan\tjob-a\n")
+        (self.logs / "11.log").write_text("log\n")
+        r = self.run_script("1", RULES="own.yaml shared.yaml")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        args = (self.root / "args").read_text()
+        self.assertIn("--rules own.yaml --rules shared.yaml --job job-a --step Plan", args)
+        self.assertIn("own.yaml shared.yaml", r.stdout)
 
     def test_an_expired_log_is_listed_not_dropped(self):
         self.write_jobs("11\t1\tRun the e2e suite\tjob-a\n12\t1\tPlan\tjob-b\n")

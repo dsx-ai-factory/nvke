@@ -12,7 +12,8 @@ set -euo pipefail
 #
 # Environment:
 #   TRIAGE   the built triage binary (default: triage on PATH)
-#   RULES    the rules file (default: release/triage.yaml)
+#   RULES    the rules files, separated by spaces, tried in order
+#            (default: release/triage.yaml)
 #   GH_REPO  owner/name of the repository (default: GITHUB_REPOSITORY)
 #   GH_TOKEN a token that can read Actions, for gh
 #   ATTEMPT  only the jobs of this attempt (default: every attempt)
@@ -39,7 +40,11 @@ if [[ "${format}" != markdown && "${format}" != jsonl ]]; then
 fi
 
 triage="${TRIAGE:-triage}"
-rules="${RULES:-release/triage.yaml}"
+read -r -a rules <<<"${RULES:-release/triage.yaml}"
+rule_args=()
+for r in "${rules[@]}"; do
+    rule_args+=(--rules "${r}")
+done
 repo="${GH_REPO:-${GITHUB_REPOSITORY:-}}"
 if [[ -z "${repo}" ]]; then
     echo "set GH_REPO to owner/name" >&2
@@ -99,7 +104,7 @@ while IFS=$'\t' read -r id attempt_of name step; do
 
     if "${expired}"; then
         result='{"class": "log-unavailable", "action": "none", "evidence": "", "note": "The job log expired or could not be read."}'
-    elif ! result="$("${triage}" classify --rules "${rules}" --step "${step}" --log "${log}" 2>"${work}/classify.err")"; then
+    elif ! result="$("${triage}" classify "${rule_args[@]}" --job "${name}" --step "${step}" --log "${log}" 2>"${work}/classify.err")"; then
         # One job that cannot be classified must not stop the rest, or the
         # reply for the others is lost with it. It is reported like a log that
         # is gone: the summary says so, and nothing is posted for it.
@@ -134,5 +139,5 @@ done <"${work}/jobs.tsv"
 
 if [[ "${format}" == markdown ]]; then
     echo
-    echo "What each class means is in release/triage.yaml."
+    echo "What each class means is in the rules files: ${rules[*]}."
 fi

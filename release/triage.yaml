@@ -2,12 +2,15 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # What a failed qualification job means, and what may be done about it.
-# `triage classify` reads a job's log and the name of its failed step, tries
-# these rules in order, and the first match wins: a specific rule goes before a
-# general one. `triage validate` checks this file.
+# `triage classify` reads a job's log, the name of the job and of its failed
+# step, tries these rules in order, and the first match wins: a specific rule
+# goes before a general one. `triage validate` checks this file. Another
+# repository can pass several files, with --rules repeated: its own first, then
+# shared ones.
 #
 #   name    identifies the rule in a report; unique.
 #   class   the failure it names. Rules that mean the same thing share one.
+#   job     optional regular expression for the failed job's name.
 #   step    optional regular expression for the failed step's name.
 #   match   regular expression for the evidence: the runner's error lines, the
 #           first Ginkgo failure, and the output just before the first error.

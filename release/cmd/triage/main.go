@@ -52,7 +52,8 @@ func root() *cobra.Command {
 
 func classifyCmd() *cobra.Command {
 	var (
-		rules string
+		rules []string
+		job   string
 		step  string
 		log   string
 	)
@@ -72,19 +73,20 @@ The log is read for what a failing step wrote, not searched whole: a job log
 also holds the workflow's own shell source, which would match by accident.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runClassify(cmd.OutOrStdout(), cmd.InOrStdin(), rules, step, log)
+			return runClassify(cmd.OutOrStdout(), cmd.InOrStdin(), rules, job, step, log)
 		},
 	}
 
-	cmd.Flags().StringVar(&rules, "rules", "triage.yaml", "the rules file")
+	cmd.Flags().StringSliceVar(&rules, "rules", []string{"triage.yaml"}, "a rules file; repeat it to add more, tried in order")
+	cmd.Flags().StringVar(&job, "job", "", "the name of the job that failed")
 	cmd.Flags().StringVar(&step, "step", "", "the name of the step that failed")
 	cmd.Flags().StringVar(&log, "log", "-", "the job's log, or - for standard input")
 
 	return cmd
 }
 
-func runClassify(out io.Writer, in io.Reader, rules, step, log string) error {
-	c, err := triage.Load(rules)
+func runClassify(out io.Writer, in io.Reader, rules []string, job, step, log string) error {
+	c, err := triage.Load(rules...)
 	if err != nil {
 		return err
 	}
@@ -109,18 +111,18 @@ func runClassify(out io.Writer, in io.Reader, rules, step, log string) error {
 	enc := json.NewEncoder(out)
 	enc.SetIndent("", "  ")
 
-	return enc.Encode(c.Classify(step, e))
+	return enc.Encode(c.Classify(job, step, e))
 }
 
 func validateCmd() *cobra.Command {
-	var rules string
+	var rules []string
 
 	cmd := &cobra.Command{
 		Use:   "validate",
 		Short: "Check a rules file without classifying anything",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c, err := triage.Load(rules)
+			c, err := triage.Load(rules...)
 			if err != nil {
 				return err
 			}
@@ -131,7 +133,7 @@ func validateCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&rules, "rules", "triage.yaml", "the rules file")
+	cmd.Flags().StringSliceVar(&rules, "rules", []string{"triage.yaml"}, "a rules file; repeat it to add more")
 
 	return cmd
 }

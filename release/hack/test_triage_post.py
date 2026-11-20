@@ -74,6 +74,12 @@ class TriagePostTest(unittest.TestCase):
         r = subprocess.run([str(SCRIPT)], input="", capture_output=True, text=True, env={**os.environ, "RUN_URL": ""})
         self.assertEqual(r.returncode, 2)
 
+    def test_it_will_not_guess_which_notify_to_run(self):
+        env = {k: v for k, v in os.environ.items() if k != "NOTIFY"}
+        r = subprocess.run([str(SCRIPT)], input="", capture_output=True, text=True, env={**env, "RUN_URL": "https://example.com/run/1"})
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("NOTIFY", r.stderr)
+
     def test_rejects_a_bad_dry_run_or_max(self):
         self.assertEqual(self.run_script("", DRY_RUN="maybe").returncode, 2)
         self.assertEqual(self.run_script("", MAX="lots").returncode, 2)
