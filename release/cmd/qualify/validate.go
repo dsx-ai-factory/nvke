@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/onsi/ginkgo/v2/types"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 	"sigs.k8s.io/yaml"
@@ -172,6 +173,14 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 	}
 	if o.kubeContext != "" && o.kubeconfig == "" {
 		return errors.New("--context names a --kubeconfig context; --run-dir and --teleport-cluster use the kubeconfig they make")
+	}
+	// --only is joined to the filter with &&, so only an expression that
+	// parses on its own keeps it from closing the filter's parenthesis and
+	// selecting the specs labeled creates.
+	if o.only != "" {
+		if _, err := types.ParseLabelFilter(o.only); err != nil {
+			return fmt.Errorf("--only %q is not a label expression on its own: %w", o.only, err)
+		}
 	}
 	tools := []string{"docker", "kubectl"}
 	switch {
@@ -409,11 +418,22 @@ func buildValidateImage(ctx context.Context, out io.Writer) (string, error) {
 func connect(ctx context.Context, o validateOptions, kept keptRecord) (string, func(), error) {
 	switch {
 	case o.runDir != "":
-		port, err := kubeconfigPort(kept.Kubeconfig)
+		remotePort, err := kubeconfigPort(kept.Kubeconfig)
 		if err != nil {
 			return "", func() {}, err
 		}
-		return kept.Kubeconfig, func() {}, forwardThroughJumpHost(ctx, kept, port, filepath.Join(o.out, "connect.log"))
+		// The node's own port, often 6443, may be taken on the host, as by
+		// Docker Desktop's Kubernetes.
+		localPort, err := freePort()
+		if err != nil {
+			return "", func() {}, err
+		}
+		kubeconfig, err := kubeconfigOnPort(kept.Kubeconfig, o.out, localPort)
+		if err != nil {
+			return "", func() {}, err
+		}
+		removeKubeconfig := func() { os.Remove(kubeconfig) }
+		return kubeconfig, removeKubeconfig, forwardThroughJumpHost(ctx, kept, localPort, remotePort, filepath.Join(o.out, "connect.log"))
 	case o.teleportCluster != "":
 		port, err := freePort()
 		if err != nil {
@@ -536,11 +556,12 @@ func relayArgs(kept keptRecord) []string {
 // sshHandshakeTimeout bounds the SSH handshake with the node.
 var sshHandshakeTimeout = time.Minute
 
-// forwardThroughJumpHost forwards the kept management cluster's API server port to the
-// host's loopback, reaching the node as the suite does: an SSH session with
-// the run's key, carried by tsh through the jump host. It runs no ssh
-// binary. What it starts ends with ctx.
-func forwardThroughJumpHost(ctx context.Context, kept keptRecord, port int, logPath string) error {
+// forwardThroughJumpHost forwards localPort on the host's loopback to
+// remotePort, the kept management cluster's API server port, on the node's,
+// reaching the node as the suite does: an SSH session with the run's key,
+// carried by tsh through the jump host. It runs no ssh binary. What it
+// starts ends with ctx.
+func forwardThroughJumpHost(ctx context.Context, kept keptRecord, localPort, remotePort int, logPath string) error {
 	log, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return err
@@ -591,7 +612,8 @@ func forwardThroughJumpHost(ctx context.Context, kept keptRecord, port int, logP
 	}
 	client := ssh.NewClient(conn, chans, reqs)
 
-	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(localPort))
+	remoteAddress := net.JoinHostPort("127.0.0.1", strconv.Itoa(remotePort))
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", address)
 	if err != nil {
 		client.Close()
@@ -610,7 +632,7 @@ func forwardThroughJumpHost(ctx context.Context, kept keptRecord, port int, logP
 			}
 			go func() {
 				defer local.Close()
-				remote, err := client.Dial("tcp", address)
+				remote, err := client.Dial("tcp", remoteAddress)
 				if err != nil {
 					return
 				}
@@ -689,6 +711,35 @@ func kubeconfigPort(path string) (int, error) {
 		return 0, fmt.Errorf("%s: server %q names no port", path, server)
 	}
 	return strconv.Atoi(u.Port())
+}
+
+// kubeconfigOnPort writes the kubeconfig at path to a new private file in dir,
+// with its current cluster's server on port, and returns the new file's path.
+func kubeconfigOnPort(path, dir string, port int) (string, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	var cfg map[string]any
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
+	}
+	cluster, err := currentCluster(cfg)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
+	}
+	server, _ := cluster["server"].(string)
+	u, err := url.Parse(server)
+	if err != nil || u.Hostname() == "" {
+		return "", fmt.Errorf("%s: server %q names no host", path, server)
+	}
+	u.Host = net.JoinHostPort(u.Hostname(), strconv.Itoa(port))
+	cluster["server"] = u.String()
+	moved, err := yaml.Marshal(cfg)
+	if err != nil {
+		return "", err
+	}
+	return writePrivateTemp(dir, "kept-*.kubeconfig", moved)
 }
 
 // currentCluster is the cluster entry of the kubeconfig's current context.

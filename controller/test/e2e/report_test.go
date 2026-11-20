@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"flag"
+	"os"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -34,6 +35,29 @@ var _ = ReportAfterSuite("JUnit report of the selected specs", func(report Repor
 // selectedSpecs drops the specs the filters excluded. A filtered spec is
 // skipped with no message; a spec that called Skip carries its reason, and is
 // kept, because a skip the run did ask for is a result.
+// Ginkgo exits 0 when every selected spec skips, or when the filter selects
+// none, which a runner of the validation image would read as a cluster that
+// passed.
+var _ = ReportAfterSuite("a validation run checked something", func(report Report) {
+	if validationCheckedNothing(report, os.LookupEnv) {
+		Fail("no check passed, so the run says nothing about the cluster; see the skips")
+	}
+})
+
+// validationCheckedNothing is whether report is of a validation image run,
+// not a dry run, in which no spec passed.
+func validationCheckedNothing(report Report, lookupEnv func(string) (string, bool)) bool {
+	if filter, err := validationLabelFilter(lookupEnv); err != nil || filter == "" || report.SuiteConfig.DryRun {
+		return false
+	}
+	for _, spec := range report.SpecReports {
+		if spec.LeafNodeType == types.NodeTypeIt && spec.State == types.SpecStatePassed {
+			return false
+		}
+	}
+	return true
+}
+
 func selectedSpecs(report Report) Report {
 	kept := make(types.SpecReports, 0, len(report.SpecReports))
 	for _, spec := range report.SpecReports {
@@ -44,6 +68,38 @@ func selectedSpecs(report Report) Report {
 	}
 	report.SpecReports = kept
 	return report
+}
+
+func TestValidationCheckedNothing(t *testing.T) {
+	image := func(key string) (string, bool) {
+		value, ok := map[string]string{siteValidateEnv: "true", tenantValidateEnv: "false"}[key]
+		return value, ok
+	}
+	outside := func(string) (string, bool) { return "", false }
+	skipped := Report{SpecReports: types.SpecReports{
+		{LeafNodeType: types.NodeTypeBeforeSuite, State: types.SpecStatePassed},
+		{LeafNodeType: types.NodeTypeIt, State: types.SpecStateSkipped, Failure: types.Failure{Message: "not configured"}},
+	}}
+	passed := Report{SpecReports: append(types.SpecReports{{LeafNodeType: types.NodeTypeIt, State: types.SpecStatePassed}}, skipped.SpecReports...)}
+	dryRun := skipped
+	dryRun.SuiteConfig.DryRun = true
+
+	for name, tc := range map[string]struct {
+		report Report
+		env    func(string) (string, bool)
+		want   bool
+	}{
+		"every spec skipped":       {skipped, image, true},
+		"no spec selected":         {Report{}, image, true},
+		"one spec passed":          {passed, image, false},
+		"a dry run":                {dryRun, image, false},
+		"a run outside the image":  {skipped, outside, false},
+		"only a setup node passed": {Report{SpecReports: skipped.SpecReports[:1]}, image, true},
+	} {
+		if got := validationCheckedNothing(tc.report, tc.env); got != tc.want {
+			t.Errorf("%s: validationCheckedNothing = %t, want %t", name, got, tc.want)
+		}
+	}
 }
 
 func TestSelectedSpecs(t *testing.T) {

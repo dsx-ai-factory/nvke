@@ -185,6 +185,42 @@ func TestKubeconfigPort(t *testing.T) {
 	}
 }
 
+func TestKubeconfigOnPort(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "site.kubeconfig")
+	if err := os.WriteFile(path, []byte(loopbackKubeconfig), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	moved, err := kubeconfigOnPort(path, dir, 51234)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if port, err := kubeconfigPort(moved); err != nil || port != 51234 {
+		t.Errorf("moved: port %d, err %v", port, err)
+	}
+	if port, err := kubeconfigPort(path); err != nil || port != 6443 {
+		t.Errorf("the kept kubeconfig changed: port %d, err %v", port, err)
+	}
+	if info, err := os.Stat(moved); err != nil || info.Mode().Perm() != 0o600 {
+		t.Errorf("moved: %v, err %v; want mode 0600", info.Mode().Perm(), err)
+	}
+}
+
+func TestOnlyMustParseAlone(t *testing.T) {
+	clearRunSwitches(t)
+	for only, refused := range map[string]bool{
+		"foo) || (creates":      true,
+		"readiness) || (true":   true,
+		"readiness":             false,
+		"readiness && !storage": false,
+	} {
+		err := runValidate(t.Context(), io.Discard, validateOptions{kubeconfig: "k", only: only})
+		if got := err != nil && strings.Contains(err.Error(), "not a label expression on its own"); got != refused {
+			t.Errorf("--only %q: err = %v, want refused %t", only, err, refused)
+		}
+	}
+}
+
 func TestTSHKubeconfig(t *testing.T) {
 	log := "Started local proxy for Kubernetes on 127.0.0.1:61234\nexport KUBECONFIG=\"/tmp/tsh-123/kubeconfig.yaml\"\n"
 	if got := tshKubeconfig([]byte(log)); got != "/tmp/tsh-123/kubeconfig.yaml" {
