@@ -77,6 +77,8 @@ repository, packages and identity setup that profile previously supplied. Preser
 controller-generated credentials and agent arguments. A placeholder cloud-init
 template alone does not supply these dependencies; check which initialization
 fields the deployed manager actually forwards.
+Check startup order too: moving early boot setup into later commands can change
+when packages and identity services become available.
 
 ## Publish or select a release
 
