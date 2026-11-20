@@ -40,6 +40,9 @@ nodePools:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     name: workers-to-missing
     desiredNodeCount: 1
+    observedNodeCount: 3
+    readyNodeCount: 1
+    updatedNodeCount: 2
     conditions:
       provisioned:
         status: "True"
@@ -76,6 +79,9 @@ nodePools:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     name: workers-to-deprecated
     desiredNodeCount: 1
+    observedNodeCount: 2
+    readyNodeCount: 1
+    updatedNodeCount: 1
     conditions:
       provisioned:
         status: "True"
@@ -112,6 +118,9 @@ nodePools:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     name: workers-steady
     desiredNodeCount: 1
+    observedNodeCount: 1
+    readyNodeCount: 1
+    updatedNodeCount: 1
     conditions:
       provisioned:
         status: "True"

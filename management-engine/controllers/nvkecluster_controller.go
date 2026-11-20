@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"net/netip"
 	"slices"
 	"strings"
@@ -610,6 +611,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 			return fmt.Errorf("create nvke controller node pool %q: %w", pool.Name, err)
 		}
 		status.ID = observedPool.ID.String()
+		propagateNodePoolCounts(status, observedPool)
 		status.CurrentRelease = &internalv1.ReleaseReference{Name: internalv1.ResourceName(release.Name), Version: release.Spec.Tag}
 		propagateNodePoolConditions(target, observedPool)
 		return setNodePoolConditions(target)
@@ -622,6 +624,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 		return fmt.Errorf("node pool %q does not belong to cluster %q", pool.Name, observedCluster.Name)
 	}
 	status.ID = observedPool.ID.String()
+	propagateNodePoolCounts(status, observedPool)
 	if observedPool.Conditions.Deleting.Status == api.ConditionStatus("True") {
 		propagateNodePoolConditions(target, observedPool)
 		return setNodePoolConditions(target)
@@ -651,6 +654,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 			return errors.Join(fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err), resolveErr)
 		}
 		observedPool = updatedPool
+		propagateNodePoolCounts(status, observedPool)
 	}
 	if resolved != nil {
 		status.CurrentRelease = resolved
@@ -702,6 +706,7 @@ func (r *NVKEClusterReconciler) reconcileNodePoolDelete(ctx context.Context, clu
 		return false, fmt.Errorf("node pool %q does not belong to cluster %q", pool.Name, observedCluster.Name)
 	}
 	pool.ID = observedPool.ID.String()
+	propagateNodePoolCounts(pool, observedPool)
 	if observedPool.Conditions.Deleting.Status != api.ConditionStatus("True") {
 		if err := r.NVKEController.DeleteNodePool(ctx, observedPool.ID.String()); err != nil {
 			return false, fmt.Errorf("delete nvke controller node pool %q: %w", pool.Name, err)
@@ -983,6 +988,19 @@ func propagateNVKEControllerConditions(cluster *internalv1.NVKECluster, observed
 type nodePoolConditionTarget struct {
 	metav1.Object
 	conditions.Setter
+}
+
+func propagateNodePoolCounts(status *internalv1.NodePoolStatus, observedPool *api.NodePool) {
+	status.Replicas = nodePoolReplicaCount(observedPool.ObservedNodeCount)
+	status.ReadyReplicas = nodePoolReplicaCount(observedPool.ReadyNodeCount)
+	status.UpdatedReplicas = nodePoolReplicaCount(observedPool.UpdatedNodeCount)
+}
+
+func nodePoolReplicaCount(count *int) *int32 {
+	if count == nil || *count < 0 || *count > math.MaxInt32 {
+		return nil
+	}
+	return new(int32(*count))
 }
 
 func propagateNodePoolConditions(pool conditions.Setter, observedPool *api.NodePool) {

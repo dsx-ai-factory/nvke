@@ -159,6 +159,9 @@ items:
         version: 1.36.1
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers-a
+      readyReplicas: 0
+      replicas: 2
+      updatedReplicas: 1
     - conditions:
       - message: '* NVKEControllerProvisioned: Provisioning failed for workers-b'
         observedGeneration: 1
@@ -185,6 +188,9 @@ items:
         version: 1.36.1
       id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
       name: workers-b
+      readyReplicas: 1
+      replicas: 3
+      updatedReplicas: 2
     - conditions:
       - message: ""
         observedGeneration: 1
@@ -211,5 +217,8 @@ items:
         version: 1.36.1
       id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
       name: workers-c
+      readyReplicas: 0
+      replicas: 0
+      updatedReplicas: 0
     observedGeneration: 1
 metadata: {}

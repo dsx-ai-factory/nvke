@@ -93,8 +93,11 @@ nodePools:
   nodeLabels: null
   nodeNamePrefix: ""
   nodeTaints: null
+  observedNodeCount: 2
   provisioningMonitorDisabled: false
+  readyNodeCount: 1
   recycleBudget: 0
+  updatedNodeCount: 0
 requests:
 - method: PATCH
   path: /api/clusters/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
