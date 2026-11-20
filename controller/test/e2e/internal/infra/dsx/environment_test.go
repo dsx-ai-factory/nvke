@@ -117,6 +117,63 @@ func TestDecodeRejectsAnUnknownField(t *testing.T) {
 	}
 }
 
+// TestDecodeRejectsTwoSitesSharingAnEndpoint checks that Decode refuses two
+// sites whose api values normalise to the same endpoint, and that the error
+// names both sites without repeating the endpoint.
+func TestDecodeRejectsTwoSitesSharingAnEndpoint(t *testing.T) {
+	tests := []struct {
+		name    string
+		raw     string
+		wantErr string
+	}{
+		{
+			name:    "identical endpoints",
+			raw:     `{"org":{"id":"ncx"},"sites":{"a":{"api":"https://h"},"b":{"api":"https://h"}}}`,
+			wantErr: `sites "a" and "b" share an api endpoint`,
+		},
+		{
+			name:    "a trailing-slash variant of the same host",
+			raw:     `{"org":{"id":"ncx"},"sites":{"a":{"api":"https://h"},"b":{"api":"https://h//"}}}`,
+			wantErr: `sites "a" and "b" share an api endpoint`,
+		},
+		{
+			name:    "surrounding whitespace",
+			raw:     `{"org":{"id":"ncx"},"sites":{"a":{"api":" https://h "},"b":{"api":"https://h"}}}`,
+			wantErr: `share an api endpoint`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Decode(json.RawMessage(tt.raw))
+			if err == nil {
+				t.Fatal("decoding two sites with one endpoint should have failed")
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %v, want it to contain %q", err, tt.wantErr)
+			}
+			if strings.Contains(err.Error(), "https://h") {
+				t.Errorf("error = %v, should not repeat the endpoint", err)
+			}
+		})
+	}
+}
+
+// TestDecodeAcceptsDistinctAndMissingEndpoints checks that the duplicate
+// check does not reject distinct hosts, or sites that declare no api at all.
+func TestDecodeAcceptsDistinctAndMissingEndpoints(t *testing.T) {
+	// A site with no api is not a collision: Site names the missing field on lookup.
+	for name, raw := range map[string]string{
+		"distinct hosts": `{"org":{"id":"ncx"},"sites":{"a":{"api":"https://h1"},"b":{"api":"https://h2"}}}`,
+		"two empty apis": `{"org":{"id":"ncx"},"sites":{"a":{},"b":{}}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := Decode(json.RawMessage(raw)); err != nil {
+				t.Fatalf("Decode() = %v, want no error", err)
+			}
+		})
+	}
+}
+
 // completeSite is a datahall with nothing missing, for tests that vary one
 // thing about it.
 func completeSite() Site {
