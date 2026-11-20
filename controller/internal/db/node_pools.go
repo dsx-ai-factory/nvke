@@ -4,20 +4,19 @@
 package db
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
-	"math/big"
-	"reflect"
 	"slices"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/utils"
 )
 
 const (
@@ -99,55 +98,10 @@ func uuidPtrEqual(a, b *uuid.UUID) bool {
 
 // Equal reports whether two CAPINodePoolProvider values represent the same configuration.
 func (c CAPINodePoolProvider) Equal(other CAPINodePoolProvider) bool {
-	return jsonEqual(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
+	return utils.JSONEqual(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
 		c.SpireAttestationMethod == other.SpireAttestationMethod &&
 		cloudInitFilesEqual(c.BootstrapFiles, other.BootstrapFiles) &&
 		slices.Equal(c.PreKubeadmCommands, other.PreKubeadmCommands)
-}
-
-// jsonEqual compares JSON content independent of object key order and whitespace.
-// Numbers compare by exact value, including equivalent exponent notation.
-func jsonEqual(a, b json.RawMessage) bool {
-	if bytes.Equal(a, b) {
-		return true
-	}
-	decode := func(raw json.RawMessage) (any, error) {
-		decoder := json.NewDecoder(bytes.NewReader(raw))
-		decoder.UseNumber()
-		var value any
-		err := decoder.Decode(&value)
-		return value, err
-	}
-	left, err := decode(a)
-	if err != nil {
-		return false
-	}
-	right, err := decode(b)
-	if err != nil {
-		return false
-	}
-	var equal func(a, b any) bool
-	equal = func(a, b any) bool {
-		switch left := a.(type) {
-		case json.Number:
-			right, ok := b.(json.Number)
-			if !ok {
-				return false
-			}
-			x, xOK := new(big.Rat).SetString(string(left))
-			y, yOK := new(big.Rat).SetString(string(right))
-			return xOK && yOK && x.Cmp(y) == 0
-		case map[string]any:
-			right, ok := b.(map[string]any)
-			return ok && maps.EqualFunc(left, right, equal)
-		case []any:
-			right, ok := b.([]any)
-			return ok && slices.EqualFunc(left, right, equal)
-		default:
-			return reflect.DeepEqual(a, b)
-		}
-	}
-	return equal(left, right)
 }
 
 // Equal reports whether two LaunchLayerNodePoolProvider values represent the same configuration.

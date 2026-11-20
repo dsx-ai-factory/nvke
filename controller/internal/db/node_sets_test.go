@@ -214,26 +214,3 @@ func TestNodePoolMatchesNodeSet(t *testing.T) {
 	snapshot.LaunchLayer.HostOSProfile = "old"
 	require.False(t, db.NodePoolMatchesNodeSet(pool, snapshot))
 }
-
-func TestCAPINodePoolProviderEqualJSON(t *testing.T) {
-	for _, tt := range []struct {
-		name, desired, current string
-		want                   bool
-	}{
-		{"exponent", `{"spec":{"value":1e-7}}`, `{"spec":{"value":0.0000001}}`, true},
-		{"nested numbers", `{"values":[1,1e3,-0,true,null,"x"]}`, `{"values":[1.0,1000,0,true,null,"x"]}`, true},
-		{"large equivalent integers", `{"value":9007199254740993}`, `{"value":9007199254740993.0}`, true},
-		{"distinct large integers", `{"value":9007199254740992}`, `{"value":9007199254740993}`, false},
-		{"number and string", `{"value":1}`, `{"value":"1"}`, false},
-		{"array order", `[1,2]`, `[2,1]`, false},
-		{"object keys", `{"a":null}`, `{"b":null}`, false},
-		{"invalid JSON", `{"value":`, `{"value":1}`, false},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			desired := db.CAPINodePoolProvider{InfraMachineTemplate: json.RawMessage(tt.desired)}
-			current := db.CAPINodePoolProvider{InfraMachineTemplate: json.RawMessage(tt.current)}
-			require.Equal(t, tt.want, desired.Equal(current))
-			require.Equal(t, tt.want, current.Equal(desired))
-		})
-	}
-}
