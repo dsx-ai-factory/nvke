@@ -409,6 +409,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 				TrustDomain: site.TrustDomain(spec.Name),
 				Relay:       sessionRelay(session),
 				Instances:   waiter,
+				Secrets:     secrets,
 			}, nil
 		}),
 			// Labeled nico-forge because it is: the same tenant the

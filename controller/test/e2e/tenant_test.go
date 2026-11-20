@@ -1041,6 +1041,9 @@ type managementCluster struct {
 	// sets it, because only there does the release outlast the controller's
 	// own teardown by most of an hour. Nil waits for the cluster to go.
 	Instances terminationWaiter
+
+	// Secrets is every value the tenant's archives must not carry.
+	Secrets []string
 }
 
 // terminationWaiter is the part of the Forge provider the delete wait needs.
@@ -1081,7 +1084,7 @@ func configuredManagement() (managementCluster, error) {
 	if err != nil {
 		return managementCluster{}, fmt.Errorf("loading e2e config: %w", err)
 	}
-	return managementCluster{Kubeconfig: cfg.Kube.Kubeconfig, Context: cfg.Kube.Context}, nil
+	return managementCluster{Kubeconfig: cfg.Kube.Kubeconfig, Context: cfg.Kube.Context, Secrets: withheldFromEnvironment()}, nil
 }
 
 // setupTenantTest builds the per-backend wiring (clients, trust domain, logger)

@@ -8,6 +8,7 @@ import (
 	"compress/gzip"
 	"errors"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"testing"
@@ -160,6 +161,16 @@ func TestKeepKapsBenchResults(t *testing.T) {
 			require.NoFileExists(t, archive)
 		})
 	}
+
+	t.Run("the run spec passed, so its results are archived without the run's withheld values", func(t *testing.T) {
+		work := t.TempDir()
+		require.NoError(t, os.MkdirAll(filepath.Join(work, "output"), 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(work, "output", "preflight.json"), []byte(`{"server":"https://api.example.test:6443"}`), 0o600))
+		archive := filepath.Join(t.TempDir(), "kaps-bench-results.tar.gz")
+		t.Log("Testing: the values the run withholds reach the archive's redaction")
+		require.NoError(t, keepKapsBenchResults(work, archive, false, "api.example.test"))
+		require.Equal(t, map[string]string{"preflight.json": `{"server":"https://[redacted by the e2e suite]:6443"}`}, readKapsBenchArchive(t, archive))
+	})
 }
 
 func TestKapsBenchSetupRunsOnce(t *testing.T) {
@@ -242,16 +253,52 @@ func TestKapsBenchSpecTimeoutAndToken(t *testing.T) {
 }
 
 func TestArchiveKapsBenchResults(t *testing.T) {
-	t.Log("Doing: an output dir laid out the way kaps-bench writes one")
+	const withheld = "jump-1.example.test"
+	t.Log("Doing: an output dir laid out the way kaps-bench writes one, one file naming a withheld host")
 	output := t.TempDir()
-	run := filepath.Join(output, "01a1c2e3-1f76-726d-8550-5149212bdcb2")
-	require.NoError(t, os.MkdirAll(run, 0o700))
-	require.NoError(t, os.WriteFile(filepath.Join(run, "preflight.json"), []byte(`{"passed":true}`), 0o600))
+	run := "01a1c2e3-1f76-726d-8550-5149212bdcb2"
+	require.NoError(t, os.MkdirAll(filepath.Join(output, run), 0o700))
+	files := map[string]string{
+		run + "/preflight.json": `{"checks":[{"name":"healthz","message":"dial tcp ` + withheld + `:443: connect: connection refused"}]}`,
+		run + "/results.json":   `{"passed":true}`,
+		"summary.txt":           "1 run spec ran\n",
+	}
+	for name, content := range files {
+		require.NoError(t, os.WriteFile(filepath.Join(output, name), []byte(content), 0o600))
+	}
 	archive := filepath.Join(t.TempDir(), "kaps-bench-results.tar.gz")
 
-	t.Log("Testing: the archive holds every file under the output dir by its relative path")
+	t.Log("Testing: with no withheld value, the archive holds every file under the output dir as written")
 	require.NoError(t, archiveKapsBenchResults(output, archive))
-	f, err := os.Open(archive)
+	require.Equal(t, files, readKapsBenchArchive(t, archive))
+
+	t.Log("Testing: a withheld value is replaced in every entry, and every other byte is kept")
+	require.NoError(t, archiveKapsBenchResults(output, archive, withheld))
+	redacted := maps.Clone(files)
+	redacted[run+"/preflight.json"] = `{"checks":[{"name":"healthz","message":"dial tcp [redacted by the e2e suite]:443: connect: connection refused"}]}`
+	require.Equal(t, redacted, readKapsBenchArchive(t, archive))
+
+	t.Log("Testing: a failed rewrite keeps the archive already there")
+	before, readErr := os.ReadFile(archive)
+	require.NoError(t, readErr)
+	require.ErrorContains(t, archiveKapsBenchResults(filepath.Join(output, "absent"), archive), "archiving")
+	after, readErr := os.ReadFile(archive)
+	require.NoError(t, readErr)
+	require.Equal(t, before, after)
+
+	t.Log("Testing: a rename that fails after the temp file is written leaves no temp file")
+	blocked := filepath.Join(t.TempDir(), "kaps-bench-results.tar.gz")
+	require.NoError(t, os.MkdirAll(filepath.Join(blocked, "run"), 0o700))
+	require.ErrorContains(t, archiveKapsBenchResults(output, blocked), "archiving")
+	entries, readErr := os.ReadDir(filepath.Dir(blocked))
+	require.NoError(t, readErr)
+	require.Len(t, entries, 1)
+}
+
+// readKapsBenchArchive returns each regular file in the tar.gz at path by its name.
+func readKapsBenchArchive(t *testing.T, path string) map[string]string {
+	t.Helper()
+	f, err := os.Open(path)
 	require.NoError(t, err)
 	defer f.Close()
 	gz, err := gzip.NewReader(f)
@@ -261,7 +308,7 @@ func TestArchiveKapsBenchResults(t *testing.T) {
 	for {
 		hdr, err := tr.Next()
 		if errors.Is(err, io.EOF) {
-			break
+			return files
 		}
 		require.NoError(t, err)
 		if hdr.Typeflag == tar.TypeReg {
@@ -270,16 +317,4 @@ func TestArchiveKapsBenchResults(t *testing.T) {
 			files[hdr.Name] = string(content)
 		}
 	}
-	require.Equal(t, map[string]string{"01a1c2e3-1f76-726d-8550-5149212bdcb2/preflight.json": `{"passed":true}`}, files)
-
-	t.Log("Testing: a failed rewrite keeps the archive already there and leaves no temp file")
-	before, readErr := os.ReadFile(archive)
-	require.NoError(t, readErr)
-	require.ErrorContains(t, archiveKapsBenchResults(filepath.Join(output, "absent"), archive), "archiving")
-	after, readErr := os.ReadFile(archive)
-	require.NoError(t, readErr)
-	require.Equal(t, before, after)
-	entries, readErr := os.ReadDir(filepath.Dir(archive))
-	require.NoError(t, readErr)
-	require.Len(t, entries, 1)
 }

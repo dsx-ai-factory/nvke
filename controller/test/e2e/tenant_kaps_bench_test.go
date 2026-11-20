@@ -5,6 +5,7 @@ package e2e
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -21,6 +22,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
+
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/site"
 )
 
 const (
@@ -63,7 +66,7 @@ func validateTenantKapsBench(test *tenantTest, failed func() bool) {
 			Expect(err).NotTo(HaveOccurred(), "kaps-bench should be set up for the tenant")
 			// Rewrites the archive after every run spec, so an interrupted run keeps what finished.
 			DeferCleanup(func() {
-				Expect(keepKapsBenchResults(work, kapsBenchResults, CurrentSpecReport().Failed())).To(Succeed(),
+				Expect(keepKapsBenchResults(work, kapsBenchResults, CurrentSpecReport().Failed(), test.mgmt.Secrets...)).To(Succeed(),
 					"kaps-bench's results should be archived")
 			})
 			tools := newKapsBenchToolRun(ctx, test, i)
@@ -199,11 +202,11 @@ func kapsBenchRunTimeout(index int) time.Duration {
 }
 
 // keepKapsBenchResults archives work's output dir into dest, returning the error only when the spec passed.
-func keepKapsBenchResults(work, dest string, specFailed bool) error {
+func keepKapsBenchResults(work, dest string, specFailed bool, secrets ...string) error {
 	if work == "" {
 		return nil
 	}
-	err := archiveKapsBenchResults(filepath.Join(work, "output"), dest)
+	err := archiveKapsBenchResults(filepath.Join(work, "output"), dest, secrets...)
 	switch {
 	case err == nil:
 		GinkgoLogr.Info("archived kaps-bench's results", "path", dest)
@@ -214,15 +217,24 @@ func keepKapsBenchResults(work, dest string, specFailed bool) error {
 	return err
 }
 
-// archiveKapsBenchResults replaces dest with a tar.gz of every file under dir, keeping dest on failure.
-func archiveKapsBenchResults(dir, dest string) error {
+// archiveKapsBenchResults replaces dest with a tar.gz of dir less secrets, keeping dest on failure.
+func archiveKapsBenchResults(dir, dest string, secrets ...string) error {
+	var archive bytes.Buffer
+	gz := gzip.NewWriter(&archive)
+	tw := tar.NewWriter(gz)
+	if err := errors.Join(tw.AddFS(os.DirFS(dir)), tw.Close(), gz.Close()); err != nil {
+		return fmt.Errorf("archiving %s into %s: %w", dir, dest, err)
+	}
+	redacted, err := site.RedactArchive(archive.Bytes(), secrets...)
+	if err != nil {
+		return fmt.Errorf("redacting the archive of %s: %w", dir, err)
+	}
 	f, err := os.CreateTemp(filepath.Dir(dest), "."+filepath.Base(dest)+"-*")
 	if err != nil {
 		return fmt.Errorf("creating an archive beside %s: %w", dest, err)
 	}
-	gz := gzip.NewWriter(f)
-	tw := tar.NewWriter(gz)
-	err = errors.Join(tw.AddFS(os.DirFS(dir)), tw.Close(), gz.Close(), f.Close())
+	_, err = f.Write(redacted)
+	err = errors.Join(err, f.Close())
 	if err == nil {
 		err = os.Rename(f.Name(), dest)
 	}

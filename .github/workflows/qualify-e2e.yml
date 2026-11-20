@@ -1619,7 +1619,7 @@ jobs:
       # back. The name carries the attempt, as the other lanes' do, so a
       # re-run's upload does not collide with the first attempt's.
       #
-      # kaps-bench-results.tar.gz is kaps-bench's output dir, uploaded as kaps-bench wrote it.
+      # kaps-bench-results.tar.gz is kaps-bench's output dir, redacted on the runner before it is written.
       - name: Upload the run log
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
