@@ -460,6 +460,18 @@ class CaptureAPTTest(unittest.TestCase):
                         self.assertEqual(apt["fallback"], "abort")
                         self.assertIs(apt["preserve_sources_list"], False)
                         self.assertEqual(autoinstall["updates"], "all")
+                        # An explicit template: noble's curtin only swaps a default
+                        # mirror URI that matches exactly, and the 24.04.5 arm64
+                        # ISO's `ports.ubuntu.com/ubuntu-ports/` has a trailing
+                        # slash its default lacks, so the live archive survived.
+                        stanzas = [s for s in apt["sources_list"].strip().split("\n\n")]
+                        self.assertEqual([[line.split(":", 1)[0] for line in s.splitlines()] for s in stanzas],
+                                         [["Types", "URIs", "Suites", "Components", "Signed-By"]] * 2)
+                        self.assertIn("URIs: $PRIMARY", stanzas[0])
+                        self.assertIn("Suites: $RELEASE $RELEASE-updates $RELEASE-backports", stanzas[0])
+                        self.assertIn("URIs: $SECURITY", stanzas[1])
+                        self.assertIn("Suites: $RELEASE-security", stanzas[1])
+                        self.assertNotRegex(apt["sources_list"], r"ubuntu\.com/|http://")
                         if capture:
                             self.assertEqual(apt["conf"], configuration)
                         else:

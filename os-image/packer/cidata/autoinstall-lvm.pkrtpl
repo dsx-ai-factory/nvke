@@ -73,6 +73,23 @@ autoinstall:
     security:
       - arches: [default]
         uri: ${ubuntu_snapshot_uri}
+    # Written out rather than derived from the image's own ubuntu.sources:
+    # curtin derives it by swapping a default mirror URI that matches exactly,
+    # and on the 24.04.5 arm64 ISO the file's ports.ubuntu.com/ubuntu-ports/
+    # has a trailing slash curtin's default lacks, so the live archive stayed.
+    # Curtin fills $PRIMARY, $SECURITY and $RELEASE from the sections above.
+    sources_list: |
+      Types: deb
+      URIs: $PRIMARY
+      Suites: $RELEASE $RELEASE-updates $RELEASE-backports
+      Components: main restricted universe multiverse
+      Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+      Types: deb
+      URIs: $SECURITY
+      Suites: $RELEASE-security
+      Components: main restricted universe multiverse
+      Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 %{ if capture_apt_acquisitions ~}
     # Capture real archives before APT cache cleanup. Repository metadata is
     # checked after autoinstall, when python3-apt is available in the target.
