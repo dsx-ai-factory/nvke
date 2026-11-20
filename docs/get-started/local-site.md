@@ -18,6 +18,7 @@ The example credentials, the simulated NICo and the single-node site are for loc
 - These tools on `PATH`: `git`, GNU Make 4, Go 1.27.4 or later, `gcc`, `kind` v0.32.0, `kubectl`, Helm `v4.2.4`, `clusterctl` v1.13.6, `oras`, `curl`, `jq`, `python3`, `openssl`, `iptables` and `dpkg-scanpackages` (the `dpkg-dev` package), which indexes the OVN packages the node image carries.
 - A GitHub token in `GITHUB_TOKEN`: `clusterctl init` reads the Cluster API releases through the GitHub API, which allows anonymous callers 60 requests an hour, and this page runs it twice.
 - Less than 70 percent of the disk in use. The node, the management plane and the workload cluster nodes share it, and the kubelet evicts pods above that.
+- `fs.inotify.max_user_instances` at 8192 or more, which the nodes share. `make local-site-setup` raises it until the next reboot if it is lower.
 - Outbound internet access to GitHub, the Go module proxy and public container registries and chart repositories.
 
 ### On macOS
