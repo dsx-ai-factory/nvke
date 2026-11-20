@@ -194,6 +194,9 @@ type Config struct {
 	// requires the Cluster API KubeadmConfig CRD.
 	BootstrapControllersEnabled bool `controllerconfig:"bootstrapControllersEnabled"`
 
+	// KubeletServingCSRApprovalEnabled enables Machine-scoped approval for kubelet serving CSRs.
+	KubeletServingCSRApprovalEnabled bool `controllerconfig:"kubeletServingCSRApprovalEnabled"`
+
 	// KubeVipFMDSEndpoint is the full Forge Metadata Service URL used to resolve
 	// the per-node DPU ASN on native-networking sites. When empty, CAPI and
 	// subnet-based NICo pools use the static Forge peer ASN.

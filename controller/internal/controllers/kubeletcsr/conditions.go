@@ -38,8 +38,28 @@ const (
 )
 
 const (
+	// KubeletServingCSRApprovalReadyCondition reports whether the controller can evaluate kubelet serving CSRs for this Machine.
+	KubeletServingCSRApprovalReadyCondition = keys.Domain + "/KubeletServingCSRApprovalReady"
+
+	// KubeletServingCSRApprovalReadyReason means the controller can evaluate kubelet serving CSRs for this Machine.
+	KubeletServingCSRApprovalReadyReason = "Ready"
+	// KubeletServingCSRWaitingForNodeReason means CAPI has not associated the Machine with a Node yet.
+	KubeletServingCSRWaitingForNodeReason = "WaitingForNodeAssociation"
+	// KubeletServingCSRWaitingForAddressesReason means the Machine has no provider addresses yet.
+	KubeletServingCSRWaitingForAddressesReason = "WaitingForAddresses"
+	// KubeletServingCSRNodeNameConflictReason means the node name is associated with more than one Machine.
+	KubeletServingCSRNodeNameConflictReason = "NodeNameConflict"
+	// KubeletServingCSRFailedReason means an operation failed while approving a serving CSR. The message is the error.
+	KubeletServingCSRFailedReason = "ServingCSRFailed"
+	// KubeletServingCSROptedOutReason means the Machine is no longer opted in to kubelet serving CSR approval.
+	KubeletServingCSROptedOutReason = "ServingCSRApprovalOptedOut"
+)
+
+const (
 	// KubeletCSRApprovedReason is the Event reason when a kubelet CSR is approved.
 	KubeletCSRApprovedReason = "KubeletCSRApproved"
+	// KubeletServingCSRRejectedReason is the Event reason when a serving CSR fails validation.
+	KubeletServingCSRRejectedReason = "ServingCSRRejected"
 )
 
 const (

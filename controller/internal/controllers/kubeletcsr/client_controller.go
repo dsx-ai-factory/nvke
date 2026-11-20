@@ -347,7 +347,7 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 				fmt.Sprintf("Node %s already exists", nodeName),
 			)
 		}
-		if err := approveKubeletClientCSRs(ctx, tenantClient, machine, csrDecisions.pending, c.logger, c.recorder); err != nil {
+		if err := approveKubeletCSRs(ctx, tenantClient, machine, csrDecisions.pending, c.logger, c.recorder); err != nil {
 			condErr := c.reportCondition(
 				ctx, machine,
 				metav1.ConditionFalse,

@@ -113,7 +113,7 @@ func TestEveryKeyIsAValidQualifiedName(t *testing.T) {
 		Reboot, RebootStarted, RebootAttempt, LastCompletedReboot,
 		RebootStatus, RebootStatusTimestamp, Terminate, TerminateStatus,
 		ManagedBy, KubeconfigMode, BootstrapIdentityResolver, BootstrapIdentitySpireWorkloadEntryConfig,
-		SyncBootstrapAuthorization, ApproveKubeletClientCSR, NodeMachineHealthIssue,
+		SyncBootstrapAuthorization, ApproveKubeletClientCSR, ApproveKubeletServingCSRs, NodeMachineHealthIssue,
 		MachineHostID, MachineRebootCompleteTimestamp, MachineReboot,
 		MachineHealthIssue, MachineSpireAgentSpiffeIDPath, MachineBootstrapIdentity, MachineExpectedNodeName,
 		VPCPrefixWalkCandidates, VPCPrefixWalkStart, VPCPrefixesAllFull,
