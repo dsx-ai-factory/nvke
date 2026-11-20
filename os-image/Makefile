@@ -148,3 +148,4 @@ image-native: ## Bake with native Linux KVM; fail if acceleration is unavailable
 test-qemu: ## Test QEMU architecture, firmware, and accelerator selection without a VM.
 	bash ./packer/scripts/qemu-arch-test.sh
 	python3 ./packer/scripts/test_build_entrypoint.py
+	python3 ./nix/test_bootstrap.py
