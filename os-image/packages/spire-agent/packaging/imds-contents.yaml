@@ -1,0 +1,8 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+# Inserted into nfpm.yaml's contents by build-deb.sh after input verification.
+  - src: "${SRC}/dsx-imds-node-attestor-agent"
+    dst: "/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent"
+    file_info: { mode: 0755 }
+    expand: true
+
