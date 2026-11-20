@@ -205,6 +205,17 @@ type NodeLifecycleElapsed struct {
 	ElapsedSecs float64 `bun:"elapsed_secs"`
 }
 
+// nodeLifecycleTransition is the raw row behind NodeLifecycleElapsed. The
+// query returns the transition timestamp and ElapsedSecs is computed in Go so
+// the SQL stays portable across database dialects.
+type nodeLifecycleTransition struct {
+	ClusterName        string `bun:"cluster_name"`
+	NodeName           string `bun:"node_name"`
+	NodeType           string `bun:"node_type"`
+	State              string `bun:"state"`
+	LastTransitionTime string `bun:"last_transition_time"`
+}
+
 type NodeInfo struct {
 	ClusterName    string    `bun:"cluster_name"`
 	NodePoolName   string    `bun:"node_pool_name"`
@@ -655,12 +666,15 @@ func (q *queriesImpl) ListNodesEligibleForRecycling(ctx context.Context, nodePoo
 }
 
 func (q *queriesImpl) ListNodeLifecycleElapsed(ctx context.Context) ([]NodeLifecycleElapsed, error) {
-	var results []NodeLifecycleElapsed
+	// Control-plane nodes managed by the control-plane controller have no node
+	// set or node pool, so node_type comes from the node itself and the cluster
+	// joins on the node, the same pattern as ListNodeInfo.
+	var rows []nodeLifecycleTransition
 	err := q.db.NewRaw(`
 		SELECT
 			c.name AS cluster_name,
 			n.name AS node_name,
-			CASE WHEN np.control_plane THEN 'cp' ELSE 'worker' END AS node_type,
+			CASE WHEN n.control_plane THEN 'cp' ELSE 'worker' END AS node_type,
 			CASE
 				WHEN n.conditions->'deleting'->>'status' = 'True'
 					THEN 'deleting'
@@ -669,20 +683,16 @@ func (q *queriesImpl) ListNodeLifecycleElapsed(ctx context.Context) ([]NodeLifec
 				WHEN n.conditions->'pending'->>'status' = 'True'
 					THEN 'pending'
 			END AS state,
-			EXTRACT(EPOCH FROM (NOW() - (
-				CASE
-					WHEN n.conditions->'deleting'->>'status' = 'True'
-						THEN (n.conditions->'deleting'->>'lastTransitionTime')::timestamptz
-					WHEN n.conditions->'provisioning'->>'status' = 'True'
-						THEN (n.conditions->'provisioning'->>'lastTransitionTime')::timestamptz
-					WHEN n.conditions->'pending'->>'status' = 'True'
-						THEN (n.conditions->'pending'->>'lastTransitionTime')::timestamptz
-				END
-			))) AS elapsed_secs
+			CASE
+				WHEN n.conditions->'deleting'->>'status' = 'True'
+					THEN n.conditions->'deleting'->>'lastTransitionTime'
+				WHEN n.conditions->'provisioning'->>'status' = 'True'
+					THEN n.conditions->'provisioning'->>'lastTransitionTime'
+				WHEN n.conditions->'pending'->>'status' = 'True'
+					THEN n.conditions->'pending'->>'lastTransitionTime'
+			END AS last_transition_time
 		FROM nodes n
-		JOIN node_sets ns ON ns.id = n.node_set_id
-		JOIN node_pools np ON np.id = ns.node_pool_id
-		JOIN clusters c ON c.id = np.cluster_id
+		JOIN clusters c ON c.id = n.cluster_id
 		WHERE
 			(n.conditions->'deleting'->>'status' = 'True' AND n.conditions->'deleting'->>'lastTransitionTime' IS NOT NULL)
 			OR (n.conditions->'provisioning'->>'status' = 'True' AND n.conditions->'provisioning'->>'lastTransitionTime' IS NOT NULL)
@@ -693,18 +703,33 @@ func (q *queriesImpl) ListNodeLifecycleElapsed(ctx context.Context) ([]NodeLifec
 		SELECT
 			c.name AS cluster_name,
 			n.name AS node_name,
-			CASE WHEN np.control_plane THEN 'cp' ELSE 'worker' END AS node_type,
+			CASE WHEN n.control_plane THEN 'cp' ELSE 'worker' END AS node_type,
 			'markedForRecycling' AS state,
-			EXTRACT(EPOCH FROM (NOW() - (n.conditions->'markedForRecycling'->>'lastTransitionTime')::timestamptz)) AS elapsed_secs
+			n.conditions->'markedForRecycling'->>'lastTransitionTime' AS last_transition_time
 		FROM nodes n
-		JOIN node_sets ns ON ns.id = n.node_set_id
-		JOIN node_pools np ON np.id = ns.node_pool_id
-		JOIN clusters c ON c.id = np.cluster_id
+		JOIN clusters c ON c.id = n.cluster_id
 		WHERE n.conditions->'markedForRecycling'->>'status' = 'True'
 			AND n.conditions->'markedForRecycling'->>'lastTransitionTime' IS NOT NULL
-	`).Scan(ctx, &results)
+	`).Scan(ctx, &rows)
 	if err != nil {
 		return nil, err
+	}
+
+	now := time.Now()
+	results := make([]NodeLifecycleElapsed, 0, len(rows))
+	for _, row := range rows {
+		transitionTime, err := time.Parse(time.RFC3339, row.LastTransitionTime)
+		if err != nil {
+			return nil, fmt.Errorf("parsing lastTransitionTime %q for node %s/%s: %w",
+				row.LastTransitionTime, row.ClusterName, row.NodeName, err)
+		}
+		results = append(results, NodeLifecycleElapsed{
+			ClusterName: row.ClusterName,
+			NodeName:    row.NodeName,
+			NodeType:    row.NodeType,
+			State:       row.State,
+			ElapsedSecs: now.Sub(transitionTime).Seconds(),
+		})
 	}
 
 	return results, nil
