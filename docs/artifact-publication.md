@@ -230,9 +230,12 @@ artifact, and every document is generated from the built artifact rather than
 from this source tree, so it records what was actually built and not what a
 build of this commit ought to select.
 
+A node image also has a second document, in **CycloneDX 1.6, as JSON**, described
+under [Node-image CycloneDX SBOM](#node-image-cyclonedx-sbom).
+
 | Artifact | Document | Subject granularity | Where |
 |---|---|---|---|
-| `nvke-node-{fde,non-fde}-ubuntu-<rel>-<arch>.qcow2` | `nvke-node-…-<arch>.spdx.json` | dpkg packages, from the image's own package database | S3, beside the disk |
+| `nvke-node-{fde,non-fde}-ubuntu-<rel>-<arch>.qcow2` | `nvke-node-…-<arch>.spdx.json` and `nvke-node-…-<arch>.cdx.json` | dpkg packages, from the image's own package database | S3, beside the disk |
 | `nvke-controller` image | `controller-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image NVCR** run |
 | `cluster-api-provider-provisioned` image | `cluster-api-provider-provisioned-sbom-linux-<arch>.spdx.json` | image contents, scanned from the pushed image | workflow artifact on the **Image Provisioned NVCR** run |
 
@@ -249,10 +252,38 @@ the image's contents.
 
 `nvkectl` and the agent `.deb`s have no published SBOM.
 
+### Node-image CycloneDX SBOM
+
+The `.cdx.json` beside each node disk is checked against the image's own dpkg
+database before it ships, so it lists exactly the packages dpkg has on the
+image:
+
+- Each package has a purl, a version, and the licenses its
+  `/usr/share/doc/<package>/copyright` names. A package that ships no copyright
+  file, or whose copyright file names no license, carries the license
+  `NOASSERTION`, never an empty list. Our own debs (`nvke-agent`, `spire-agent`,
+  `nvke-cni-calico-manifests-*`) ship none. The image
+  keeps every copyright file for this, though it strips the rest of
+  `/usr/share/doc`.
+- Each package carries its dpkg status as the property `nvke:dpkg:status`, for
+  example `hold ok installed` or `install ok half-configured`, so a held or
+  half-configured package is reported as one.
+- Packages dpkg lists as `not-installed` or `config-files` are left out,
+  because dpkg does not count them as installed. A `config-files` package can
+  still leave its configuration files on the image.
+- The share of packages with a license is the metadata property
+  `nvke:license-coverage`, as `<licensed>/<total>`, and is in the build log.
+
+The build fails if the document and the dpkg database disagree on a package's
+name, architecture or version, or if the document does not validate against the
+CycloneDX 1.6 schema. The validator is
+[cyclonedx-cli](https://github.com/CycloneDX/cyclonedx-cli) at the version
+pinned in `make/tool-versions.mk`.
+
 ### Retrieving one
 
 A node-image SBOM sits on S3 beside its disk, with the same name as the disk
-and `.spdx.json` in place of `.qcow2`.
+and `.spdx.json` or `.cdx.json` in place of `.qcow2`.
 
 Answering "which of our artifacts contains `<component>`" is then a query over
 the downloaded documents, for example with `jq`:

@@ -162,6 +162,11 @@ FERN_VERSION        ?= 5.143.6
 # already has, and a syft bump is a reviewable commit rather than a silent
 # change in what the release describes.
 SYFT_VERSION ?= v1.41.2
+# Validates each node image's CycloneDX SBOM against the 1.6 schema before it
+# ships. cyclonedx-linux-{x64,arm64}, from the release's asset digests.
+CYCLONEDX_CLI_VERSION      ?= 0.33.1
+CYCLONEDX_CLI_SHA256_AMD64 ?= bfc8b2538da86fe239bc53658bbb63c1c8c510a293c1e6891aa5bea5d3c58746
+CYCLONEDX_CLI_SHA256_ARM64 ?= b2e9fdf9665ef49868a2ec012171c6e785dcd69745bc5869e53e4f4bfb096a5f
 
 # Development tools invoked by module Makefiles. These were declared where they
 # were used -- buf in agent/, setup-envtest and ginkgo in controller/, and

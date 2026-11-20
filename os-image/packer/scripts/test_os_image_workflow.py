@@ -216,6 +216,7 @@ class OSImageWorkflowTest(unittest.TestCase):
         assets = [
             f"dist/{disk}",
             f"expected/{disk.replace('.qcow2', '.spdx.json')}",
+            f"expected/{disk.replace('.qcow2', '.cdx.json')}",
             "expected/checksums-arm64-ubuntu24.04-non-fde.txt",
         ]
         for checker in (False, True):

@@ -322,8 +322,13 @@ sudo apt-get clean
 # /usr/share/locale so English program strings still resolve; compiled
 # system locales (/usr/lib/locale, used by glibc for LC_* generation) are
 # untouched -- this only drops the separate per-package translation catalogs.
+# Keep each package's copyright file and symlinked doc directories: the SBOM
+# reads licenses from them. Links left dangling by the cleanup go too.
 sudo rm -rf /var/lib/apt/lists/*
-sudo rm -rf /usr/share/doc/* /usr/share/man/*
+sudo find /usr/share/doc -mindepth 1 ! -type d ! -name copyright ! \( -type l ! -path '/usr/share/doc/*/*' \) -delete
+sudo find /usr/share/doc -mindepth 1 -type d -empty -delete
+sudo find /usr/share/doc -type l ! -exec test -e {} \; -delete
+sudo rm -rf /usr/share/man/*
 find /usr/share/locale -mindepth 1 -maxdepth 1 ! -name en -exec sudo rm -rf {} +
 
 # Index only the local repo, after the cleanup above, so cluster create needs
