@@ -340,11 +340,14 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			// cpu2-mem2gb was sized against ovnkube-node.
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, InstanceTypeID: nicoVMSLargeInstanceID},
 			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			// Encrypted, as CAPD core is, so the CIS scans check the encryption
+			// configuration NVKE renders.
+			etcdEncrypted: true,
 		},
 		options: nvke.Options{Provision: 30 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
 		// This lane installs the branch-built agent on real systemd hosts, so it
 		// can verify both the durable audit file and its journald mirror.
-		validate: validations{scale: true, reboot: true, agentTrace: true},
+		validate: validations{scale: true, reboot: true, agentTrace: true, cisBenchmark: true, cisBenchmarkAfterScale: true},
 	}),
 	Entry("nico-vms k8s upgrade", Ordered, ContinueOnFailure, Label("nico-vms", "happy-path", "upgrade"), testSpec{
 		buildSpec: nicoVMSSpec,
@@ -352,9 +355,13 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 			kubernetesVersion:  upgradeStartingKubernetesVersion,
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 3, InstanceTypeID: nicoVMSLargeInstanceID},
 			workerPools:        []nvke.NodePoolSpec{{DesiredNodeCount: 1, InstanceTypeID: nicoVMSLargeInstanceID}},
+			// Encrypted, so the CIS scans check the encryption configuration
+			// NVKE renders, and the upgrade carries it to the replaced
+			// control plane.
+			etcdEncrypted: true,
 		},
 		options:  nvke.Options{Provision: 30 * time.Minute, Upgrade: 90 * time.Minute, Delete: 10 * time.Minute, Poll: 10 * time.Second},
-		validate: validations{upgrade: true},
+		validate: validations{upgrade: true, cisBenchmark: true, cisBenchmarkAfterUpgrade: true},
 	}),
 	// OVN-Kubernetes is the default CNI for nico-vms entries, so most entries
 	// exercise it implicitly through NKE_E2E_NICO_VMS_CNI. This entry is the
@@ -633,7 +640,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			}
 			validateNodeReadinessPostCreate(&test)
 			if spec.validate.cisBenchmark {
-				validateCISBenchmarkPostCreate(&test)
+				validateCISBenchmark(&test, "after creation")
 			}
 			if spec.validate.tpmAttestation {
 				validateTPMAttestationPostCreate(&test)
@@ -673,13 +680,20 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				validateBrownfieldOIDC(&test)
 			}
 			if spec.validate.scale {
-				validateNodePoolScale(&test)
+				var whileScaledUp func()
+				if spec.validate.cisBenchmarkAfterScale {
+					whileScaledUp = func() { validateCISBenchmark(&test, "with the node pools scaled up") }
+				}
+				validateNodePoolScale(&test, whileScaledUp)
 			}
 			if spec.validate.reboot {
 				validateLabelReboot(&test)
 			}
 			if spec.validate.upgrade {
 				validateK8sUpgrade(&test)
+				if spec.validate.cisBenchmarkAfterUpgrade {
+					validateCISBenchmark(&test, "after the upgrade")
+				}
 			}
 			if !spec.validate.provisioningOnly {
 				validatePodCIDRPostCreate(&test)
@@ -1032,6 +1046,12 @@ type validations struct {
 	// before other specs scale, reboot or replace its nodes, and judges the
 	// result against the exception register (internal/kubebench).
 	cisBenchmark bool
+	// cisBenchmarkAfterUpgrade scans the cluster again once upgrade has
+	// replaced its control plane, against the same register.
+	cisBenchmarkAfterUpgrade bool
+	// cisBenchmarkAfterScale scans the cluster while scale has added a node to
+	// each worker pool, before scaling them back down.
+	cisBenchmarkAfterScale bool
 }
 
 // managementCluster is the cluster the controller runs on, which a tenant test reaches

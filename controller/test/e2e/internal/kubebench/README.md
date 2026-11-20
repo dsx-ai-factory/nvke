@@ -2,11 +2,12 @@
 
 This package scans a cluster with [kube-bench](https://github.com/aquasecurity/kube-bench) and judges the result against NVKE's exception register, [`exceptions.yaml`](exceptions.yaml).
 
-It runs in three CI lanes:
+It runs in four CI lanes:
 
-- **The CAPD lane** scans the "CAPD core" tenant cluster on pull requests and "CAPD with etcd encryption" on full runs, right after it is created (`validateCISBenchmarkPostCreate` in `cis_benchmark_test.go`, which the `cis-benchmark` label selects). Both are encrypted at rest, so the scan checks the encryption configuration NVKE renders.
+- **The CAPD lane** scans the "CAPD core" tenant cluster on pull requests and "CAPD with etcd encryption" on full runs, right after it is created (`validateCISBenchmark` in `cis_benchmark_test.go`, whose specs the `cis-benchmark` label selects). Both are encrypted at rest, so the scan checks the encryption configuration NVKE renders.
 - **The local entrypoint lane** runs the same CAPD rows through `controller/hack/local-backend-e2e.sh`, so it scans them too. So does a local run of those rows, such as `make test-e2e-core-capd`. That needs access to Docker Hub; to leave the scan out, add `&& !cis-benchmark` to `LOCAL_NKE_E2E_LABEL_FILTER`.
 - **The bootstrap lane** scans the site cluster in stage 4d of `cli/e2e/bootstrap/run.sh`, through the `cis-site` spec.
+- **The NICo VMs lane** scans two encrypted tenant clusters whose nodes boot the NVKE FDE node image: "nico-vms" after creation and again while its worker pool is scaled up, and "nico-vms k8s upgrade" after creation and again once the upgrade has replaced its control plane. A finding that appears only after the scale or the upgrade is a regression to fix, not an entry to add.
 
 None of these lanes is part of the merge gate.
 
