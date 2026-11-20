@@ -31,6 +31,7 @@ not the only allowed one.
 | Background apt | **Masked** — `apt-daily.timer`, `apt-daily-upgrade.timer`, their services and `unattended-upgrades.service`. Ubuntu runs them a few minutes after first boot; the package job restarts journald, networkd and udevd, and a `systemctl daemon-reload` from kubeadm's kubelet-start phase in that window fails, so the kubelet never starts and the node's init or join is lost. Nodes take updates through a new image, never in place. |
 | erofs and dm-verity | 26.04 only. `erofs-utils` is installed, `/etc/modules-load.d/nvke-kata.conf` loads the `erofs` and `dm-verity` modules at boot, and the ext4 root filesystem has the `verity` feature. Kata Containers' erofs snapshotter needs all three: containerd converts image layers to erofs with dm-verity metadata, needs `mkfs.erofs` 1.8.2 or later (24.04 ships 1.7), and refuses to load its CRI plugin unless fs-verity works on `/var/lib/containerd`. It also needs containerd 2.2 or later, so Kubernetes 1.35 or later from `nvke-kubeadm-distro`. |
 | Unit ordering | `nvke-spire-configure.service` before `spire-agent.service` before `nvke-agent.service`. `nvke-agent` waits for the workload API socket before exec. |
+| Cloud-init datasource retry | `nvke-cloud-init-ds-retry.timer` **enabled** (`WantedBy=timers.target`), driving `nvke-cloud-init-ds-retry.service` and `/usr/lib/nvke/cloud-init-ds-retry.sh`. While `ds=nocloud[-net];s=<http-url>` is on the kernel command line and `cloud-init status` reports datasource `none`, it probes `<url>/meta-data`; once the seed answers it re-runs the documented operator recovery — `cloud-init clean`, `init`, `modules --mode=config`, `modules --mode=final` — then writes the `/var/lib/nvke/cloud-init-ds-retry.done` sentinel (which persists across reboots) and disables the timer. Bounded at 6 recoveries and 60 probes, after which it marks itself done and gives up. See [Cloud-init datasource retry](#cloud-init-datasource-retry). |
 | First-boot renderer | `/usr/lib/nvke/spire-configure.sh`, driven by `nvke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
 | Plugin checksum | `/etc/spire-agent/spire-agent.env` holds `TPM_PLUGIN_CHECKSUM`, written by the .deb's postinst from the plugin it installed. `spire-agent.service` runs with `-expandEnv`, so an `agent.conf` that cloud-init wrote with the literal `${TPM_PLUGIN_CHECKSUM}` resolves against this image's own plugin. The two config paths are exclusive: a profile supplies `agent.conf` and no `/etc/nke/spire.env`, or it supplies `/etc/nke/spire.env` and the renderer writes `agent.conf`. |
 | Conntrack limits | `conntrack-tune.service` **enabled** (`WantedBy=sysinit.target`), ordered after `systemd-modules-load.service` and before `systemd-sysctl.service`. At every boot `/usr/lib/nvke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf`, raising `net.netfilter.nf_conntrack_max` and `nf_conntrack_buckets` to `min(max(RAM_MiB × 64, 1024), 600000)` wherever that is above the kernel's value, and `systemd-sysctl` applies it. `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` sets `nf_conntrack_tcp_timeout_time_wait` to 60s. `/etc/modules-load.d/nf_conntrack.conf` loads `nf_conntrack` at boot. See [Conntrack limits](#conntrack-limits). |
@@ -92,6 +93,54 @@ Anything that re-applies `sysctl.d` after kube-proxy starts, such as the
 change, sets `nf_conntrack_max` back to the image's value until kube-proxy
 next restarts. On Calico nodes with 18 or fewer CPUs that is a raise; on
 nodes with 19 or more it is a reduction.
+
+### Cloud-init datasource retry
+
+Nodes boot with `ds=nocloud-net;s=<seed-url>` on the kernel command line (the
+iPXE `cloud-init-ds` variable). If the network is down at that moment — a DPU
+or HBN wedge — cloud-init tries the seed once, gives up, and pins the
+instance to `DataSourceNone` for good: no user-data, no
+`capiPreKubeadmCommands`, no `nvke-agent`. Nothing on a stock node notices
+when the seed becomes reachable again, so it stays stranded until an operator
+runs `cloud-init clean` and re-runs the init and module stages by
+hand.
+
+`nvke-cloud-init-ds-retry.timer` (every 2 minutes, starting 3 minutes after
+boot) drives the script, which:
+
+1. exits at once when there is nothing to do — the done sentinel
+   `/var/lib/nvke/cloud-init-ds-retry.done` exists, or the command line
+   carries no `s=` seed URL, or the seed is not an `http(s)` URL (`/cidata`,
+   `file://` and friends are local and either worked already or never will);
+2. waits for `cloud-init status` to settle (done/error) before looking, so a
+   timer tick never races a boot still in progress;
+3. while the datasource is still `none`, probes `<seed>/meta-data` — the same
+   object cloud-init fetches — and exits until it answers;
+4. once it answers, checks that no cloud-init stage unit is in flight —
+   the stage units are `Type=oneshot` with `RemainAfterExit=yes`, so they
+   sit at `active (exited)` after boot and only `activating`/`deactivating`
+   units count; `cloud-init clean` deletes `/var/lib/cloud` and must never
+   run under a live stage — then re-runs the recovery above, and only
+   writes the sentinel and disables the timer when cloud-init has settled
+   with a real datasource.
+
+Two bounds keep the timer from looping forever: a probe budget of 60 ticks
+without the seed answering (~2 hours), and a recovery budget of 6 tries for
+seeds that answer but serve nothing usable. Either exhaustion writes the
+sentinel and logs to the journal — by then the node's networking or seed is
+an operator problem. The sentinel and both counters live under
+`/var/lib/nvke`, so they persist across reboots and survive the cloud-init
+`clean` they trigger; the image build strips any baked-in copies. A run
+that writes the sentinel also clears both counters, so deleting the
+sentinel and re-enabling the timer re-arms the unit for a fresh cycle:
+
+```bash
+rm /var/lib/nvke/cloud-init-ds-retry.done
+systemctl enable --now nvke-cloud-init-ds-retry.timer
+```
+
+On a healthy node the first tick sees a real datasource, writes the sentinel,
+and disables the timer — the whole mechanism costs one script run per node.
 
 ## Must not bake (instance identity)
 
