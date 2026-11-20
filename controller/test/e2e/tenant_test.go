@@ -825,6 +825,16 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 					test.cleanupNvkectlCreated(ctx)
 				}
 			}()
+			// Deferred because the OIDC restore and the delete below fail by
+			// assertion, which would skip it and leave the namespace on a kept
+			// or stuck tenant.
+			defer func() {
+				if removeProbeNamespace != nil && !deleted && !deleteAccepted {
+					if err := removeProbeNamespace(ctx); err != nil && !apierrors.IsNotFound(err) {
+						GinkgoLogr.Error(err, "removing the probe namespace from the tenant", "namespace", laneTenantSettings.checks.probeNamespace)
+					}
+				}
+			}()
 
 			if spec.validate.brownfieldOIDC && test.k8sClient != nil {
 				// Restore the controller OIDC create-default the create spec turned off, so
@@ -855,11 +865,6 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			if dir := test.cfg.Lifecycle.NodeKeyDir; keepCluster && dir != "" && test.cluster != nil && test.tenantClients != nil {
 				keepTenantKubeconfig(ctx, &test, dir)
 			}
-			if removeProbeNamespace != nil && !deleted && !deleteAccepted {
-				if err := removeProbeNamespace(ctx); err != nil && !apierrors.IsNotFound(err) {
-					GinkgoLogr.Error(err, "removing the probe namespace from the tenant", "namespace", laneTenantSettings.checks.probeNamespace)
-				}
-			}
 			// Sized to what this node can actually contain rather than to the
 			// suite: WaitForClusterDeleted is bounded by the entry's
 			// nvke.Options.Delete, which is 5 or 10 minutes everywhere above,
@@ -884,17 +889,35 @@ func keepTenantKubeconfig(ctx context.Context, test *tenantTest, dir string) {
 	kubeconfig, err := test.tenantClients.PublishedKubeconfig(ctx, test.cluster.Name)
 	if err == nil {
 		path := filepath.Join(dir, test.cluster.Name+".kubeconfig")
-		// WriteFile sets the mode only on a new file; one already there keeps its own.
-		if err = os.WriteFile(path, kubeconfig, 0o600); err == nil {
-			err = os.Chmod(path, 0o600)
-		}
-		if err == nil {
+		// Written beside it and renamed over it: WriteFile keeps an existing
+		// file's mode, and a file already there may be readable by others.
+		if err = writePrivateFile(path, kubeconfig); err == nil {
 			GinkgoLogr.Info("the kept tenant's kubeconfig, as the controller publishes it; its server is the tenant's own address, reached through the jump host",
 				"kubeconfig", path)
 			return
 		}
 	}
 	GinkgoLogr.Error(err, "writing the kept tenant's kubeconfig", "cluster", test.cluster.Name)
+}
+
+// writePrivateFile replaces path with data, readable only by its owner from
+// the moment it exists.
+func writePrivateFile(path string, data []byte) error {
+	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(tmp.Name())
+	if _, err = tmp.Write(data); err == nil {
+		err = tmp.Sync()
+	}
+	if closeErr := tmp.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		return err
+	}
+	return os.Rename(tmp.Name(), path)
 }
 
 func withNicoVMSReleaseEntries(args ...any) []any {

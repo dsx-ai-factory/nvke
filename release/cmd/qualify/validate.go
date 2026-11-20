@@ -268,7 +268,11 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 		case <-connCtx.Done():
 		}
 	}()
-	source, err := connect(connCtx, o, kept)
+	source, stopped, err := connect(connCtx, o, kept)
+	defer func() {
+		connStop()
+		stopped()
+	}()
 	if err != nil {
 		return err
 	}
@@ -400,19 +404,20 @@ func buildValidateImage(ctx context.Context, out io.Writer) (string, error) {
 }
 
 // connect reaches the management cluster and returns a kubeconfig the host can use. What
-// it starts in the background ends with ctx.
-func connect(ctx context.Context, o validateOptions, kept keptRecord) (string, error) {
+// it starts in the background ends with ctx; the returned func waits for that
+// after ctx is done.
+func connect(ctx context.Context, o validateOptions, kept keptRecord) (string, func(), error) {
 	switch {
 	case o.runDir != "":
 		port, err := kubeconfigPort(kept.Kubeconfig)
 		if err != nil {
-			return "", err
+			return "", func() {}, err
 		}
-		return kept.Kubeconfig, forwardThroughJumpHost(ctx, kept, port, filepath.Join(o.out, "connect.log"))
+		return kept.Kubeconfig, func() {}, forwardThroughJumpHost(ctx, kept, port, filepath.Join(o.out, "connect.log"))
 	case o.teleportCluster != "":
 		port, err := freePort()
 		if err != nil {
-			return "", err
+			return "", func() {}, err
 		}
 		logPath := filepath.Join(o.out, "connect.log")
 		// A reused --out appends to the log, so read only what this proxy writes.
@@ -423,14 +428,25 @@ func connect(ctx context.Context, o validateOptions, kept keptRecord) (string, e
 		proxy := exec.CommandContext(ctx, "tsh", "proxy", "kube", o.teleportCluster, "--port", strconv.Itoa(port), "--format=unix")
 		// tsh writes its kubeconfig to TELEPORT_KUBECONFIG where that is set,
 		// and removes it on exit, so a workstation's own is never the one used.
-		proxy.Env = append(os.Environ(), "TELEPORT_KUBECONFIG="+filepath.Join(o.out, fmt.Sprintf("tsh-proxy-%d.kubeconfig", port)))
+		tshConfig := filepath.Join(o.out, fmt.Sprintf("tsh-proxy-%d.kubeconfig", port))
+		proxy.Env = append(os.Environ(), "TELEPORT_KUBECONFIG="+tshConfig)
 		proxy.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		// Interrupted rather than killed, so tsh removes its kubeconfig; one
+		// that outlasts WaitDelay is killed, and stopped removes it instead.
+		proxy.Cancel = func() error { return syscall.Kill(-proxy.Process.Pid, syscall.SIGINT) }
+		proxy.WaitDelay = 10 * time.Second
 		exited, err := startLogged(proxy, logPath)
 		if err != nil {
-			return "", err
+			return "", func() {}, err
+		}
+		stopped := func() {
+			<-exited
+			if err := os.Remove(tshConfig); err != nil && !os.IsNotExist(err) {
+				fmt.Fprintf(os.Stderr, "removing %s: %v\n", tshConfig, err)
+			}
 		}
 		if err := waitForPort(ctx, port, exited, o.out); err != nil {
-			return "", err
+			return "", stopped, err
 		}
 		// tsh prints the kubeconfig on stderr, and removes it when it exits.
 		for range 10 {
@@ -439,13 +455,13 @@ func connect(ctx context.Context, o validateOptions, kept keptRecord) (string, e
 				offset = 0
 			}
 			if path := tshKubeconfig(log[offset:]); path != "" {
-				return path, nil
+				return path, stopped, nil
 			}
 			time.Sleep(time.Second)
 		}
-		return "", fmt.Errorf("tsh proxy kube printed no kubeconfig; see %s", logPath)
+		return "", stopped, fmt.Errorf("tsh proxy kube printed no kubeconfig; see %s", logPath)
 	default:
-		return o.kubeconfig, nil
+		return o.kubeconfig, func() {}, nil
 	}
 }
 

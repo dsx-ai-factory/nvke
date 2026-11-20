@@ -231,6 +231,9 @@ func siteExpectationsFromProfile(p profileExpectations, section, workloadVersion
 		if expect.apiServerFlags == nil {
 			expect.apiServerFlags = map[string]string{}
 		}
+		if _, ok := expect.apiServerFlags[name]; ok {
+			return siteExpectations{}, fmt.Errorf("%s: --%s is given twice", field(fieldAPIServerFlags), name)
+		}
 		expect.apiServerFlags[name] = strings.TrimSpace(value)
 	}
 

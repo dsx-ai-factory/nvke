@@ -915,14 +915,19 @@ share, set `managementCluster.scope` as
 Release tags up to `v0.23.1` have no `controller/test/e2e/deploy/`. Where the
 management cluster's tag has it, use the manifests from the checkout the image was built
 from; otherwise take them from `main`, keeping the image built from the
-release tag. Run these from the directory that holds the checkout, with the
-kube context pointing at the management cluster:
+release tag. The image from such a tag reads the management cluster's
+Kubernetes version from `NVKE_SITE_KUBERNETES_VERSION` and labels its checks
+`site-validate`, so set `old=1` below to rename the variable in the manifest,
+and write `site-validate` for `mgmt-cluster-validate` in a label filter. Run
+these from the directory that holds the checkout, with the kube context
+pointing at the management cluster:
 
 ```bash
 ver=v0.23.1                                 # the management cluster's controller version
 image=<repository>:${ver}                   # pushed from ${ver} above
 git clone --depth 1 https://github.com/dsx-ai-factory/nvke.git nvke-main   # only for a tag without deploy/
 deploy=nvke-main/controller/test/e2e/deploy   # or nvke-${ver}/controller/test/e2e/deploy
+old=1                                       # only for a tag without deploy/; unset otherwise
 k8s=<version>                               # the Kubernetes version the cluster is meant to run
 read -r ctrl_ns ctrl < <(kubectl get deploy -A -l app.kubernetes.io/name=nvke-controller \
   -o jsonpath='{.items[0].metadata.namespace} {.items[0].metadata.name}')
@@ -932,6 +937,7 @@ fill() {
     -e "s|__KUBERNETES_VERSION__|${k8s}|g" -e "s|__CONTROLLER_NAMESPACE__|${ctrl_ns}|g" \
     -e "s|__CONTROLLER_NAME__|${ctrl}|g" \
     -e "s|__TOKEN_NAMESPACE__|${token_ns}|g" -e "s|__TOKEN_SERVICE_ACCOUNT__|${token_sa}|g" \
+    ${old:+-e "s|NVKE_MGMT_CLUSTER_KUBERNETES_VERSION|NVKE_SITE_KUBERNETES_VERSION|"} \
     "${deploy}/$1"
 }
 fill validate-site-token.yaml | kubectl apply -f -   # only if the controller authenticates
