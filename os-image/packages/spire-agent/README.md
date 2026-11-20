@@ -75,7 +75,10 @@ release archives. It needs Python 3, Bash, curl, tar, awk, and GNU coreutils.
 
 ## Optional DSX IMDS agent
 
-Revision 5 restores optional IMDS packaging. Supply all three inputs together:
+Revision 5 restores optional IMDS packaging. IMDS and non-IMDS packages share
+version `-5`, so a publisher distributing both variants must set a distinct
+`DEB_REVISION` for each to let APT distinguish them. Supply all three inputs
+together:
 
 ```bash
 make debs OUT_DIR=/absolute/output ARCH=arm64 \
