@@ -21,8 +21,8 @@ name: Qualify triage
 # from being re-run, and so does a second failure. It acts only if the variable
 # QUALIFY_TRIAGE_RERUN of this environment is "true", which is a different
 # switch from the one for posting, or a dispatch sets `rerun`, and posting is on
-# too: a re-run is never started without telling the thread. Without them it
-# prints what it would do. A re-run started with this workflow's token does not
+# too, and the run's saved thread can be restored: a re-run is never started
+# without a thread to tell. Without them it prints what it would do. A re-run started with this workflow's token does not
 # start this workflow again, so a second failure is not triaged on its own.
 #
 # THE THREAD. The qualification saves its Slack thread as the run artifact
@@ -209,6 +209,7 @@ jobs:
       # thread, or an expired one, previews nothing; the summary above still
       # names every failure.
       - name: Restore the thread
+        id: restore
         if: steps.run.outputs.tag != ''
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -253,7 +254,9 @@ jobs:
           RUN_ID: ${{ steps.run.outputs.run-id }}
           ATTEMPT: ${{ steps.run.outputs.post-attempt }}
           RUN_URL: ${{ steps.run.outputs.url }}
-          DRY_RUN: ${{ steps.run.outputs.rerun == 'true' && 'false' || 'true' }}
+          DRY_RUN: ${{ (steps.run.outputs.rerun == 'true' && steps.restore.outcome == 'success') && 'false' || 'true' }}
+          WANT_RERUN: ${{ steps.run.outputs.rerun }}
+          THREAD_RESTORED: ${{ steps.restore.outcome }}
           NOTIFY_DRY_RUN: ${{ steps.run.outputs.post == 'true' && 'false' || 'true' }}
           NOTIFY: go run ./release/cmd/notify
           NOTIFY_STATE_KEY: ${{ steps.run.outputs.tag }}
@@ -263,5 +266,22 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           set -Eeuo pipefail
-          FORMAT=jsonl TRIAGE="${RUNNER_TEMP}/triage" RULES=release/triage.yaml \
-            release/hack/triage-run.sh "${RUN_ID}" | release/hack/triage-rerun.sh | tee -a "${GITHUB_STEP_SUMMARY}"
+          # The decision cannot be undone, so it is made only on a complete
+          # classification: the rows go to a file, and are read only if the
+          # classifier finished.
+          rows="${RUNNER_TEMP}/rerun-rows.jsonl"
+          if ! FORMAT=jsonl TRIAGE="${RUNNER_TEMP}/triage" RULES=release/triage.yaml \
+            release/hack/triage-run.sh "${RUN_ID}" >"${rows}"; then
+            {
+              echo "## Automatic re-run of run ${RUN_ID}"
+              echo
+              echo "Not re-run: the failed jobs could not all be classified, so nothing was decided."
+            } | tee -a "${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
+          release/hack/triage-rerun.sh <"${rows}" | tee -a "${GITHUB_STEP_SUMMARY}"
+          # A re-run is not started without a thread to tell: with no saved
+          # thread the message would be skipped without a word.
+          if [[ "${WANT_RERUN}" == true && "${THREAD_RESTORED}" != success ]]; then
+            echo "> A re-run was asked for but the run's thread could not be restored, so nothing was re-run: a re-run is not started without a thread to tell." | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi
