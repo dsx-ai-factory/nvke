@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package bootstrap
+package kubeletcsr
 
 import (
 	"context"
@@ -215,7 +215,7 @@ func TestUnit_KubeletClientCSRControllerApprovesBootstrapRequestor(t *testing.T)
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
 	csr.Spec.Groups = []string{"oidc:bootstrap"}
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -233,7 +233,7 @@ func TestUnit_KubeletClientCSRControllerApprovesWithoutKeyEncipherment(t *testin
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
 	csr.Spec.Usages = []certificatesv1.KeyUsage{certificatesv1.UsageDigitalSignature, certificatesv1.UsageClientAuth}
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 
 	_, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -246,7 +246,7 @@ func TestUnit_KubeletClientCSRControllerUsesExpectedNodeName(t *testing.T) {
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	machine.Annotations[keys.MachineExpectedNodeName.String()] = "host-1"
 	csr := newKubeletClientCSR(t, "host-1-client", testKubeletClientIdentity, "host-1")
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 
 	_, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -258,7 +258,7 @@ func TestUnit_KubeletClientCSRControllerRejectsMismatchedCommonName(t *testing.T
 
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, "worker-a-extra")
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -275,7 +275,7 @@ func TestUnit_KubeletClientCSRControllerIgnoresOtherRequestorsAndSigners(t *test
 	renewal := newKubeletClientCSR(t, "renewal", kubeletNodeNamePrefix+testKubeletClientNodeName, testKubeletClientNodeName)
 	serving := newKubeletClientCSR(t, "serving", testKubeletClientIdentity, testKubeletClientNodeName)
 	serving.Spec.SignerName = certificatesv1.KubeletServingSignerName
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, otherUser, renewal, serving)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, otherUser, renewal, serving)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -292,7 +292,7 @@ func TestUnit_KubeletClientCSRControllerApprovesOnlyTheValidRequest(t *testing.T
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	valid := newKubeletClientCSR(t, "valid", testKubeletClientIdentity, testKubeletClientNodeName)
 	invalid := newKubeletClientCSR(t, "invalid", testKubeletClientIdentity, "worker-a-extra")
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, valid, invalid)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, valid, invalid)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -313,7 +313,7 @@ func TestUnit_KubeletClientCSRControllerReportsIssuedCertificate(t *testing.T) {
 		Status: corev1.ConditionTrue,
 		Reason: KubeletClientCSRApprovalReason,
 	}}
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -337,7 +337,7 @@ func TestUnit_KubeletClientCSRControllerApprovesPendingAfterIssuedCertificate(t 
 		Reason: KubeletClientCSRApprovalReason,
 	}}
 	retry := newKubeletClientCSR(t, "worker-a-retry", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, issued, retry)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, issued, retry)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -352,7 +352,7 @@ func TestUnit_KubeletClientCSRControllerDoesNotApproveAfterJoin(t *testing.T) {
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	machine.Status.NodeRef = clusterv1.MachineNodeReference{Name: testKubeletClientNodeName}
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -373,7 +373,7 @@ func TestUnit_KubeletClientCSRControllerObservesIssuedCertificateAfterIdentityCl
 		Status: corev1.ConditionTrue,
 		Reason: KubeletClientCSRApprovalReason,
 	}}
-	controller, _ := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, _ := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -386,7 +386,7 @@ func TestUnit_KubeletClientCSRControllerWaitsForIdentity(t *testing.T) {
 
 	machine := newMachineForKubeletClientCSRTest("worker-a", "")
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -401,7 +401,7 @@ func TestUnit_KubeletClientCSRControllerRejectsDuplicateIdentity(t *testing.T) {
 	first := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	second := newMachineForKubeletClientCSRTest("worker-b", testKubeletClientIdentity)
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), first, second, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), first, second, csr)
 
 	for _, machine := range []*clusterv1.Machine{first, second} {
 		result, err := controller.Reconcile(t.Context(), machineRequest(machine))
@@ -421,7 +421,7 @@ func TestUnit_KubeletClientCSRControllerRejectsUnselectedDuplicateIdentity(t *te
 	other := newMachineForKubeletClientCSRTest("worker-other", testKubeletClientIdentity)
 	delete(other.Labels, keys.ApproveKubeletClientCSR.String())
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), pending, other, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), pending, other, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(pending))
 	require.NoError(t, err)
@@ -441,7 +441,7 @@ func TestUnit_KubeletClientCSRControllerRejectsDeletingDuplicateIdentity(t *test
 	now := metav1.Now()
 	deleting.DeletionTimestamp = &now
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), pending, deleting, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), pending, deleting, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(pending))
 	require.NoError(t, err)
@@ -459,7 +459,7 @@ func TestUnit_KubeletClientCSRControllerRejectsDuplicateNodeName(t *testing.T) {
 	joined := newMachineForKubeletClientCSRTest("worker-joined", testKubeletClientIdentityB)
 	joined.Status.NodeRef = clusterv1.MachineNodeReference{Name: testKubeletClientNodeName}
 	csr := newKubeletClientCSR(t, "worker-b-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), pending, joined, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), pending, joined, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(pending))
 	require.NoError(t, err)
@@ -477,7 +477,7 @@ func TestUnit_KubeletClientCSRControllerRejectsUnselectedDuplicateNodeName(t *te
 	delete(other.Labels, keys.ApproveKubeletClientCSR.String())
 	other.Status.NodeRef = clusterv1.MachineNodeReference{Name: testKubeletClientNodeName}
 	csr := newKubeletClientCSR(t, "worker-b-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), pending, other, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), pending, other, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(pending))
 	require.NoError(t, err)
@@ -499,7 +499,7 @@ func TestUnit_KubeletClientCSRControllerRejectsDeletingDuplicateNodeName(t *test
 	deleting.DeletionTimestamp = &now
 	deleting.Status.NodeRef = clusterv1.MachineNodeReference{Name: testKubeletClientNodeName}
 	csr := newKubeletClientCSR(t, "worker-b-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), pending, deleting, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), pending, deleting, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(pending))
 	require.NoError(t, err)
@@ -514,7 +514,7 @@ func TestUnit_KubeletClientCSRControllerRejectsExistingNode(t *testing.T) {
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: testKubeletClientNodeName}}
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr, node)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr, node)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -536,7 +536,7 @@ func TestUnit_KubeletClientCSRControllerReportsIssuedCertificateWhenNodeExists(t
 		Reason: KubeletClientCSRApprovalReason,
 	}}
 	node := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: testKubeletClientNodeName}}
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr, node)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr, node)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -555,7 +555,7 @@ func TestUnit_KubeletClientCSRControllerReportsDeniedCSR(t *testing.T) {
 		Status: corev1.ConditionTrue,
 		Reason: "Denied",
 	}}
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -569,7 +569,7 @@ func TestUnit_KubeletClientCSRControllerRetriesApprovalFailure(t *testing.T) {
 
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 	controller.clusterCache = staticKubeletClientClusterCache{client: interceptor.NewClient(tenantClient.(client.WithWatch), interceptor.Funcs{
 		SubResourceUpdate: func(context.Context, client.Client, string, client.Object, ...client.SubResourceUpdateOption) error {
 			return errors.New("approval rejected")
@@ -587,7 +587,7 @@ func TestUnit_KubeletClientCSRControllerIgnoresUnselectedMachines(t *testing.T) 
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	delete(machine.Labels, keys.ApproveKubeletClientCSR.String())
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.NoError(t, err)
@@ -601,7 +601,7 @@ func TestUnit_KubeletClientCSRControllerReturnsMissingCluster(t *testing.T) {
 
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, nil, machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, nil, machine, csr)
 
 	_, err := controller.Reconcile(t.Context(), machineRequest(machine))
 	require.Error(t, err)
@@ -613,7 +613,7 @@ func TestUnit_KubeletClientCSRControllerReturnsClusterReadErrors(t *testing.T) {
 
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, _ := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, _ := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 	controller.k8sClient = interceptor.NewClient(controller.k8sClient.(client.WithWatch), interceptor.Funcs{
 		Get: func(ctx context.Context, c client.WithWatch, key client.ObjectKey, obj client.Object, opts ...client.GetOption) error {
 			if _, ok := obj.(*clusterv1.Cluster); ok {
@@ -632,7 +632,7 @@ func TestUnit_KubeletClientCSRControllerWaitsForClusterConnection(t *testing.T) 
 
 	machine := newMachineForKubeletClientCSRTest("worker-a", testKubeletClientIdentity)
 	csr := newKubeletClientCSR(t, "worker-a-client", testKubeletClientIdentity, testKubeletClientNodeName)
-	controller, tenantClient := newKubeletClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
+	controller, tenantClient := newClientCSRControllerForTest(t, newClusterForKubeletClientCSRTest(), machine, csr)
 	controller.clusterCache = staticKubeletClientClusterCache{err: clustercache.ErrClusterNotConnected}
 
 	result, err := controller.Reconcile(t.Context(), machineRequest(machine))
@@ -730,7 +730,7 @@ func newClusterForKubeletClientCSRTest() *clusterv1.Cluster {
 	}
 }
 
-func newKubeletClientCSRControllerForTest(t *testing.T, cluster *clusterv1.Cluster, objects ...client.Object) (*KubeletClientCSRController, client.Client) {
+func newClientCSRControllerForTest(t *testing.T, cluster *clusterv1.Cluster, objects ...client.Object) (*ClientCSRController, client.Client) {
 	t.Helper()
 
 	var machines []client.Object
@@ -768,7 +768,7 @@ func newKubeletClientCSRControllerForTest(t *testing.T, cluster *clusterv1.Clust
 		WithObjects(tenantObjects...).
 		Build()
 
-	return NewKubeletClientCSRController(
+	return NewClientCSRController(
 		managementClient,
 		staticKubeletClientClusterCache{client: tenantClient},
 		slog.New(slog.DiscardHandler),
