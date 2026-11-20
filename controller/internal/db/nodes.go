@@ -660,7 +660,7 @@ func (q *queriesImpl) ListNodeLifecycleElapsed(ctx context.Context) ([]NodeLifec
 		SELECT
 			c.name AS cluster_name,
 			n.name AS node_name,
-			CASE WHEN np.control_plane THEN 'cp' ELSE 'worker' END AS node_type,
+			CASE WHEN n.control_plane THEN 'cp' ELSE 'worker' END AS node_type,
 			CASE
 				WHEN n.conditions->'deleting'->>'status' = 'True'
 					THEN 'deleting'
@@ -680,9 +680,9 @@ func (q *queriesImpl) ListNodeLifecycleElapsed(ctx context.Context) ([]NodeLifec
 				END
 			))) AS elapsed_secs
 		FROM nodes n
-		JOIN node_sets ns ON ns.id = n.node_set_id
-		JOIN node_pools np ON np.id = ns.node_pool_id
-		JOIN clusters c ON c.id = np.cluster_id
+		JOIN clusters c ON c.id = n.cluster_id
+		LEFT JOIN node_sets ns ON ns.id = n.node_set_id
+		LEFT JOIN node_pools np ON np.id = ns.node_pool_id
 		WHERE
 			(n.conditions->'deleting'->>'status' = 'True' AND n.conditions->'deleting'->>'lastTransitionTime' IS NOT NULL)
 			OR (n.conditions->'provisioning'->>'status' = 'True' AND n.conditions->'provisioning'->>'lastTransitionTime' IS NOT NULL)
@@ -693,13 +693,13 @@ func (q *queriesImpl) ListNodeLifecycleElapsed(ctx context.Context) ([]NodeLifec
 		SELECT
 			c.name AS cluster_name,
 			n.name AS node_name,
-			CASE WHEN np.control_plane THEN 'cp' ELSE 'worker' END AS node_type,
+			CASE WHEN n.control_plane THEN 'cp' ELSE 'worker' END AS node_type,
 			'markedForRecycling' AS state,
 			EXTRACT(EPOCH FROM (NOW() - (n.conditions->'markedForRecycling'->>'lastTransitionTime')::timestamptz)) AS elapsed_secs
 		FROM nodes n
-		JOIN node_sets ns ON ns.id = n.node_set_id
-		JOIN node_pools np ON np.id = ns.node_pool_id
-		JOIN clusters c ON c.id = np.cluster_id
+		JOIN clusters c ON c.id = n.cluster_id
+		LEFT JOIN node_sets ns ON ns.id = n.node_set_id
+		LEFT JOIN node_pools np ON np.id = ns.node_pool_id
 		WHERE n.conditions->'markedForRecycling'->>'status' = 'True'
 			AND n.conditions->'markedForRecycling'->>'lastTransitionTime' IS NOT NULL
 	`).Scan(ctx, &results)
