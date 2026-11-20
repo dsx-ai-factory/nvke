@@ -758,6 +758,11 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 		if update == (api.UpdateClusterRequest{}) {
 			return observedCluster, nil
 		}
+		// Enable automatic replacement with the update that requires it. Scaling
+		// and rollout-budget changes alone do not require node replacement.
+		if update.ControlPlaneKubernetesVersion != nil || configUpdate.Infra != nil {
+			update.EnableCPNodeRecycling = new(true)
+		}
 		updatedCluster, err := r.NVKEController.Update(ctx, observedCluster.ID.String(), update)
 		if err != nil {
 			return observedCluster, fmt.Errorf("update nvke controller cluster %q: %w", name, err)

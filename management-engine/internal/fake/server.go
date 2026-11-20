@@ -302,6 +302,9 @@ func (s *Server) updateCluster(w http.ResponseWriter, r *http.Request) {
 	if request.ControlPlaneKubernetesVersion != nil {
 		cluster.ControlPlaneKubernetesVersion = *request.ControlPlaneKubernetesVersion
 	}
+	if request.EnableCPNodeRecycling != nil {
+		cluster.EnableCPNodeRecycling = request.EnableCPNodeRecycling
+	}
 	if config := request.ControlPlaneConfig; config != nil {
 		if cluster.ControlPlaneConfig == nil {
 			cluster.ControlPlaneConfig = &api.ControlPlaneConfig{}

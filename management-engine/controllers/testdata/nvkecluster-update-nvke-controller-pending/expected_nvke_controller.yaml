@@ -41,6 +41,7 @@ clusters:
     systemReservedMemory: 1Gi
   controlPlaneKubernetesVersion: 1.36.1
   createdAt: "0001-01-01T00:00:00Z"
+  enableCPNodeRecycling: true
   etcdEncrypted: false
   id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
   name: cluster-1-34bd578c-mgmt-eng
@@ -127,6 +128,7 @@ requests:
       maxSurge: 1
       systemReservedMemory: 1Gi
     controlPlaneKubernetesVersion: 1.36.1
+    enableCPNodeRecycling: true
 - createNodePool:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     desiredNodeCount: 1
