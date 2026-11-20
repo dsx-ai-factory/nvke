@@ -290,6 +290,78 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /clusters/adopt:
+    post:
+      tags: [Clusters]
+      summary: Adopt a cluster that already runs
+      operationId: adoptCluster
+      x-fern-ignore: true
+      description: |
+        Records the cluster this controller runs on, built by
+        `nvkectl bootstrap site`, as a cluster NVKE manages. Served only when
+        `clusterAdoptionEnabled` is set in nvke-controller-config; otherwise
+        returns 404.
+
+        The body is the same as `createCluster` plus the required `adoption`
+        field, which names the control-plane nodes and the Secret holding the
+        site kubeconfig that `nvkectl bootstrap site` wrote (key `kubeconfig`).
+        NVKE does not run `kubeadm init`. It reads the cluster with that
+        kubeconfig, records the listed nodes as adopted (`adoptedSeed`) under
+        new IDs, and applies the cluster's Cluster API objects. The
+        kubeconfig is used only for those reads. NVKE reaches the cluster
+        through the adopted nodes' agents, which answer once the operator points
+        each node's SPIRE agent at this site and registers its `host/<node ID>`
+        identity; until then NVKE cannot reach the cluster.
+
+        The operator keeps managing the control plane outside NVKE: NVKE never
+        upgrades, replaces or deletes an adopted control-plane node.
+        `PATCH /clusters/{clusterID}` refuses `controlPlaneKubernetesVersion`,
+        any `controlPlaneConfig.desiredCount` change and any change to a field
+        that replaces nodes, such as `controlPlaneConfig.nico.release` or
+        `configProfile`. `DELETE /nodes/{nodeID}` refuses an adopted node, and
+        the cluster cannot be deleted through `DELETE /clusters/{clusterID}`.
+
+        Returns 400 when the Secret is missing or has no kubeconfig; when a
+        cluster is already adopted; when a Cluster API Cluster with the
+        cluster's name already exists in the management namespace; when `adoption.nodes` is not exactly the
+        cluster's control-plane nodes and etcd members, or a listed node has no
+        InternalIP; when `controlPlaneConfig.desiredCount` differs from the
+        number of listed nodes; when `controlPlaneKubernetesVersion` differs
+        from a node's kubelet or from kubeadm-config; when `network.podCIDR` or
+        `network.serviceCIDR` differs from kubeadm-config; when the cluster has
+        no namespace for `cniPlugin`; and for every reason `createCluster`
+        returns 400. `cniVersion` is not checked: the cluster does not report it.
+      requestBody:
+        description: The `createCluster` body describing the running cluster, plus the required `adoption` field.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateClusterRequest"
+      responses:
+        "201":
+          description: Cluster adopted. NVKE reaches it once the adopted nodes' agents are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cluster"
+        "400":
+          description: The request failed validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "404":
+          description: Cluster adoption is not enabled on this controller (`clusterAdoptionEnabled` in nvke-controller-config).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /clusters/{clusterID}:
     parameters:
       - name: clusterID
@@ -412,12 +484,19 @@ paths:
         Starts deletion and sets `conditions.deleting` to `True`. A cluster can
         be deleted in any state, including while it is provisioning or
         upgrading. Deletion takes precedence over an in-progress or retained
-        etcd encryption, etcd key rotation or certificate renewal.
+        etcd encryption, etcd key rotation or certificate renewal. The cluster
+        this controller runs on cannot be deleted (409).
       responses:
         "202":
           description: Deletion started
         "404":
           description: Cluster not found. No body is returned.
+        "409":
+          description: The cluster is the one this controller runs on; teardown would reset its control-plane nodes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -526,6 +605,8 @@ paths:
         and `conditions.updateFailed` on the cluster, and per node through
         `GET /clusters/{clusterID}/spire-server`. Repeating the request with
         the same server is safe, including while it is in progress.
+        Control-plane nodes that NVKE did not build are skipped: their operator
+        points their SPIRE agents.
       requestBody:
         description: The SPIRE server the cluster's nodes should point at.
         required: true
@@ -986,6 +1067,8 @@ paths:
           description: |
             A control-plane node cannot be deleted while etcd encryption, etcd key
             rotation or certificate renewal holds the control-plane mutation lock.
+            A control-plane node that NVKE did not build cannot be deleted: its
+            operator manages it outside NVKE.
           content:
             application/json:
               schema:
@@ -1173,6 +1256,48 @@ components:
         infra:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraClusterProvider"
+        adoption:
+          x-fern-ignore: true
+          $ref: "#/components/schemas/ClusterAdoption"
+    ClusterAdoption:
+      x-fern-ignore: true
+      type: object
+      additionalProperties: false
+      required: [credentialsSecretRef, nodes]
+      description: |
+        Required by `adoptCluster` and rejected by `createCluster`.
+        `credentialsSecretRef` names the Secret holding the site kubeconfig under
+        the key `kubeconfig`, used only to look up `nodes`.
+      properties:
+        credentialsSecretRef:
+          $ref: "#/components/schemas/SecretReference"
+        nodes:
+          description: The Kubernetes names of the control-plane nodes to adopt. Each must be a control-plane node of the cluster with an InternalIP.
+          type: array
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            minLength: 1
+            maxLength: 253
+    SecretReference:
+      x-fern-ignore: true
+      type: object
+      additionalProperties: false
+      required: [name]
+      description: A Secret in the cluster the controller runs on.
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 253
+          description: The Secret's name.
+          x-go-type-skip-optional-pointer: true
+        namespace:
+          type: string
+          maxLength: 63
+          description: Defaults to the controller's namespace.
+          x-go-type-skip-optional-pointer: true
     NodeAgentConfig:
       description: Desired control-plane node-agent configuration.
       type: object
@@ -2866,6 +2991,11 @@ components:
             A delete has been accepted but teardown has not started. Control-plane deletes
             are recorded here first and started one at a time; `deleting` then reports the
             teardown. At most one of deleting and deleteRequested is True.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
+        adoptedSeed:
+          x-fern-ignore: true
+          description: Control-plane nodes of an adopted cluster only. True for a node that ran before NVKE adopted the cluster. Its operator manages it outside NVKE, which never upgrades, replaces or deletes it.
           allOf:
             - $ref: "#/components/schemas/Condition"
 

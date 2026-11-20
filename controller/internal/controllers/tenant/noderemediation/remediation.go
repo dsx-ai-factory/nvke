@@ -45,6 +45,13 @@ func newNodeRemediator(cfg config.Config, logger *slog.Logger, controllerTempora
 func (r *nodeRemediator) startWorkflowsIfNecessary(ctx context.Context, node db.Node, kubeNode *corev1.Node) error {
 	labels := kubeNode.GetLabels()
 
+	// The operator of an adopted control plane remediates its nodes: teardown would
+	// remove the node's etcd member and kubeadm reset it.
+	if node.IsAdoptedSeed() {
+		r.logger.Debug("Not remediating a node of an adopted control plane", "nodeID", node.ID.String(), "nodeName", node.Name)
+		return nil
+	}
+
 	if reason, terminateLabelPresent := keys.Terminate.Get(labels); terminateLabelPresent {
 		return r.startTeardownNodeWorkflow(ctx, node, kubeNode, reason)
 	}

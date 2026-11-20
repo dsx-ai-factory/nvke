@@ -297,6 +297,11 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	if deficit <= 0 {
 		return nil
 	}
+	if controlPlane.adopted() {
+		r.logger.Warn("Not creating control-plane nodes for an adopted control plane; its operator manages it outside NVKE",
+			"clusterID", cluster.ID, "clusterName", cluster.Name, "desiredCount", cluster.ControlPlaneConfig.DesiredCount, "deficit", deficit)
+		return nil
+	}
 
 	// Create exactly the deficit as type-less pending nodes. Instance-type
 	// selection and Forge capacity checks are the control plane node scheduler's job: it picks

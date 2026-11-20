@@ -35,6 +35,10 @@ var (
 	// ErrNodeDeleting is returned when node teardown is already in progress;
 	// callers should treat the request as a no-op success.
 	ErrNodeDeleting = errors.New("node is deleting")
+	// ErrAdoptedControlPlaneNode is returned for a node of an adopted control
+	// plane: teardown would drain it, remove its etcd member and kubeadm reset it,
+	// and its operator manages it outside NVKE.
+	ErrAdoptedControlPlaneNode = errors.New("cannot delete a node of an adopted control plane: its operator manages it outside NVKE")
 )
 
 // guardLiveNodeDelete locks the cluster row first and then the node row for the
@@ -69,6 +73,9 @@ func guardLiveNodeDelete(ctx context.Context, tx db.Tx, nodeID uuid.UUID, allowW
 
 	if dbNode.Conditions.Deleting.Status == db.ConditionStatusTrue {
 		return db.Node{}, ErrNodeDeleting
+	}
+	if dbNode.IsAdoptedSeed() {
+		return db.Node{}, ErrAdoptedControlPlaneNode
 	}
 
 	// Check pool deleting under the cluster lock so a concurrent pool delete

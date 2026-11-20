@@ -69,7 +69,7 @@ func labelSystemNamespacesPrivileged(ctx context.Context, tenantClient ctrlclien
 	if err := labelNamespacePrivileged(ctx, tenantClient, metav1.NamespaceSystem); err != nil {
 		return err
 	}
-	for _, ns := range cniNamespacesForPlugin(plugin) {
+	for _, ns := range CNINamespacesForPlugin(plugin) {
 		if err := labelNamespacePrivileged(ctx, tenantClient, ns); err != nil {
 			return err
 		}
@@ -77,16 +77,16 @@ func labelSystemNamespacesPrivileged(ctx context.Context, tenantClient ctrlclien
 	return nil
 }
 
-// cniNamespacesForPlugin returns the CNI namespaces to label. The CNI install
-// creates each one synchronously and finishes before this activity starts, so
-// a missing one is an error. calico-system is left out: the tigera operator
-// creates it asynchronously, already labeled enforce=privileged, and keeps it
-// that way.
+// CNINamespacesForPlugin returns the CNI namespaces to label; adopt also checks
+// that they exist. The CNI install creates each one synchronously and finishes
+// before this activity starts, so a missing one is an error. calico-system is
+// left out: the tigera operator creates it asynchronously, already labeled
+// enforce=privileged, and keeps it that way.
 //
 // agent/internal/agent/cni.go uses the same "tigera-operator" literal for its
 // Calico --namespace flag. It lives in a separate Go module, so there is no
 // shared constant to import.
-func cniNamespacesForPlugin(plugin db.CniPlugin) []string {
+func CNINamespacesForPlugin(plugin db.CniPlugin) []string {
 	switch plugin {
 	case db.CNICalico:
 		return []string{tigeraOperatorNS}

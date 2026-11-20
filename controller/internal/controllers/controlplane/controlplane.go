@@ -6,6 +6,7 @@ package controlplane
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/google/uuid"
@@ -109,11 +110,19 @@ func (c *controlPlane) size() int {
 func (c *controlPlane) nodesForRemediation() []db.Node {
 	var nodes []db.Node
 	for _, node := range c.nodes {
-		if isMarkedForRecycling(node) {
+		if isMarkedForRecycling(node) && !node.IsAdoptedSeed() {
 			nodes = append(nodes, node)
 		}
 	}
 	return nodes
+}
+
+// adopted reports whether the control plane has adopted nodes (POST
+// /clusters/adopt). Its operator manages it outside NVKE, which never adds
+// provider-built nodes to it: on the site cluster they would come from the
+// NICo that runs on it.
+func (c *controlPlane) adopted() bool {
+	return slices.ContainsFunc(c.nodes, db.Node.IsAdoptedSeed)
 }
 
 // surgeBudget is how many surge nodes the rollout may run concurrently,

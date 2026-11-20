@@ -177,6 +177,9 @@ func DeleteWithTx(ctx context.Context, tx db.Tx, nodeID uuid.UUID, opts ...Delet
 		}
 	}
 
+	if dbNode.IsAdoptedSeed() {
+		return ErrAdoptedControlPlaneNode
+	}
 	// Control-plane deletes are recorded as intent and started by the
 	// control-plane controller, one node at a time. Worker deletes are direct.
 	if dbNode.ControlPlane {

@@ -263,6 +263,36 @@ func TestControlPlaneDeleteRecordsIntentWithoutStartingTeardown(t *testing.T) {
 	mockTx.AssertExpectations(t)
 }
 
+// TestAdoptedControlPlaneNodeDeleteIsRefused pins the 409 for an adopted node on
+// both delete paths, before the live path's quorum floor could answer first.
+func TestAdoptedControlPlaneNodeDeleteIsRefused(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		opts []nodes.DeleteOpt
+	}{
+		{name: "live delete", opts: []nodes.DeleteOpt{nodes.WithAllowCPNode(true)}},
+		{name: "delete without the live guard", opts: []nodes.DeleteOpt{nodes.WithSkipLiveDeleteGuard(), nodes.WithAllowCPNode(true)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			target := joinedCPNode(cpNodeIDs(1)[0])
+			target.Conditions.AdoptedSeed = db.NewCondition(true, "Adopted")
+
+			mockTx := &testutil.MockTx{}
+			mockTx.On("GetNode", mock.Anything, target.ID).Return(target, nil).Maybe()
+			mockTx.On("GetClusterForUpdate", mock.Anything, target.ClusterID).Return(db.Cluster{ID: target.ClusterID}, nil).Maybe()
+			mockTx.On("GetNodeForUpdate", mock.Anything, target.ID).Return(target, nil)
+
+			err := nodes.DeleteWithTx(context.Background(), mockTx, target.ID, tc.opts...)
+
+			require.ErrorIs(t, err, nodes.ErrAdoptedControlPlaneNode)
+			mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+		})
+	}
+}
+
 // TestUnhealthyControlPlaneDeleteRecordsForceUnreachable pairs the floor
 // exemption with the teardown it hands off to: the node the floor waived as
 // unhealthy must be torn down as unreachable, or the accepted delete stalls on a

@@ -48,6 +48,11 @@ func (r *reconciler) reconcileNodesNeedingRollout(
 	if !cluster.EnableCPNodeRecycling {
 		return false, nil
 	}
+	// The operator upgrades an adopted control plane outside NVKE; replacing
+	// its nodes would build them through the provider.
+	if cp.adopted() {
+		return false, nil
+	}
 
 	if cluster.ControlPlaneConfig.MaxSurge > 0 {
 		// Today surgeBudget is 0 or 1; a future MaxSurge>1 refills the full deficit

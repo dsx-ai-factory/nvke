@@ -49,6 +49,7 @@ cniImageRegistry: ""
 installCNIAfterInit: false
 allowLegacyCalicoClusterCreation: false
 allowControlPlaneWithoutVIP: false
+clusterAdoptionEnabled: false
 nicoControllersEnabled: false
 bootstrapControllersEnabled: false
 profilesDir: test/fixtures/profiles

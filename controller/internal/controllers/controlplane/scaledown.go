@@ -190,6 +190,10 @@ func (c *controlPlane) scaleDownRemovable() []db.Node {
 		if nodes.IsDeleteInFlight(node) || isMarkedForRecycling(node) {
 			continue
 		}
+		// NVKE never picks an adopted node: its operator manages it outside NVKE.
+		if node.IsAdoptedSeed() {
+			continue
+		}
 		if isRebalanceReplacement(node) && !isCleanJoinedControlPlaneMember(node) {
 			continue
 		}
@@ -221,6 +225,10 @@ func (c *controlPlane) scaleDownEligible() []db.Node {
 		}
 		// On its way out or in for replacement: not removable surplus.
 		if nodes.IsDeleteInFlight(node) || isMarkedForRecycling(node) {
+			continue
+		}
+		// Rebalance would shed it for a provider-built node; only the operator removes it.
+		if node.IsAdoptedSeed() {
 			continue
 		}
 		if !isCleanJoinedControlPlaneMember(node) {

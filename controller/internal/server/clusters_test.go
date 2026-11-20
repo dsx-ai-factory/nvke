@@ -759,6 +759,7 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 		txCommitErr      error
 		wantError        bool
 		want404          bool
+		want409          bool
 		setupMockCalls   func(*mockTx)
 		verifyConditions func(t *testing.T, conditions db.ClusterConditions)
 	}{
@@ -832,6 +833,16 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 					Return(db.WorkflowOutbox{}, errors.New("workflow error"))
 			},
 		},
+		{
+			name:      "adopted cluster is refused",
+			clusterID: clusterID,
+			want409:   true,
+			setupMockCalls: func(tx *mockTx) {
+				tx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+					ID: clusterID, Conditions: db.ClusterConditions{Adopted: db.NewCondition(true, "Adopted")},
+				}, nil)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -857,6 +868,12 @@ func TestClusterService_DeleteCluster(t *testing.T) {
 			}
 			if tt.want404 {
 				assert.IsType(t, api.DeleteCluster404Response{}, resp)
+				return
+			}
+			if tt.want409 {
+				require.NoError(t, err)
+				assert.IsType(t, api.DeleteCluster409JSONResponse{}, resp)
+				mockDB.MockTx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
 				return
 			}
 
@@ -2376,4 +2393,36 @@ func TestApiClusterFromDB_OmitsMissingProviderPayload(t *testing.T) {
 	}
 	got := server.APIClusterFromDB(&cluster)
 	assert.Nil(t, got.Nico)
+}
+
+func TestClusterService_UpdateCluster_RefusesControlPlaneWorkOnAdoptedCluster(t *testing.T) {
+	version := "1.37.0"
+	tests := []struct {
+		name string
+		body api.UpdateClusterRequest
+		want string
+	}{
+		{name: "Kubernetes upgrade", body: api.UpdateClusterRequest{ControlPlaneKubernetesVersion: &version}, want: "controlPlaneKubernetesVersion"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			clusterID := uuid.New()
+			mockDB := &mockDB{MockTx: &mockTx{}}
+			mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(db.Cluster{
+				ID: clusterID, Name: "site", KubernetesVersion: "1.36.4",
+				Conditions: db.ClusterConditions{Provisioned: db.NewCondition(true, "Provisioned"), Adopted: db.NewCondition(true, "Adopted")},
+			}, nil).Once()
+			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+
+			svc := newTestClusterService(discardLogger(), mockDB)
+			resp, err := svc.UpdateCluster(context.Background(), api.UpdateClusterRequestObject{ClusterID: clusterID, Body: &tc.body})
+
+			require.NoError(t, err)
+			badRequest, ok := resp.(api.UpdateCluster400JSONResponse)
+			require.True(t, ok, "expected UpdateCluster400JSONResponse, got %T", resp)
+			assert.Contains(t, badRequest.Message, tc.want)
+			assert.Contains(t, badRequest.Message, "adopted control plane")
+			mockDB.MockTx.AssertNotCalled(t, "UpdateCluster", mock.Anything, mock.Anything)
+		})
+	}
 }

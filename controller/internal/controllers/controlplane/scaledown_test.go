@@ -687,7 +687,11 @@ func TestScaleDownRemovable_HoldsOutInFlightRebalanceSurge(t *testing.T) {
 	surgeJoined := healthyCPNode(clusterID, "cp-surge-joined", base)
 	surgeJoined.Conditions.ControlPlanePreferredReplacement = db.NewCondition(true, "Rebalance surge")
 
-	cp := &controlPlane{nodes: []db.Node{joined, surgeComingUp, surgeJoined}}
+	// An adopted node: only the operator removes it.
+	adopted := healthyCPNode(clusterID, "cp-adopted", base)
+	adopted.Conditions.AdoptedSeed = db.NewCondition(true, "Adopted")
+
+	cp := &controlPlane{nodes: []db.Node{joined, surgeComingUp, surgeJoined, adopted}}
 	removable := cp.scaleDownRemovable()
 
 	got := map[uuid.UUID]bool{}
@@ -697,6 +701,7 @@ func TestScaleDownRemovable_HoldsOutInFlightRebalanceSurge(t *testing.T) {
 	assert.True(t, got[joined.ID], "a plain joined member is removable")
 	assert.False(t, got[surgeComingUp.ID], "a rebalance surge node still coming up is held out of the removable set")
 	assert.True(t, got[surgeJoined.ID], "once the surge node is a clean joined member it rejoins the removable set")
+	assert.False(t, got[adopted.ID], "an adopted node is never removable")
 }
 
 // TestReconcileControlPlaneScaleDown_HoldsWhileRebalanceSurgeComingUp pins the
