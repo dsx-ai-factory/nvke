@@ -149,5 +149,8 @@ items:
         version: 1.36.1
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers
+      readyReplicas: 2
+      replicas: 5
+      updatedReplicas: 4
     observedGeneration: 2
 metadata: {}

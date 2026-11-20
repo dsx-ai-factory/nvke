@@ -1,9 +1,15 @@
 nodePools:
 - name: workers-gone
+  replicas: 7
+  readyReplicas: 6
+  updatedReplicas: 5
   currentRelease:
     name: worker-removed-release
     version: "1.36.1"
 - name: workers-deprecated
+  replicas: 7
+  readyReplicas: 6
+  updatedReplicas: 5
   currentRelease:
     name: worker-deprecated-release
     version: "1.36.2"
