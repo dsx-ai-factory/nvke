@@ -71,6 +71,13 @@ Use the schema from the installed version. The [release definition](../apis/v1/c
 and [initialization fields](../apis/v1/common_types.go) describe optional settings,
 including additional bootstrap files and commands.
 
+Treat the image, bootloader and initialization as one compatible set. When moving
+from a provider's named boot profile to per-machine boot inputs, include the
+repository, packages and identity setup that profile previously supplied. Preserve
+controller-generated credentials and agent arguments. A placeholder cloud-init
+template alone does not supply these dependencies; check which initialization
+fields the deployed manager actually forwards.
+
 ## Publish or select a release
 
 Check that the release name is available:
@@ -283,6 +290,11 @@ observed outcome and any recovery actions. Keep the generated response files for
 review according to the site's data-handling rules.
 
 ## Test a release before wider rollout
+
+Start with a working image and bootstrap combination. For a newer OS, publish
+new records and check its package suite, bootloader, agent and identity support
+together. Validate initial provisioning on a fresh cluster before attempting
+upgrades; keep the working baseline available for comparison and recovery.
 
 To validate a candidate on one cluster, [publish or select the release](#publish-or-select-a-release)
 and set `TEST_CHANNEL_NAME` to a new channel reserved for that cluster. Create it
