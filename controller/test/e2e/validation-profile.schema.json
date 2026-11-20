@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/dsx-ai-factory/nvke/controller/test/e2e/validation-profile.schema.json",
   "title": "NVKE ValidationProfile",
-  "description": "What the NVKE validation image expects of a management cluster and its tenants. Every field is optional; an unset one keeps the default for deploy/nico.",
+  "description": "What the NVKE validation image expects of a management cluster and its tenants. Every field but apiVersion and kind is optional; an unset one keeps the default for deploy/nico.",
   "type": "object",
   "additionalProperties": false,
   "required": ["apiVersion", "kind"],

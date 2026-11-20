@@ -369,6 +369,9 @@ an identity that can read Secrets across the cluster or bind roles.
 [`deploy/validate-site.yaml`](deploy/validate-site.yaml) grants exactly this,
 and [Running it on a management cluster](#running-it-on-a-management-cluster) applies it.
 
+The run fails when a check fails, and when no check passed: where every
+selected spec skipped, or the filter selected none. A dry run is exempt.
+
 ### Validation image variables
 
 Configure it with a [validation profile](#validation-profile), the
@@ -446,7 +449,8 @@ tenant:
   gpu: {nodes: 4}
 ```
 
-Every field is optional; one left out keeps its `deploy/nico` default.
+Every field but `apiVersion` and `kind` is optional; one left out keeps its
+`deploy/nico` default.
 
 | Field | Purpose | Default |
 | --- | --- | --- |
@@ -1426,8 +1430,8 @@ jump host and kubeconfig, with no credential. All are mode 0600.
 
 To run the [validation image](#running-the-image) against a kept management cluster, run
 `qualify validate --run-dir` on the run, as [From a workstation](#from-a-workstation)
-shows. It reads the node's record, forwards its API server port through the
-jump host, and takes the two versions from the run's `steps.env`. A lane management cluster
+shows. It reads the node's record, forwards a free local port to the node's
+API server port through the jump host, and takes the two versions from the run's `steps.env`. A lane management cluster
 is laid out like `deploy/nico`, so its profile needs only what the lane
 declares: `cert-manager` in `managementCluster.components` and its
 StorageClass in `managementCluster.storageClasses`.
