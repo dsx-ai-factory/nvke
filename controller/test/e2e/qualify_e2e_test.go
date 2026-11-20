@@ -233,7 +233,12 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 			var placed []string
 			stack, placed = expectSucceed2(newStack(cfg, capabilities[infra.CapabilityArch]))
 			secrets = append(secrets, placed...)
-			Expect(requireRunCapacity(context.Background(), provider, siteStage, tenantWorkers)).To(Succeed())
+			Expect(requireRunCapacity(context.Background(), provider, siteStage, tenantWorkers, monitoringWorkers)).To(Succeed())
+		}
+		if siteStage == siteStageFull {
+			run, runErr := runCapabilities()
+			Expect(requireNoMonitoringWithGPURuntime(planTenantGPURuntime(tenantGPURuntime, run, runErr), monitoringWorkers)).To(Succeed())
+			Expect(requireKapsBenchTools(kapsBenchRunSpecs, kapsBenchDir)).To(Succeed())
 		}
 	})
 
@@ -406,6 +411,7 @@ var _ = Describe("NVKE e2e qualification", Ordered, ContinueOnFailure, Label("si
 				TrustDomain: site.TrustDomain(spec.Name),
 				Relay:       sessionRelay(session),
 				Instances:   waiter,
+				Secrets:     secrets,
 			}, nil
 		}),
 			// Labeled nico-forge because it is: the same tenant the
@@ -527,12 +533,13 @@ func siteCapabilities(run map[string]string) map[string]string {
 // have usable allocations: the site node and, at the full stage, the tenant
 // control plane on the CPU shape, and its workers on the worker shape. A
 // deployment run builds the site node and no tenant, so it asks for one machine.
+// Monitoring nodes count as workers, since they take the worker shape.
 // A tenant run with fewer than one worker fails before the substrate is asked.
 //
 // Duck-typed rather than part of infra.Provider: a substrate that cannot answer
 // should not have to implement a method that lies, and one that can answers the
 // same question in its own API's terms.
-func requireRunCapacity(ctx context.Context, provider infra.Provider, stage string, workers int) error {
+func requireRunCapacity(ctx context.Context, provider infra.Provider, stage string, workers, monitoring int) error {
 	checker, ok := provider.(interface {
 		RequireCapacity(ctx context.Context, selector map[string]string, cpu, workers int) error
 	})
@@ -546,10 +553,10 @@ func requireRunCapacity(ctx context.Context, provider infra.Provider, stage stri
 	if stage == siteStageDeployment {
 		return checker.RequireCapacity(ctx, capabilities, 1, 0)
 	}
-	if _, err := tenantWorkerPools(workers); err != nil {
+	if _, err := tenantWorkerPools(workers, monitoring); err != nil {
 		return err
 	}
-	return checker.RequireCapacity(ctx, capabilities, 2, workers)
+	return checker.RequireCapacity(ctx, capabilities, 2, workers+monitoring)
 }
 
 // newInfraProvider builds what creates this run's site node, as the run's
@@ -1207,7 +1214,7 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 	}
 	unameArch := map[string]string{"amd64": "x86_64", "arm64": "arm64"}[arch]
 	GinkgoLogr.Info("deploying the stack", "controller", controller.Ref(), "profiles", profiles.Ref())
-	return site.Stack{
+	return allowTenantNodeLabels(site.Stack{
 		Assets:     assets,
 		Controller: controller,
 		Profiles:   profiles,
@@ -1223,7 +1230,13 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 		// minted token is redacted the same way the Forge key is. Asked of the
 		// config rather than listed here: this function cannot know which
 		// field of a provider it does not name is a secret.
-	}, append([]string{os.Getenv(envForgeAPIKey), tenantPassword, dbPassword}, deployConfig.Credentials()...), nil
+	}), append([]string{os.Getenv(envForgeAPIKey), tenantPassword, dbPassword}, deployConfig.Credentials()...), nil
+}
+
+// allowTenantNodeLabels returns stack allowlisting the reserved node-role labels this run's tenant pools set.
+func allowTenantNodeLabels(stack site.Stack) site.Stack {
+	stack.NodeMetadataAllowlistedLabelKeys = tenantRoleLabelKeys(monitoringWorkers)
+	return stack
 }
 
 // apiServerReachable reports whether the forwarded kubeconfig reaches the

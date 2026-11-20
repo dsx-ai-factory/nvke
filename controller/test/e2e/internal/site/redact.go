@@ -24,6 +24,11 @@ const (
 	redactedMarker = "[redacted by the e2e suite]"
 )
 
+// RedactArchive returns data, a gzipped tar, with each secret replaced in every member.
+func RedactArchive(data []byte, secrets ...string) ([]byte, error) {
+	return redactArchive(data, secrets)
+}
+
 // redactArchive rewrites a gzipped tar, replacing every occurrence of each
 // secret in every member's contents.
 //

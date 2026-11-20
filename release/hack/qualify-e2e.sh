@@ -103,8 +103,8 @@ inputs() {
     run)
       echo KEEP_SITE KEEP_TENANT DRY_RUN SITE_TENANT_EXCLUDE SITE_STAGE SITE_NVKE_CONTROLLER_VERSION CLI_VERSION \
         CAPI_PROVISIONED_VERSION OS_IMAGE_VERSIONS CAPABILITIES SITE_ENVIRONMENT \
-        NVKE_CONTROLLER_NAMESPACE NVKE_CONTROLLER_SERVICE E2E_TENANT_WORKERS SUITE_TIMEOUT_MINUTES \
-        TENANT_GPU_RUNTIME
+        NVKE_CONTROLLER_NAMESPACE NVKE_CONTROLLER_SERVICE E2E_TENANT_WORKERS E2E_MONITORING_WORKERS \
+        SUITE_TIMEOUT_MINUTES TENANT_GPU_RUNTIME E2E_KAPS_BENCH_RUN_SPECS E2E_KAPS_BENCH_DIR
       ;;
   esac
 }
@@ -122,13 +122,14 @@ require_inputs() {
 # What the suite writes in its package directory, and the ones of them that
 # are text and so can carry a credential in an error message.
 artifacts=(qualify-e2e.log qualify-e2e.junit.xml qualify-e2e.report.json
-  nvkectl-diagnostics.tar.gz tenant-diagnostics.json site-cluster-state.txt)
+  nvkectl-diagnostics.tar.gz tenant-diagnostics.json site-cluster-state.txt kaps-bench-results.tar.gz)
 scrubbed=(qualify-e2e.log qualify-e2e.junit.xml qualify-e2e.report.json tenant-diagnostics.json site-cluster-state.txt)
 
 # One entry per stream of every combination. A stream's parameters are what
-# its run is configured with: the environment file, the tenant's workers and
-# the suite's timeout. job_timeout_minutes is what the job's timeout-minutes
-# reads, so it is derived here from the suite's timeout with the rest.
+# its run is configured with: the environment file, the tenant's workers,
+# the suite's timeout and the kaps-bench run specs. job_timeout_minutes is
+# what the job's timeout-minutes reads, so it is derived here from the suite's
+# timeout with the rest.
 matrix_entries() {
   jq -c --argjson suite "${default_suite_minutes}" \
     --argjson overhead "$((cleanup_minutes + setup_minutes))" \
@@ -166,7 +167,9 @@ matrix_entries() {
           controller_version_strategy: versionStrategy($all; "controller"),
           environment: ($s.parameters.environment // ""),
           tenant_workers: (($s.parameters.tenantWorkers // 0) | if . == 0 then "" else tostring end),
+          monitoring_workers: (($s.parameters.monitoringWorkers // 0) | if . == 0 then "" else tostring end),
           suite_timeout_minutes: (($s.parameters.suiteTimeoutMinutes // 0) | if . == 0 then "" else tostring end),
+          kaps_bench_run_specs: (($s.parameters.kapsBenchRunSpecs // []) | join(",")),
           job_timeout_minutes: (($s.parameters.suiteTimeoutMinutes // $suite) + $overhead),
           job_timeout_minutes_gpu_runtime: (($s.parameters.suiteTimeoutMinutes // $suite) + $overhead + $gpu_runtime)
         }
@@ -228,11 +231,13 @@ step_stream_env() {
   emit UBUNTU "$(field ubuntu)"
   emit CAPI_PROVISIONED_VERSION "$(field capi_provisioned)"
   # The stream's run settings. Empty leaves the run as it is for a stream that
-  # names none: the provider's environment, a one worker tenant and the default
-  # suite timeout.
+  # names none: the provider's environment, a one worker tenant with no
+  # monitoring node, the default suite timeout and no kaps-bench.
   emit E2E_ENVIRONMENT "$(field environment)"
   emit E2E_TENANT_WORKERS "$(field tenant_workers)"
+  emit E2E_MONITORING_WORKERS "$(field monitoring_workers)"
   emit SUITE_TIMEOUT_MINUTES "$(field suite_timeout_minutes)"
+  emit E2E_KAPS_BENCH_RUN_SPECS "$(field kaps_bench_run_specs)"
 }
 
 # nvkectl is a client of the controller it bootstraps, so the two have to agree
@@ -732,8 +737,12 @@ step_run() {
   fi
   local workers=()
   [ -z "${E2E_TENANT_WORKERS}" ] || workers=(-e2e.tenant-workers="${E2E_TENANT_WORKERS}")
+  [ -z "${E2E_MONITORING_WORKERS}" ] || workers+=(-e2e.monitoring-workers="${E2E_MONITORING_WORKERS}")
   local gpu_runtime=()
   [ "${TENANT_GPU_RUNTIME}" != "true" ] || gpu_runtime=(-e2e.tenant-gpu-runtime)
+  local kaps_bench=()
+  [ -z "${E2E_KAPS_BENCH_RUN_SPECS}" ] || kaps_bench+=(-e2e.kaps-bench-run-specs="${E2E_KAPS_BENCH_RUN_SPECS}")
+  [ -z "${E2E_KAPS_BENCH_DIR}" ] || kaps_bench+=(-e2e.kaps-bench-dir="${E2E_KAPS_BENCH_DIR}")
   # -v so a green run keeps its output. Without it `go test` buffers a
   # passing package's stdout and throws it away, which is what run
   # 36033032946 did: the first successful bootstrap on hardware, and
@@ -778,6 +787,7 @@ step_run() {
       echo "  -e2e.capabilities=${CAPABILITIES}"
       [ -z "${workers[*]:-}" ] || echo "  ${workers[*]}"
       [ -z "${gpu_runtime[*]:-}" ] || echo "  ${gpu_runtime[*]}"
+      [ -z "${kaps_bench[*]:-}" ] || echo "  ${kaps_bench[*]}"
       echo "  -ginkgo.timeout=${ginkgo_timeout} -timeout ${go_timeout}"
       echo "  keep: ${keep[*]:-no}"
       echo "  keep tenants: ${KEEP_TENANT}"
@@ -798,7 +808,7 @@ step_run() {
     -e2e.site-stage="${SITE_STAGE}" \
     -e2e.versions="${versions}" \
     -e2e.capabilities="${CAPABILITIES}" \
-    ${keep[@]+"${keep[@]}"} ${workers[@]+"${workers[@]}"} ${gpu_runtime[@]+"${gpu_runtime[@]}"} 2>&1 | log_to qualify-e2e.log
+    ${keep[@]+"${keep[@]}"} ${workers[@]+"${workers[@]}"} ${gpu_runtime[@]+"${gpu_runtime[@]}"} ${kaps_bench[@]+"${kaps_bench[@]}"} 2>&1 | log_to qualify-e2e.log
 }
 
 # The variables withhold scrubs and run masks.

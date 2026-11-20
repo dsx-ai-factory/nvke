@@ -4,8 +4,11 @@
 package qualification
 
 import (
+	"errors"
 	"fmt"
+	"path/filepath"
 	"regexp"
+	"strings"
 )
 
 // Policy is release/policy.yaml: the matrix a release can be qualified
@@ -61,6 +64,9 @@ type Parameters struct {
 	// TenantWorkers is how many workers the hardware tenant gets.
 	TenantWorkers int `json:"tenantWorkers,omitempty"`
 
+	// MonitoringWorkers is how many monitoring nodes the hardware tenant gets beside its workers.
+	MonitoringWorkers int `json:"monitoringWorkers,omitempty"`
+
 	// SuiteTimeoutMinutes is how long the suite may run before Ginkgo stops it
 	// and tears the machines down. The timeouts around it are derived from
 	// this one, so they cannot be set to disagree.
@@ -68,6 +74,10 @@ type Parameters struct {
 
 	// TestGridGroup names the TestGrid group the stream publishes to, in place of the subject.
 	TestGridGroup string `json:"testGridGroup,omitempty"`
+
+	// KapsBenchRunSpecs are the kaps-bench run specs the suite runs, in order,
+	// on the tenant once its checks pass.
+	KapsBenchRunSpecs []string `json:"kapsBenchRunSpecs,omitempty"`
 }
 
 // segmentName is what an environment file's or TestGrid group's name may be:
@@ -75,7 +85,8 @@ type Parameters struct {
 var segmentName = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
 // validate rejects an environment or TestGrid group that is not one path
-// segment, and a count that is negative.
+// segment, a count that is negative, an empty run spec list and a run spec
+// the suite's comma separated flag cannot carry.
 func (p Parameters) validate() error {
 	if p.Environment != "" && !segmentName.MatchString(p.Environment) {
 		return fmt.Errorf("environment %q is not an environment file's name", p.Environment)
@@ -86,8 +97,19 @@ func (p Parameters) validate() error {
 	if p.TenantWorkers < 0 {
 		return fmt.Errorf("tenantWorkers is %d, and a tenant needs at least one worker", p.TenantWorkers)
 	}
+	if p.MonitoringWorkers < 0 {
+		return fmt.Errorf("monitoringWorkers is %d, which is not a number of nodes", p.MonitoringWorkers)
+	}
 	if p.SuiteTimeoutMinutes < 0 {
 		return fmt.Errorf("suiteTimeoutMinutes is %d, which is not a duration", p.SuiteTimeoutMinutes)
+	}
+	if p.KapsBenchRunSpecs != nil && len(p.KapsBenchRunSpecs) == 0 {
+		return errors.New("kapsBenchRunSpecs is empty; leave it out to run no kaps-bench")
+	}
+	for _, spec := range p.KapsBenchRunSpecs {
+		if !filepath.IsLocal(spec) || strings.Contains(spec, ",") {
+			return fmt.Errorf("kapsBenchRunSpecs entry %q is not a relative path under run-specs without a comma", spec)
+		}
 	}
 	return nil
 }
