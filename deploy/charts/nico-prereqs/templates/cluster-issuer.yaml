@@ -1,0 +1,51 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+A cert-manager CA chain under the name NICo expects of its Vault PKI issuer, so
+that a cluster with no Vault can still issue NICo's service certificates.
+
+NOT a substitute for Vault PKI on a real site: no revocation, no audit trail,
+no rotation story, and the CA private key lives in a Secret in this cluster.
+
+The CA Secret is in cert-manager's --cluster-resource-namespace, which is where
+a ClusterIssuer of type `ca` reads from. That namespace is cert-manager's own
+installation namespace by default.
+*/ -}}
+{{- if .Values.certManager.issuer.create }}
+{{- $i := .Values.certManager.issuer }}
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ $i.bootstrapIssuerName }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $i.caSecretName }}
+  namespace: {{ .Values.certManager.clusterResourceNamespace | default "cert-manager" }}
+spec:
+  isCA: true
+  commonName: {{ $i.commonName | quote }}
+  duration: {{ $i.duration }}
+  renewBefore: {{ $i.renewBefore }}
+  secretName: {{ $i.caSecretName }}
+  privateKey:
+    algorithm: {{ $i.privateKey.algorithm }}
+    size: {{ $i.privateKey.size }}
+  issuerRef:
+    name: {{ $i.bootstrapIssuerName }}
+    kind: ClusterIssuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: {{ $i.name }}
+spec:
+  ca:
+    secretName: {{ $i.caSecretName }}
+{{- end }}

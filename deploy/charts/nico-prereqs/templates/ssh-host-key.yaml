@@ -1,0 +1,28 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+
+The host key nico-ssh-console-rs presents to every client that opens a machine
+console. Supplied, never generated:
+
+  ssh-keygen -t ed25519 -f ./ssh_host_ed25519_key -N ""
+  helm ... --set-file sshHostKey.privateKey=./ssh_host_ed25519_key
+
+Helm would mint a new key on every upgrade, and every client holding the old
+one would then report a host-key mismatch.
+*/ -}}
+{{- if .Values.sshHostKey.create }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ .Values.sshHostKey.name }}
+  namespace: {{ include "nico-prereqs.namespace" . }}
+  annotations:
+    # Keep the key across an uninstall, for the same reason it is not
+    # generated here.
+    helm.sh/resource-policy: keep
+type: Opaque
+stringData:
+  ssh_host_ed25519_key: |
+{{ required "sshHostKey.privateKey is required when sshHostKey.create is true. Generate one with: ssh-keygen -t ed25519 -f ./ssh_host_ed25519_key -N \"\"  then pass --set-file sshHostKey.privateKey=./ssh_host_ed25519_key" .Values.sshHostKey.privateKey | indent 4 }}
+{{- end }}

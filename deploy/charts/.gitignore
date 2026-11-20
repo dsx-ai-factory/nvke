@@ -1,0 +1,9 @@
+# Dependency archives and the lock that records where they were resolved from.
+#
+# Not committed: `helm dependency build` writes the RESOLVED repository URL
+# into Chart.lock, and the NICo chart is reached through a local repository
+# alias whose URL is a property of whoever installs it, not of this repository.
+#
+# Rebuild them with:  helm dependency build deploy/charts/<chart>
+charts/
+Chart.lock

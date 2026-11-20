@@ -1,0 +1,15 @@
+NICo is installed in {{ .Release.Namespace }}.
+
+Check it:
+
+  kubectl -n {{ .Release.Namespace }} get pods
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/nico-api
+
+The schema was created and migrated by the migration Job, which ran as a
+pre-install hook before any of this was applied:
+
+  kubectl -n {{ .Release.Namespace }} get jobs
+
+Replace the placeholder resource pools in nico.nico-api.siteConfig with the
+site's real address plan -- nico-api exits at startup without pools, and the
+ranges shipped here are examples.

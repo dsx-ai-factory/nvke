@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v2
+name: nvke-nico-stack
+description: NVKE and NICo and what they run on, in one release
+type: application
+version: 0.1.0
+appVersion: "0.2.0"
+keywords:
+  - nvke
+  - nico
+  - spire
+home: https://github.com/dsx-ai-factory/nvke
+sources:
+  - https://github.com/dsx-ai-factory/nvke
+
+# ONE RELEASE, AND IT NEEDS A NICo CHART THAT HAS NO HELM HOOKS.
+#
+# Through NICo 2.4 the nico-api schema migration Job and its database-config
+# ConfigMap were pre-install,pre-upgrade hooks. Helm applies hooks before every
+# ordinary manifest in the same release, so they ran before the Namespace, the
+# database and the credentials Secret this release creates, and the install
+# failed with:
+#
+#   Hook pre-upgrade .../nico-api/templates/configmap.yaml failed:
+#   namespaces "forge-system" not found
+#
+# dsx-ai-factory/infra-controller#8270 makes both ordinary manifests, and the
+# migration Job waits by retrying instead. With that, one release works: helm's
+# own apply order puts the Namespace first and the Secret long before the Job,
+# and the Job retries until PostgreSQL accepts connections.
+#
+# Against a NICo chart WITHOUT that change, set nvke-nico.enabled=false and
+# install ../nico-prereqs and ../nico as their own releases, in that order.
+# ../README.md has the sequence.
+
+dependencies:
+  # A default StorageClass, for a cluster that has none. Off by default: kind
+  # ships one and a cluster with real storage brings its own CSI driver.
+  - name: nvke-storage
+    version: "0.1.0"
+    repository: "file://../storage"
+    condition: nvke-storage.enabled
+
+  - name: nvke-spire
+    version: "0.1.0"
+    repository: "file://../spire"
+    condition: nvke-spire.enabled
+
+  - name: nvke
+    version: "0.1.0"
+    repository: "file://../nvke"
+    condition: nvke.enabled
+
+  # NICo's database, credentials and certificate issuer. Still a chart of its
+  # own so the sequenced install keeps working; inside this release it is just
+  # another set of manifests, applied before NICo's Job by helm's apply order.
+  - name: nico-prereqs
+    version: "0.1.0"
+    repository: "file://../nico-prereqs"
+    condition: nico-prereqs.enabled
+
+  # Carries the NICo umbrella chart through the `nico` repository alias, so
+  # `helm dependency build ../nico` has to run before this chart's.
+  - name: nico
+    alias: nvke-nico
+    version: "0.1.0"
+    repository: "file://../nico"
+    condition: nvke-nico.enabled
