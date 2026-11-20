@@ -7,7 +7,7 @@ artifact helm 5ea2d6bc2cda3f8edf985e028809f5a9278f404fb8ab24044de9b7cb9b79a691 h
 artifact kubeadm 065f7de266c59831676cc48b50f404fd18d1f6464502d53980957158e4cab3a7 https://dl.k8s.io/release/v1.34.2/bin/linux/arm64/kubeadm
 artifact kubectl 95df604e914941f3172a93fa8feeb1a1a50f4011dfbe0c01e01b660afc8f9b85 https://dl.k8s.io/release/v1.34.2/bin/linux/arm64/kubectl
 artifact kubelet 3e31b1bee9ab32264a67af8a19679777cd372b1c3a04b5d7621289cf137b357c https://dl.k8s.io/release/v1.34.2/bin/linux/arm64/kubelet
-artifact runc bd843d75a788e612c9df286b1fa519a44fcbb7a7b8d01e2268431433cc7c718c https://github.com/opencontainers/runc/releases/download/v1.3.5/runc.arm64
+artifact runc 9edac6cba77b34d955bcdbf7001a1193f8964b255f0a7cf06ced3adf11f7cc00 https://github.com/opencontainers/runc/releases/download/v1.3.7/runc.arm64
 image registry.k8s.io/coredns/coredns:v1.12.1 sha256:4779e7517f375a597f100524db6f7f8b5b8499a6ccd14aacfa65432d4cfd5789
 image registry.k8s.io/etcd:3.6.5-0 sha256:0f87957e19b97d01b2c70813ee5c4949f8674deac4a65f7167c4cd85f7f2941e
 image registry.k8s.io/kube-apiserver:v1.34.2 sha256:9a94f333d6fe202d804910534ef052b2cfa650982cdcbe48e92339c8d314dd84
