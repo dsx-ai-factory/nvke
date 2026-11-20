@@ -81,6 +81,15 @@ func TestClient_ValidateNodeAgentProfile_KubeVirt(t *testing.T) {
 			nodePool: kubeVirtPool,
 			wantErr:  errKubeVirtRequiresTLSJWT,
 		},
+		"KubeVirt with TLS/JWT, no SPIFFE and no external mTLS": {
+			profile:  db.Node{NodeAgentTLSJWTEnabled: true},
+			nodePool: kubeVirtPool,
+			wantErr:  errKubeVirtRequiresTLSJWT,
+		},
+		"KubeVirt with TLS/JWT, no SPIFFE and external mTLS": {
+			profile:  db.Node{NodeAgentTLSJWTEnabled: true, NodeAgentExternalMTLSEnabled: true},
+			nodePool: kubeVirtPool,
+		},
 		"KubeVirt with TLS/JWT and external mTLS": {
 			profile:  db.Node{SpiffeEnabled: true, NodeAgentExternalMTLSEnabled: true, NodeAgentTLSJWTEnabled: true},
 			nodePool: kubeVirtPool,

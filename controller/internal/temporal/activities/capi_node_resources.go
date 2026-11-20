@@ -174,7 +174,8 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 	}
 
 	// The node agent Service is created before the node records that it is a
-	// KubeVirt VM, so the Machine is checked too.
+	// KubeVirt VM, so the Machine is checked too. Delete it before the Machine
+	// so a retry can still tell.
 	kubeVirtVM := node.IsKubeVirtVM()
 	if !kubeVirtVM {
 		existing := &clusterv1.Machine{}
@@ -183,6 +184,15 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 			return fmt.Errorf("failed to get machine %s: %w", machine.Name, err)
 		}
 		kubeVirtVM = err == nil && capi.IsKubeVirtMachineRef(existing.Spec.InfrastructureRef)
+	}
+	if kubeVirtVM {
+		cluster, err := a.GetCluster(ctx, node.ClusterID)
+		if err != nil {
+			return err
+		}
+		if err := a.kubeVirtAgentEndpoint().Delete(ctx, cluster, node); err != nil {
+			return err
+		}
 	}
 
 	forgeInstanceID, forgeMachineID := forgeIdentityFromNode(node)
@@ -217,16 +227,6 @@ func (a *Activities) DeleteCAPIMachineForNode(ctx context.Context, input DeleteC
 	if input.Wait {
 		if err := waitForObjectDeleted(ctx, a.k8sClient, bootstrapSecret); err != nil {
 			return fmt.Errorf("failed waiting for bootstrap secret %s deletion: %w", bootstrapSecret.Name, err)
-		}
-	}
-
-	if kubeVirtVM {
-		cluster, err := a.GetCluster(ctx, node.ClusterID)
-		if err != nil {
-			return err
-		}
-		if err := a.kubeVirtAgentEndpoint().Delete(ctx, cluster, node); err != nil {
-			return err
 		}
 	}
 

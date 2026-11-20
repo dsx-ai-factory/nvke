@@ -1340,10 +1340,10 @@ func TestDeleteCAPIMachineForNode_DeletesKubeVirtAgentEndpoint(t *testing.T) {
 		machine *clusterv1.Machine
 	}{
 		"node recorded as a KubeVirt VM": {
-			node: db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0", Capi: &db.CAPINodeProvider{KubeVirtVM: true}},
+			node: db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0", NodeAgentTLSJWTEnabled: true, Capi: &db.CAPINodeProvider{KubeVirtVM: true}},
 		},
 		"machine is a KubevirtMachine before the node records it": {
-			node: db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0"},
+			node: db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0", NodeAgentTLSJWTEnabled: true},
 			machine: &clusterv1.Machine{
 				ObjectMeta: metav1.ObjectMeta{Name: "worker-0", Namespace: constants.LegacyManagementNamespace},
 				Spec: clusterv1.MachineSpec{InfrastructureRef: clusterv1.ContractVersionedObjectReference{
@@ -1382,4 +1382,33 @@ func TestDeleteCAPIMachineForNode_DeletesKubeVirtAgentEndpoint(t *testing.T) {
 			mockDB.AssertExpectations(t)
 		})
 	}
+}
+
+func TestDeleteCAPIMachineForNode_KeepsKubeVirtMachineUntilEndpointIsDeleted(t *testing.T) {
+	ctx := context.Background()
+	nodeID := uuid.MustParse("74000000-0000-0000-0000-000000000031")
+	clusterID := uuid.MustParse("74000000-0000-0000-0000-000000000032")
+	machine := &clusterv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{Name: "worker-0", Namespace: constants.LegacyManagementNamespace},
+		Spec: clusterv1.MachineSpec{InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+			APIGroup: "infrastructure.cluster.x-k8s.io", Kind: "KubevirtMachine", Name: "worker-0",
+		}},
+	}
+	scheme := runtime.NewScheme()
+	require.NoError(t, corev1.AddToScheme(scheme))
+	require.NoError(t, clusterv1.AddToScheme(scheme))
+	k8sClient := fake.NewClientBuilder().WithScheme(scheme).WithObjects(machine).Build()
+
+	mockDB := &testutil.MockDB{}
+	mockDB.On("GetNode", mock.Anything, nodeID).Return(db.Node{ID: nodeID, ClusterID: clusterID, Name: "worker-0"}, nil).Once()
+	mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{}, errors.New("database unavailable")).Once()
+	a := &Activities{db: mockDB, k8sClient: k8sClient}
+
+	env := (&testsuite.WorkflowTestSuite{}).NewTestActivityEnvironment()
+	env.RegisterActivity(a.DeleteCAPIMachineForNode)
+	_, err := env.ExecuteActivity(a.DeleteCAPIMachineForNode, DeleteCAPIMachineForNodeInput{NodeID: nodeID})
+	require.Error(t, err)
+
+	require.NoError(t, k8sClient.Get(ctx, client.ObjectKeyFromObject(machine), &clusterv1.Machine{}), "a retry must still find the KubevirtMachine")
+	mockDB.AssertExpectations(t)
 }
