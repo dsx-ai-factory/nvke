@@ -101,6 +101,11 @@ type ClientInterface interface {
 
 	CreateCluster(ctx context.Context, body CreateClusterJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// AdoptClusterWithBody request with any body
+	AdoptClusterWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	AdoptCluster(ctx context.Context, body AdoptClusterJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DeleteCluster request
 	DeleteCluster(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -195,6 +200,30 @@ func (c *Client) CreateClusterWithBody(ctx context.Context, contentType string, 
 
 func (c *Client) CreateCluster(ctx context.Context, body CreateClusterJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateClusterRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AdoptClusterWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAdoptClusterRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) AdoptCluster(ctx context.Context, body AdoptClusterJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAdoptClusterRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -561,6 +590,46 @@ func NewCreateClusterRequestWithBody(server, contentType string, body io.Reader)
 	}
 
 	operationPath := fmt.Sprintf("/clusters")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewAdoptClusterRequest calls the generic AdoptCluster builder with application/json body
+func NewAdoptClusterRequest(server string, body AdoptClusterJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewAdoptClusterRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewAdoptClusterRequestWithBody generates requests for AdoptCluster with any type of body
+func NewAdoptClusterRequestWithBody(server, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/clusters/adopt")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -1444,6 +1513,11 @@ type ClientWithResponsesInterface interface {
 
 	CreateClusterWithResponse(ctx context.Context, body CreateClusterJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateClusterClientResponse, error)
 
+	// AdoptClusterWithBodyWithResponse request with any body
+	AdoptClusterWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AdoptClusterClientResponse, error)
+
+	AdoptClusterWithResponse(ctx context.Context, body AdoptClusterJSONRequestBody, reqEditors ...RequestEditorFn) (*AdoptClusterClientResponse, error)
+
 	// DeleteClusterWithResponse request
 	DeleteClusterWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteClusterClientResponse, error)
 
@@ -1561,11 +1635,38 @@ func (r CreateClusterClientResponse) StatusCode() int {
 	return 0
 }
 
+type AdoptClusterClientResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *Cluster
+	JSON400      *GenericError
+	JSON401      *Unauthorized
+	JSON403      *Forbidden
+	JSON404      *GenericError
+}
+
+// Status returns HTTPResponse.Status
+func (r AdoptClusterClientResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AdoptClusterClientResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type DeleteClusterClientResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON401      *Unauthorized
 	JSON403      *Forbidden
+	JSON409      *GenericError
 }
 
 // Status returns HTTPResponse.Status
@@ -2048,6 +2149,23 @@ func (c *ClientWithResponses) CreateClusterWithResponse(ctx context.Context, bod
 	return ParseCreateClusterClientResponse(rsp)
 }
 
+// AdoptClusterWithBodyWithResponse request with arbitrary body returning *AdoptClusterClientResponse
+func (c *ClientWithResponses) AdoptClusterWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AdoptClusterClientResponse, error) {
+	rsp, err := c.AdoptClusterWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAdoptClusterClientResponse(rsp)
+}
+
+func (c *ClientWithResponses) AdoptClusterWithResponse(ctx context.Context, body AdoptClusterJSONRequestBody, reqEditors ...RequestEditorFn) (*AdoptClusterClientResponse, error) {
+	rsp, err := c.AdoptCluster(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAdoptClusterClientResponse(rsp)
+}
+
 // DeleteClusterWithResponse request returning *DeleteClusterClientResponse
 func (c *ClientWithResponses) DeleteClusterWithResponse(ctx context.Context, clusterID openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteClusterClientResponse, error) {
 	rsp, err := c.DeleteCluster(ctx, clusterID, reqEditors...)
@@ -2346,6 +2464,60 @@ func ParseCreateClusterClientResponse(rsp *http.Response) (*CreateClusterClientR
 	return response, nil
 }
 
+// ParseAdoptClusterClientResponse parses an HTTP response from a AdoptClusterWithResponse call
+func ParseAdoptClusterClientResponse(rsp *http.Response) (*AdoptClusterClientResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AdoptClusterClientResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Cluster
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest GenericError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthorized
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest Forbidden
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest GenericError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseDeleteClusterClientResponse parses an HTTP response from a DeleteClusterWithResponse call
 func ParseDeleteClusterClientResponse(rsp *http.Response) (*DeleteClusterClientResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2373,6 +2545,13 @@ func ParseDeleteClusterClientResponse(rsp *http.Response) (*DeleteClusterClientR
 			return nil, err
 		}
 		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest GenericError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	}
 

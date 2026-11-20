@@ -302,6 +302,15 @@ func (m *MockTx) CreateCluster(ctx context.Context, cluster *db.Cluster) (db.Clu
 	return v, args.Error(1)
 }
 
+func (m *MockTx) ListClusters(ctx context.Context, filters db.ClusterFilters) ([]db.Cluster, error) {
+	args := m.Called(ctx, filters)
+	v, ok := args.Get(0).([]db.Cluster)
+	if !ok {
+		return nil, args.Error(1)
+	}
+	return v, args.Error(1)
+}
+
 func (m *MockTx) GetCluster(ctx context.Context, id uuid.UUID) (db.Cluster, error) {
 	args := m.Called(ctx, id)
 	v, ok := args.Get(0).(db.Cluster)

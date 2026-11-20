@@ -257,6 +257,17 @@ type Cluster struct {
 	NodeAgentUpgrade *NodeAgentUpgradeStatus `json:"nodeAgentUpgrade,omitempty"`
 }
 
+// ClusterAdoption Required by `adoptCluster` and rejected by `createCluster`.
+// `credentialsSecretRef` names the Secret holding the site kubeconfig under
+// the key `kubeconfig`, used only to look up `nodes`.
+type ClusterAdoption struct {
+	// CredentialsSecretRef A Secret in the cluster the controller runs on.
+	CredentialsSecretRef SecretReference `json:"credentialsSecretRef"`
+
+	// Nodes The Kubernetes names of the control-plane nodes to adopt. Each must be a control-plane node of the cluster with an InternalIP.
+	Nodes []string `json:"nodes"`
+}
+
 // ClusterConditions Lifecycle conditions of a cluster. Each is a Condition.
 type ClusterConditions struct {
 	// CertificateRenewal The accepted, succeeded, or failed state of the most recent certificate-renewal cycle.
@@ -625,6 +636,11 @@ type CreateClusterRequest struct {
 
 	// NodePools Initial worker node pools.
 	NodePools *[]NodePoolCreateConfig `json:"nodePools,omitempty"`
+
+	// Adoption Required by `adoptCluster` and rejected by `createCluster`.
+	// `credentialsSecretRef` names the Secret holding the site kubeconfig under
+	// the key `kubeconfig`, used only to look up `nodes`.
+	Adoption *ClusterAdoption `json:"adoption,omitempty"`
 
 	// ControlPlaneConfig Writable cluster-level control plane configuration supplied at cluster creation.
 	// Required when you create a cluster.
@@ -1328,6 +1344,9 @@ type NodeAgentUpgradeStatusPhase string
 // provisioning, readyToJoin, joined and provisioned; deletion moves through
 // deleteRequested (control-plane nodes) and deleting.
 type NodeConditions struct {
+	// AdoptedSeed Control-plane nodes of an adopted cluster only. True for a node that ran before NVKE adopted the cluster. Its operator manages it outside NVKE, which never upgrades, replaces or deletes it.
+	AdoptedSeed *Condition `json:"adoptedSeed,omitempty"`
+
 	// ControlPlanePreferredReplacement Control-plane nodes only. True while the node is a control-plane rebalance surge — a more-preferred replacement brought up to shed a less-preferred member.
 	ControlPlanePreferredReplacement *Condition `json:"controlPlanePreferredReplacement,omitempty"`
 
@@ -1627,6 +1646,15 @@ type Release struct {
 	Name string `json:"name"`
 }
 
+// SecretReference A Secret in the cluster the controller runs on.
+type SecretReference struct {
+	// Name The Secret's name.
+	Name string `json:"name"`
+
+	// Namespace Defaults to the controller's namespace.
+	Namespace string `json:"namespace,omitempty"`
+}
+
 // SpireServer A SPIRE server address the cluster's SPIRE agents dial.
 type SpireServer struct {
 	// Address Host name or IP address of the SPIRE server.
@@ -1860,6 +1888,9 @@ type ListNodesParams struct {
 
 // CreateClusterJSONRequestBody defines body for CreateCluster for application/json ContentType.
 type CreateClusterJSONRequestBody = CreateClusterRequest
+
+// AdoptClusterJSONRequestBody defines body for AdoptCluster for application/json ContentType.
+type AdoptClusterJSONRequestBody = CreateClusterRequest
 
 // UpdateClusterJSONRequestBody defines body for UpdateCluster for application/json ContentType.
 type UpdateClusterJSONRequestBody = UpdateClusterRequest

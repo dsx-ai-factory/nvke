@@ -229,6 +229,27 @@ func TestUnit_ReconcileSkipsNodeWithoutRemediationLabels(t *testing.T) {
 	require.Empty(t, workflowClient.calls)
 }
 
+func TestUnit_ReconcileSkipsAdoptedControlPlaneNode(t *testing.T) {
+	clusterID := uuid.New()
+	nodeName := "cp-1"
+	dbNode := db.Node{
+		ID: uuid.New(), ClusterID: clusterID, Name: nodeName, ControlPlane: true,
+		Conditions: db.NodeConditions{AdoptedSeed: db.NewCondition(true, "adopted")},
+	}
+	kubeNode := &corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: nodeName, Labels: map[string]string{keys.Terminate.String(): "replace-node"}}}
+
+	database := &testutil.MockDB{}
+	database.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{dbNode}, nil).Once()
+
+	workflowClient := &recordingWorkflowStarter{}
+	reconciler := newTestReconciler(t, clusterID, database, workflowClient, kubeNode)
+
+	result, err := reconciler.Reconcile(context.Background(), reconcile.Request{NamespacedName: types.NamespacedName{Name: nodeName}})
+	require.NoError(t, err)
+	require.Empty(t, result)
+	require.Empty(t, workflowClient.calls, "a terminate label must not tear down an adopted control-plane node")
+}
+
 func TestUnit_ReconcileSkipsDeletedKubernetesNode(t *testing.T) {
 	clusterID := uuid.New()
 	nodeID := uuid.New()

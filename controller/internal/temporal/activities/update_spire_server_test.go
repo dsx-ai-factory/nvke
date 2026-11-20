@@ -66,6 +66,24 @@ func TestReconfigureNodeSpireAgent(t *testing.T) {
 	}
 }
 
+func TestReconfigureNodeSpireAgentSkipsAdoptedControlPlaneNode(t *testing.T) {
+	nodeID := uuid.New()
+	database := &testutil.MockDB{}
+	database.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+		ID: nodeID, Name: "cp-1", ControlPlane: true, Conditions: db.NodeConditions{AdoptedSeed: db.NewCondition(true, "adopted")},
+	}, nil).Once()
+	fakeAgent := &agenttest.FakeClient{ReconfigureSpireAgentHook: func(context.Context, db.Node, *nvkeproto.ReconfigureSpireAgentRequest) (*nvkeproto.ReconfigureSpireAgentResponse, error) {
+		t.Fatal("an adopted control-plane node's SPIRE agent must not be reconfigured")
+		return &nvkeproto.ReconfigureSpireAgentResponse{}, nil
+	}}
+	a := &Activities{db: database, nodeAgentClient: fakeAgent}
+
+	_, err := a.ReconfigureNodeSpireAgent(context.Background(), ReconfigureNodeSpireAgentInput{NodeID: nodeID, Address: "spire.example.test", Port: 8081})
+
+	require.NoError(t, err)
+	database.AssertExpectations(t)
+}
+
 func TestClearSpireServerUpdateInProgress(t *testing.T) {
 	startedAt := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
 	tests := []struct {

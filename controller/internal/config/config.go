@@ -433,6 +433,9 @@ type Config struct {
 
 	// KubeVip configures kube-vip BGP ASNs.
 	KubeVip KubeVipConfig
+
+	// ClusterAdoptionEnabled serves POST /clusters/adopt. Off, the endpoint answers 404.
+	ClusterAdoptionEnabled bool `controllerconfig:"clusterAdoptionEnabled"`
 }
 
 // KubeVipConfig configures kube-vip on workload control-plane nodes.

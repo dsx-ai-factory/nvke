@@ -28,6 +28,10 @@ const (
 
 type ProvisionClusterInput struct {
 	ClusterID uuid.UUID
+	// Adopted marks a cluster whose control plane already runs (POST
+	// /clusters/adopt): it gets the CAPI scaffold and the add-ons, but no node
+	// is waited for and kubeadm init never runs against it.
+	Adopted bool
 }
 
 func ProvisionCluster(ctx workflow.Context, input ProvisionClusterInput) error {
@@ -54,23 +58,10 @@ func provisionCluster(ctx workflow.Context, input ProvisionClusterInput) error {
 		return fmt.Errorf("failed to create CAPI resources: %w", err)
 	}
 
-	// Wait for one of the control plane nodes to be ready to join, choose it as the initial node
-	initialNodeID, err := waitForControlPlaneNodeReadyToJoin(ctx, input.ClusterID)
-	if err != nil {
-		return fmt.Errorf("failed to wait for a control plane node to be ready to join: %w", err)
-	}
-
-	if err := configureInitialNodeKubeVip(ctx, input.ClusterID, initialNodeID); err != nil {
-		return fmt.Errorf("failed to configure initial node KubeVip: %w", err)
-	}
-
-	// Create the cluster with a single node -- remaining CP nodes join via JoinNode (started by the control-plane controller)
-	if err := kubeadmInitWithCNI(ctx, input.ClusterID, initialNodeID); err != nil {
-		return err
-	}
-
-	if err := markInitialNodeAsJoined(ctx, initialNodeID); err != nil {
-		return fmt.Errorf("failed to mark initial control plane node as joined: %w", err)
+	if !input.Adopted {
+		if err := initControlPlane(ctx, input.ClusterID); err != nil {
+			return err
+		}
 	}
 
 	// This could be expanded into an add-on system later, but for now this is the only thing we install after cluster creation
@@ -93,6 +84,27 @@ func provisionCluster(ctx workflow.Context, input ProvisionClusterInput) error {
 		return fmt.Errorf("failed to mark cluster as provisioned: %w", err)
 	}
 
+	return nil
+}
+
+// initControlPlane builds the control plane on its first node: wait for a node
+// ready to join, put kube-vip on it, run kubeadm init and the CNI, and mark it
+// joined. The remaining control-plane nodes join through JoinNode, started by
+// the control-plane controller.
+func initControlPlane(ctx workflow.Context, clusterID uuid.UUID) error {
+	initialNodeID, err := waitForControlPlaneNodeReadyToJoin(ctx, clusterID)
+	if err != nil {
+		return fmt.Errorf("failed to wait for a control plane node to be ready to join: %w", err)
+	}
+	if err := configureInitialNodeKubeVip(ctx, clusterID, initialNodeID); err != nil {
+		return fmt.Errorf("failed to configure initial node KubeVip: %w", err)
+	}
+	if err := kubeadmInitWithCNI(ctx, clusterID, initialNodeID); err != nil {
+		return err
+	}
+	if err := markInitialNodeAsJoined(ctx, initialNodeID); err != nil {
+		return fmt.Errorf("failed to mark initial control plane node as joined: %w", err)
+	}
 	return nil
 }
 

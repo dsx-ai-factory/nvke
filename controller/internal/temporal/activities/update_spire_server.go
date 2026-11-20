@@ -41,6 +41,10 @@ func (a *Activities) ReconfigureNodeSpireAgent(ctx context.Context, input Reconf
 		}
 		return ReconfigureNodeSpireAgentResult{}, fmt.Errorf("failed to get node: %w", err)
 	}
+	// The operator of an adopted control plane points its SPIRE agents.
+	if node.IsAdoptedSeed() {
+		return ReconfigureNodeSpireAgentResult{}, nil
+	}
 
 	response, err := a.nodeAgentClient.ReconfigureSpireAgent(ctx, node, &nvkeproto.ReconfigureSpireAgentRequest{
 		ServerAddress: input.Address,

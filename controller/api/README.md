@@ -177,7 +177,7 @@ Mostly it is not: the entries below are the cases where it is.
 
 - **Surface marked `x-fern-ignore: true`.** It is not customer-facing — today
   the `infra` provider, `teleportEnabled`, the legacy `controlPlane` node-pool
-  flag, and `/releases` and `/configProfiles`. The gate still sees a break,
+  flag, `/releases`, `/configProfiles` and `/clusters/adopt`. The gate still sees a break,
   because the specification is one document; the blast radius is in-tree.
 - **A field that never shipped**, added and removed between two published tags.
 - **A deliberate break the team has agreed to take**, where the waiver is the
@@ -233,9 +233,9 @@ Redoc, Swagger UI and the generator ignore `$ref` siblings. Put the text on the
 referenced schema. In a response schema the `$ref` may instead be wrapped in
 `allOf`; request schemas must not do that, because kin-openapi then reports a
 validation failure inside the property as a raw schema dump instead of the
-one-line request-body error. The `infra` properties of the request schemas
-carry `x-fern-ignore` beside their `$ref` on purpose; `openapi-lint-ignore.yaml`
-lists them so the rule stays an error everywhere else.
+one-line request-body error. The `infra` and `adoption` properties of the
+request schemas carry `x-fern-ignore` beside their `$ref` on purpose;
+`openapi-lint-ignore.yaml` lists them so the rule stays an error everywhere else.
 The rules, and why each is on or off, are commented in the ruleset.
 
 Two checks live outside this module's Makefile, because both run from

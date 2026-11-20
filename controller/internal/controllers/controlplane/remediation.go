@@ -25,6 +25,15 @@ func (r *reconciler) remediateMachines(ctx context.Context, cluster db.Cluster, 
 		"cpNodeCount", controlPlane.size(),
 	)
 
+	// An adopted node is never replaced: its MarkedForRecycling condition stays
+	// on the node for its operator, who manages it outside NVKE.
+	for _, node := range controlPlane.nodes {
+		if node.IsAdoptedSeed() && isMarkedForRecycling(node) && !nodes.IsDeleteInFlight(node) {
+			log.Warn("Adopted control-plane node is marked for recycling; NVKE does not replace adopted nodes, so its operator must repair it",
+				"nodeID", node.ID, "nodeName", node.Name, "reason", node.Conditions.MarkedForRecycling.Message)
+		}
+	}
+
 	// Find all nodes marked for remediation
 	nodesForRemediation := controlPlane.nodesForRemediation()
 	if len(nodesForRemediation) == 0 {

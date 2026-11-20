@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"k8s.io/utils/ptr"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
@@ -473,6 +474,7 @@ func TestApplyClusterControlPlaneConfigUpdate_RolloutRequiresVIP(t *testing.T) {
 			})).Return(db.ControlPlaneConfiguration{
 				ID: newConfigID, ClusterID: cluster.ID,
 			}, nil)
+			tx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{}, nil).Maybe()
 			if tc.wantBadRequest {
 				currentConfigCall.Maybe()
 				createConfigCall.Maybe()
@@ -493,6 +495,60 @@ func TestApplyClusterControlPlaneConfigUpdate_RolloutRequiresVIP(t *testing.T) {
 			}
 			require.NoError(t, err)
 			tx.AssertExpectations(t)
+		})
+	}
+}
+
+// TestApplyClusterControlPlaneConfigUpdate_AdoptedControlPlane pins that an
+// adopted control plane refuses every rollout change, the Kubernetes version
+// included, and any desiredCount change.
+func TestApplyClusterControlPlaneConfigUpdate_AdoptedControlPlane(t *testing.T) {
+	newProfile, newRelease := "cfg-v2", "os-v2"
+	for _, tc := range []struct {
+		name       string
+		req        api.UpdateClusterControlPlaneConfig
+		version    string
+		notAdopted bool
+		wantBad    string
+	}{
+		{name: "kubernetesVersion change", version: "1.37.0", wantBad: "kubernetesVersion"},
+		{name: "configProfile change", req: api.UpdateClusterControlPlaneConfig{Nico: &api.NicoControlPlaneProviderUpdate{ConfigProfile: &newProfile}}, wantBad: "configProfile"},
+		{name: "release change", req: api.UpdateClusterControlPlaneConfig{Nico: &api.NicoControlPlaneProviderUpdate{Release: &newRelease}}, wantBad: "release"},
+		{name: "desiredCount increase", req: api.UpdateClusterControlPlaneConfig{DesiredCount: ptr.To(5)}, wantBad: "desiredCount"},
+		{name: "desiredCount decrease", req: api.UpdateClusterControlPlaneConfig{DesiredCount: ptr.To(1)}, wantBad: "desiredCount"},
+		{name: "configProfile change on a cluster that was not adopted", req: api.UpdateClusterControlPlaneConfig{Nico: &api.NicoControlPlaneProviderUpdate{ConfigProfile: &newProfile}}, notAdopted: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			configID := uuid.New()
+			spec := db.ControlPlaneConfigSpec{KubernetesVersion: "1.36.4"}
+			spec.SetNico(db.NicoControlPlaneProvider{InstanceTypePreference: []uuid.UUID{uuid.New()}, Release: "os-v1", ConfigProfile: "cfg-v1", SubnetIDs: []uuid.UUID{uuid.New()}})
+			version := tc.version
+			if version == "" {
+				version = "1.36.4"
+			}
+			cluster := &db.Cluster{
+				ID: uuid.New(), ProviderType: db.ProviderTypeNico, Nico: &db.NicoClusterProvider{}, KubernetesVersion: version, ControlPlaneVIP: "172.31.0.10",
+				ControlPlaneConfig: db.ControlPlaneConfig{ConfigurationID: configID, DesiredCount: 3, ControlPlaneConfigSpec: spec},
+			}
+			if !tc.notAdopted {
+				cluster.Conditions.Adopted = db.NewCondition(true, "Adopted")
+			}
+			tx := &testutil.MockTx{}
+			tx.On("ListNodes", mock.Anything, mock.Anything).Return([]db.Node{{ControlPlane: true}}, nil).Maybe()
+			tx.On("GetControlPlaneConfiguration", mock.Anything, configID).Return(db.ControlPlaneConfiguration{ID: configID, ClusterID: cluster.ID, Config: spec}, nil).Maybe()
+			tx.On("CreateControlPlaneConfiguration", mock.Anything, mock.Anything).Return(db.ControlPlaneConfiguration{ID: uuid.New(), ClusterID: cluster.ID}, nil).Maybe()
+
+			err := (&clusterService{}).applyClusterControlPlaneConfigUpdate(context.Background(), tx, cluster, &tc.req)
+
+			if tc.wantBad == "" {
+				require.NoError(t, err)
+				return
+			}
+			var bad *badRequestError
+			require.ErrorAs(t, err, &bad)
+			assert.Contains(t, err.Error(), tc.wantBad)
+			assert.Contains(t, err.Error(), "adopted control plane")
+			tx.AssertNotCalled(t, "CreateControlPlaneConfiguration", mock.Anything, mock.Anything)
 		})
 	}
 }

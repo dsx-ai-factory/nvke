@@ -110,7 +110,7 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 		if errors.As(err, &quorumFloor) {
 			return api.DeleteNode400JSONResponse{Message: quorumFloor.Error()}, nil
 		}
-		if errors.Is(err, db.ErrControlPlaneMutationBlocked) {
+		if errors.Is(err, db.ErrControlPlaneMutationBlocked) || errors.Is(err, nodes.ErrAdoptedControlPlaneNode) {
 			return api.DeleteNode409JSONResponse{Message: err.Error()}, nil
 		}
 		if errors.Is(err, nodes.ErrLastJoinedControlPlaneNode) {
@@ -168,6 +168,10 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 		dbNode.Conditions.ControlPlanePreferredReplacement.Status != db.ConditionStatusUnknown {
 		cond := apiConditionFromDB(dbNode.Conditions.ControlPlanePreferredReplacement)
 		nodeConditions.ControlPlanePreferredReplacement = &cond
+	}
+	if dbNode.Conditions.AdoptedSeed.Status == db.ConditionStatusTrue {
+		cond := apiConditionFromDB(dbNode.Conditions.AdoptedSeed)
+		nodeConditions.AdoptedSeed = &cond
 	}
 
 	return api.Node{
