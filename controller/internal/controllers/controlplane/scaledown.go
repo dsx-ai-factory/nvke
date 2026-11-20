@@ -58,7 +58,7 @@ func (r *reconciler) reconcileControlPlaneScaleDown(ctx context.Context, cluster
 	// counted, is not an etcd member, and disrupts nothing -- so it is the cheapest
 	// shed and the one that keeps desiredCount converging when the surplus is still
 	// coming up.
-	victim := selectControlPlaneNodeToScaleDown(spreadPreservingCandidates(removable, cp.activeNodes(), cp.failureDomains.domainOf), cluster.ControlPlaneConfig.ScaleDownRanker())
+	victim := selectControlPlaneNodeToScaleDown(spreadPreservingCandidates(removable, cp.activeNodes(), cp.failureDomains.DomainOf), cluster.ControlPlaneConfig.ScaleDownRanker())
 
 	// Never shrink the joined control plane below the fault-tolerant floor. A
 	// joined node counts toward quorum whether or not it is currently healthy --

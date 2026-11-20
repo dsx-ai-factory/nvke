@@ -16,6 +16,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
 
@@ -196,7 +197,7 @@ func TestReconcileControlPlaneScaleUp_CreatesDeficit(t *testing.T) {
 		},
 	}
 
-	allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+	allocator := failuredomains.NewAllocator(failuredomains.LeastUsed, []string{"fd-a", "fd-b"})
 	newNodeProvider, err := clients.GetNewNodeProvider(cluster)
 	require.NoError(t, err)
 	err = r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, allocator, newNodeProvider)
@@ -223,7 +224,7 @@ func TestScaleUpSharesFailureDomainAllocatorAcrossCreationSites(t *testing.T) {
 	}).Return(db.Node{}, nil).Times(3)
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
-	allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+	allocator := failuredomains.NewAllocator(failuredomains.LeastUsed, []string{"fd-a", "fd-b"})
 	newNodeProvider, err := clients.GetNewNodeProvider(cluster)
 	require.NoError(t, err)
 
@@ -242,18 +243,18 @@ func TestScaleUpUsesAllocatorDecision(t *testing.T) {
 	t.Parallel()
 
 	tests := map[string]struct {
-		allocator domainAllocator
+		allocator failuredomains.Allocator
 		want      string
 	}{
 		"legacy node-pool mode requests no specific domain": {
 			want: "",
 		},
 		"allocator without eligible domains requests no specific domain": {
-			allocator: newDomainAllocator(leastUsedFailureDomainSelection, nil),
+			allocator: failuredomains.NewAllocator(failuredomains.LeastUsed, nil),
 			want:      "",
 		},
 		"eligible domain is assigned": {
-			allocator: newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a"}),
+			allocator: failuredomains.NewAllocator(failuredomains.LeastUsed, []string{"fd-a"}),
 			want:      "fd-a",
 		},
 	}
@@ -345,7 +346,7 @@ func TestReconcileControlPlaneScaleUp_Deficit(t *testing.T) {
 			}
 			cp := &controlPlane{nodes: nodes}
 
-			allocator := newDomainAllocator(leastUsedFailureDomainSelection, []string{"fd-a", "fd-b"})
+			allocator := failuredomains.NewAllocator(failuredomains.LeastUsed, []string{"fd-a", "fd-b"})
 			newNodeProvider, err := clients.GetNewNodeProvider(cluster)
 			require.NoError(t, err)
 			err = r.reconcileControlPlaneScaleUp(context.Background(), cluster, cp, allocator, newNodeProvider)

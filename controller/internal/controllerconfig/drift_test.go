@@ -128,6 +128,7 @@ var configMapOnly = []string{
 	"credentialMonitoring.inspectionInterval",
 	"credentialMonitoring.observationMaxAge",
 	"credentialMonitoring.warningDays",
+	"controlPlaneFailureDomainFallback.gracePeriod",
 	"kubeVip.localASN",
 	"kubeVip.staticPeerASN",
 }

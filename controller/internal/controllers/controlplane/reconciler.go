@@ -16,6 +16,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 )
 
 // reconciler reconciles control planes.
@@ -106,16 +107,16 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	}
 
 	failureDomains, err := r.readFailureDomains(ctx, cluster)
-	if errors.Is(err, errInfrastructureNotProvisioned) {
+	if errors.Is(err, failuredomains.ErrInfrastructureNotProvisioned) {
 		return r.reconcileWithoutFailureDomains(ctx, cluster, controlPlane, err)
 	}
 	if err != nil {
 		return fmt.Errorf("discovering control-plane failure domains: %w", err)
 	}
 	controlPlane.failureDomains = failureDomains
-	failureDomains.eligible = placeableDomains(failureDomains.eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
-	allocator := newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
-	if unplaced := nodesWithoutKnownDomain(controlPlane.nodes, failureDomains); len(unplaced) > 0 {
+	failureDomains.Eligible = failuredomains.Placeable(failureDomains.Eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
+	allocator := failuredomains.NewControlPlaneAllocator(controlPlane.nodes, failureDomains)
+	if unplaced := failuredomains.NodesWithoutKnownDomain(controlPlane.nodes, failureDomains); len(unplaced) > 0 {
 		r.logger.Warn("Control-plane nodes have no known failure domain and are not counted toward the spread",
 			"clusterID", cluster.ID, "clusterName", cluster.Name, "nodes", unplaced)
 	}
@@ -133,14 +134,6 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 	// accounting for it. The node write re-enqueues the cluster, and the next
 	// reconcile reads a fresh snapshot where the delete is in flight -- rollout and
 	// scale-down then defer to it and reconcileRequestedDeletes promotes it.
-	replaced, err := r.reconcileStuckPendingNodes(ctx, cluster, controlPlane, provider.MachineMaterialization())
-	if err != nil {
-		return fmt.Errorf("reconciling stuck pending control plane nodes: %w", err)
-	}
-	if replaced {
-		return nil
-	}
-
 	remediated, err := r.remediateMachines(ctx, cluster, controlPlane)
 	if err != nil {
 		return err
@@ -222,6 +215,15 @@ const (
 	failureDomainRetryInterval = 30 * time.Second
 )
 
+// readFailureDomains discovers the cluster's control-plane failure domains. A
+// discovery error is returned with a nil snapshot.
+func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster) (*failuredomains.Snapshot, error) {
+	if r.k8sClient == nil {
+		return nil, fmt.Errorf("kubernetes client is not configured")
+	}
+	return failuredomains.Discover(ctx, r.k8sClient, r.cfg.ManagementNamespaceOrDefault(), cluster.Name)
+}
+
 // reconcileWithoutFailureDomains runs the steps that place no node -- remediation
 // and promotion of recorded deletes -- while the CAPI cluster has not published its
 // failure domains, so a dead node can still be removed. It returns nil and requeues rather than erroring
@@ -290,7 +292,7 @@ func (r *reconciler) reconcileControlPlaneScaleUp(
 	ctx context.Context,
 	cluster db.Cluster,
 	controlPlane *controlPlane,
-	allocator domainAllocator,
+	allocator failuredomains.Allocator,
 	newNodeProvider clients.NewNodeProvider,
 ) error {
 	deficit := cluster.ControlPlaneConfig.DesiredCount - controlPlane.size()

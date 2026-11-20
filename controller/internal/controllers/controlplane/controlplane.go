@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
@@ -23,7 +24,7 @@ type controlPlane struct {
 	nodePinnedControlPlaneConfigs map[uuid.UUID]db.ControlPlaneConfigSpec
 	clusterControlPlaneConfig     db.ControlPlaneConfig
 	// failureDomains is nil until the reconciler discovers placement.
-	failureDomains *failureDomains
+	failureDomains *failuredomains.Snapshot
 }
 
 func (r *reconciler) controlPlaneReplacementBlocked(cluster db.Cluster) bool {

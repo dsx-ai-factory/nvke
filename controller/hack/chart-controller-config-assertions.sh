@@ -59,6 +59,8 @@ render monitoring-without-renewal \
   --set-string credentialMonitoring.observationMaxAge=6h \
   --set credentialMonitoring.warningDays=60
 render monitoring-disabled --set credentialMonitoring.enabled=false
+render failure-domain-fallback-grace-period \
+  --set-string controlPlaneFailureDomainFallback.gracePeriod=15m
 # A disabled feature's bounds do not apply, at render or at startup.
 render renewal-disabled-out-of-range \
   --set scheduledMaintenance.certRenewal.enabled=false \
@@ -129,6 +131,8 @@ refuse "credentialMonitoring.warningDays must be between 9 and 120" --set creden
 refuse "credentialMonitoring.warningDays must be between 9 and 120" --set credentialMonitoring.warningDays=121
 refuse "credentialMonitoring.warningDays must exceed scheduledMaintenance.certRenewal.thresholdDays" \
   --set scheduledMaintenance.certRenewal.thresholdDays=60
+refuse "controlPlaneFailureDomainFallback.gracePeriod must be greater than 0" \
+  --set-string controlPlaneFailureDomainFallback.gracePeriod=0s
 printf '  credential settings the controller would refuse are refused at render\n'
 
 refuse "nodeAgent.spireAttestationMethod must be dsxImds when supportedInfraProviders includes launchLayer and spiffe.enabled is true" \
