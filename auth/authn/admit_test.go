@@ -318,6 +318,80 @@ func TestAdmitGroups(t *testing.T) {
 	}
 }
 
+func TestAdmitGroupsClaimAndTrimPrefix(t *testing.T) {
+	t.Parallel()
+
+	rolesRule := &authn.Admit{Groups: []string{"nvke-operators"}, GroupsClaim: "roles"}
+	trimRule := &authn.Admit{Groups: []string{"nvke-admins"}, GroupsTrimPrefix: "/"}
+
+	principal := func(claims map[string]any) *authn.Principal {
+		return &authn.Principal{Subject: "user-1", Claims: claims}
+	}
+
+	tests := []struct {
+		name      string
+		admit     *authn.Admit
+		principal *authn.Principal
+		want      bool
+	}{
+		{
+			name:      "a matching group under a custom claim is admitted",
+			admit:     rolesRule,
+			principal: principal(map[string]any{"roles": []any{"nvke-operators"}}),
+			want:      true,
+		},
+		{
+			name:      "a custom claim rule ignores the default groups claim",
+			admit:     rolesRule,
+			principal: principal(map[string]any{"groups": []any{"nvke-operators"}}),
+			want:      false,
+		},
+		{
+			name:      "a group path is admitted once the prefix is trimmed",
+			admit:     trimRule,
+			principal: principal(map[string]any{"groups": []any{"/nvke-admins"}}),
+			want:      true,
+		},
+		{
+			name:      "a nested group path does not match after trimming",
+			admit:     trimRule,
+			principal: principal(map[string]any{"groups": []any{"/platform/nvke-admins"}}),
+			want:      false,
+		},
+		{
+			name:      "without a trim prefix a group path does not match a bare name",
+			admit:     &authn.Admit{Groups: []string{"nvke-admins"}},
+			principal: principal(map[string]any{"groups": []any{"/nvke-admins"}}),
+			want:      false,
+		},
+		{
+			name:      "without a trim prefix a group path matches itself exactly",
+			admit:     &authn.Admit{Groups: []string{"/nvke-admins"}},
+			principal: principal(map[string]any{"groups": []any{"/nvke-admins"}}),
+			want:      true,
+		},
+		{
+			name:      "a value without the trim prefix still matches",
+			admit:     trimRule,
+			principal: principal(map[string]any{"groups": []any{"nvke-admins"}}),
+			want:      true,
+		},
+		{
+			name:      "trim prefix applies to a custom claim",
+			admit:     &authn.Admit{Groups: []string{"nvke-admins"}, GroupsClaim: "roles", GroupsTrimPrefix: "/"},
+			principal: principal(map[string]any{"roles": []any{"/nvke-admins"}}),
+			want:      true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			assert.Equal(t, tt.want, tt.admit.Admits(tt.principal))
+		})
+	}
+}
+
 // teleportPrincipal carries the claims of a Teleport app-access token: no
 // "groups", the caller's Teleport roles in "roles".
 func teleportPrincipal(claims map[string]any) *authn.Principal {
