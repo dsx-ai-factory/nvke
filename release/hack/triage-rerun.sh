@@ -94,10 +94,12 @@ fi
 # The run itself, from the API and not from anything the caller says about it.
 # The conclusion is last because a run that has not finished has none, and read
 # collapses adjacent tabs, so an empty field anywhere else would shift the rest.
-IFS=$'\t' read -r status event latest head conclusion < <(
-    gh api "repos/${repo}/actions/runs/${run}" \
-        --jq '[.status, .event, .run_attempt, .head_branch, .conclusion // ""] | @tsv'
-)
+if ! info="$(gh api "repos/${repo}/actions/runs/${run}" \
+    --jq '[.status, .event, .run_attempt, .head_branch, .conclusion // ""] | @tsv')"; then
+    echo "Not re-run: run ${run} could not be read from the API, so nothing was decided."
+    exit 1
+fi
+IFS=$'\t' read -r status event latest head conclusion <<<"${info}"
 
 if [[ "${event}" != push || ! "${head}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
     decline "the run is not a push of a version tag."
@@ -124,7 +126,7 @@ if jq -es 'any(.[]; .action != "rerun-failed")' "${work}/rows.jsonl" >/dev/null;
     # A job's name comes from the workflow and may hold anything, so it goes
     # through jq to one line with no backtick.
     jq -r 'select(.action != "rerun-failed")
-           | "- `\(.job | gsub("[`\r\n]"; " "))`: \(.class | gsub("[`\r\n]"; " ")), left to a person"' "${work}/rows.jsonl"
+           | "- `\(.job | gsub("[`<>\r\n]"; " "))`: \(.class | gsub("[`<>\r\n]"; " ")), left to a person"' "${work}/rows.jsonl"
     exit 0
 fi
 
@@ -139,7 +141,7 @@ fi
 # A refusal is written to the summary, not only to the log, so the reason is
 # where a person looks; it is a failure of the step, and no one is told.
 if ! gh api -X POST "repos/${repo}/actions/runs/${run}/rerun-failed-jobs" >/dev/null; then
-    echo "Not re-run: GitHub refused the request to re-run the failed jobs (${classes})."
+    echo "Not confirmed: the request to re-run the failed jobs (${classes}) failed. Check the run before retrying; it may have started."
     exit 1
 fi
 echo "Re-ran the failed jobs once (attempt ${next}): ${classes}."

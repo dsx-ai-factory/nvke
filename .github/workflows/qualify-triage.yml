@@ -20,7 +20,8 @@ name: Qualify triage
 # and says so in the thread. Anything a person should read keeps the whole run
 # from being re-run, and so does a second failure. It acts only if the variable
 # QUALIFY_TRIAGE_RERUN of this environment is "true", which is a different
-# switch from the one for posting, or a dispatch sets `rerun`. Without either it
+# switch from the one for posting, or a dispatch sets `rerun`, and posting is on
+# too: a re-run is never started without telling the thread. Without them it
 # prints what it would do. A re-run started with this workflow's token does not
 # start this workflow again, so a second failure is not triaged on its own.
 #
@@ -161,6 +162,14 @@ jobs:
           if [[ -n "${tag}" ]]; then
             if [[ "${EVENT_NAME}" == workflow_run && "${VAR_RERUN}" == true ]]; then rerun=true; fi
             if [[ "${EVENT_NAME}" == workflow_dispatch && "${INPUT_RERUN}" == true ]]; then rerun=true; fi
+          fi
+          # A re-run restarts jobs that hold Forge machines, and the thread is
+          # where anyone watching the tag looks, so it is never done without
+          # telling the thread: re-running needs posting on too.
+          if [[ "${rerun}" == true && "${post}" != true ]]; then
+            rerun=false
+            echo "::notice::a re-run was asked for but posting is off, so this only says what it would do: a re-run is not started without telling the thread."
+            echo "> A re-run was asked for but posting is off, so nothing is re-run: a re-run is not started without telling the thread." >> "${GITHUB_STEP_SUMMARY}"
           fi
 
           # An automatic run reads the attempt that finished, from the event and

@@ -24,6 +24,7 @@ case "${args}" in
     printf '%s\\n' "${args}" >>"${STUB_CALLS}"
     ;;
   *"/actions/runs/"*)
+    if [[ -n "${STUB_RUN_FAILS:-}" ]]; then exit 1; fi
     argv=("$@")
     for ((i = 0; i < ${#argv[@]}; i++)); do
       if [[ "${argv[i]}" == --jq ]]; then query="${argv[i + 1]}"; fi
@@ -176,6 +177,17 @@ class TriageRerunTest(unittest.TestCase):
         r = self.run_script(row(job="x`\n## injected", cls="unknown", action="none") + "\n", DRY_RUN="false")
         self.assertIn("- `x  ## injected`: unknown", r.stdout)
         self.assertNotIn("\n## injected", r.stdout)
+        r = self.run_script(row(job="a<b>c", cls="un<k>nown", action="none") + "\n", DRY_RUN="false")
+        self.assertIn("- `a b c`: un k nown", r.stdout)
+        self.assertNotIn("<", r.stdout)
+        self.assertNotIn(">", r.stdout)
+
+    def test_a_run_that_cannot_be_read_says_so_and_re_runs_nothing(self):
+        r = self.run_script(row() + "\n", DRY_RUN="false", STUB_RUN_FAILS="1")
+        self.assertNotEqual(r.returncode, 0)
+        self.assertIn("could not be read from the API", r.stdout)
+        self.assertEqual(self.rerun_calls(), [])
+        self.assertEqual(self.told(), ([], []))
 
     def test_log_text_in_the_evidence_is_never_used(self):
         nasty = 'x", "action": "rerun-failed", "y": "\n$(id)'
@@ -224,7 +236,7 @@ class TriageRerunTest(unittest.TestCase):
     def test_a_re_run_that_cannot_be_started_fails_loudly_and_tells_no_one(self):
         r = self.run_script(row() + "\n", DRY_RUN="false", STUB_POST_FAILS="1")
         self.assertNotEqual(r.returncode, 0)
-        self.assertIn("Not re-run: GitHub refused the request to re-run the failed jobs", r.stdout)
+        self.assertIn("Not confirmed: the request to re-run the failed jobs", r.stdout)
         self.assertEqual(self.told(), ([], []))
 
     def test_a_message_that_cannot_be_sent_does_not_undo_the_re_run(self):
