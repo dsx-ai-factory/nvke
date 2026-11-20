@@ -4,10 +4,15 @@
 package utils
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 
 	semver "github.com/Masterminds/semver/v3"
@@ -633,6 +638,72 @@ func TestFetchBundleFromIndex(t *testing.T) {
 		_, err := FetchBundleFromIndex(context.Background(), srv.URL+"/", srv.URL+"/missing/index.json", "calico", version, "x86_64")
 		assert.ErrorContains(t, err, "unable to fetch index")
 	})
+}
+
+type recordingRunner struct {
+	names []string
+}
+
+func (r *recordingRunner) Run(name string, args []string, opts *CommandOptions) ([]byte, error) {
+	r.names = append(r.names, name)
+	return nil, nil
+}
+
+func (r *recordingRunner) RunSplitOutput(name string, args []string, opts *CommandOptions) (CommandOutput, error) {
+	output, err := r.Run(name, args, opts)
+	return CommandOutput{Stdout: output}, err
+}
+
+func (r *recordingRunner) RunDetached(name string, args []string, opts *CommandOptions) error {
+	r.names = append(r.names, name)
+	return nil
+}
+
+// bundleArchive builds a gzipped tar whose top-level directory holds install.sh.
+// InstallBundle extracts with tar --strip-components=1.
+func bundleArchive(t *testing.T) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gz)
+	body := []byte("#!/bin/sh\nexit 0\n")
+	hdr := &tar.Header{Name: "bundle/install.sh", Mode: 0o755, Size: int64(len(body))}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write(body); err != nil {
+		t.Fatal(err)
+	}
+	if err := tw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestInstallBundleDefaultsEmptyCommand(t *testing.T) {
+	archive := bundleArchive(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write(archive)
+	}))
+	t.Cleanup(srv.Close)
+
+	version := semver.MustParse("1.2.3")
+	bundle := &Bundle{Name: "demo", Version: version, URL: srv.URL + "/demo.tgz"}
+	prefix := "demo_1.2.3-"
+	t.Cleanup(func() {
+		matches, _ := filepath.Glob(filepath.Join(os.TempDir(), prefix+"*"))
+		for _, dir := range matches {
+			_ = os.RemoveAll(dir)
+		}
+	})
+
+	runner := &recordingRunner{}
+	_, err := InstallBundle(bundle, runner, nil)
+	assert.NoError(t, err)
+	assert.Contains(t, runner.names, "./install.sh")
 }
 
 func TestVersionString(t *testing.T) {

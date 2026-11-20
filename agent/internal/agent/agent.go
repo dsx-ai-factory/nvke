@@ -2247,7 +2247,7 @@ func (s *NodeAgentServer) InstallCollection(ctx context.Context, req *pb.Install
 
 			// Build full URL for HTTP/S3 sources (OCI uses registry, not URL)
 			if s.BundleSource != nil && s.BundleSource.IsHTTP() {
-				bundle.URL = s.BundleServerURL + bundle.Path
+				bundle.URL = nvkeutils.JoinBundleURL(s.BundleServerURL, bundle.Path)
 			}
 
 			if len(bundleReq.InstallCmd) > 0 {
