@@ -98,6 +98,17 @@ an explicit `NKE_PACKAGE_BUILDER=host` is rejected before packaging. An older
 host is fine, since older glibc runs on newer Ubuntu. `boot-smoke` also runs
 `nvke-agent -version` inside the guest as a backstop.
 
+Every Ubuntu package comes from one `snapshot.ubuntu.com` snapshot, set by
+`ubuntu_snapshot` in `packer/variables.pkr.hcl`, so two builds of the same
+commit install the same versions. The build fails on any installed version
+the snapshot does not carry, and the image keeps the snapshot as its Ubuntu
+source. `UBUNTU_SNAPSHOT=<YYYYMMDDTHHMMSSZ>` overrides the ID for one build,
+and `UBUNTU_SNAPSHOT_BASE_URL` points the build at a mirror of the service.
+`make -C os-image/packer ubuntu-snapshot-check UBUNTU_SNAPSHOT=<ID>` checks a
+candidate before it becomes the default. See
+[docs/ubuntu-snapshot.md](docs/ubuntu-snapshot.md) for how the installer uses
+it and what nodes carry.
+
 `SERIAL_CONSOLE` selects the UART the **installed** system sends kernel output
 to. Empty (the default) keeps the architecture default — `ttyS0` on amd64,
 `ttyAMA0` on arm64 — so Forge and tenant nodes are unaffected. CSC

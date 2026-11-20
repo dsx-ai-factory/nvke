@@ -41,11 +41,10 @@ failure such as ENOSPC aborts installation and is diagnosed through the installe
 serial log, even when Packer reports an SSH timeout. The guest recorder never
 replaces an existing guest archive output.
 
-Ubuntu updates/security indexes can supersede a package version after its
-archive was captured and before export reads the refreshed indexes. Missing
-exact metadata fails export without guessing a URL. This is a known retryable
-build failure; rerun against current indexes. Capturing an index snapshot at
-acquisition time is not implemented.
+The build takes Ubuntu packages from one pinned snapshot
+([ubuntu-snapshot.md](ubuntu-snapshot.md)), whose indexes do not change while
+it runs, so a captured version cannot be superseded before export reads the
+indexes. Missing exact metadata still fails export without guessing a URL.
 
 This is not complete OS inventory or a full disk SBOM. Base ISO content,
 non-APT downloads and package events after the export window are not covered.

@@ -101,7 +101,7 @@ sudo dpkg -i "${spire_agent_deb}"
 # runs against the host's OVS (values-nke.yaml: ovs-node false). It is baked in
 # because installing OVS on a live node disrupts host networking. The DOCA debs
 # come from the local repo staged above; their remaining dependencies come from
-# the Ubuntu archive.
+# the build's Ubuntu snapshot.
 sudo apt-get update
 # Every apt source is the build's Ubuntu snapshot or the local repo (#2206),
 # before anything is installed from them.
