@@ -146,7 +146,6 @@ func (s *nodePoolService) CreateNodePool(
 	}
 
 	var createdNodePool db.NodePool
-	var counts map[uuid.UUID]db.NodePoolCounts
 	err = s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		cluster, err := tx.GetClusterForUpdate(ctx, req.Body.ClusterID)
 		if err != nil {
@@ -195,8 +194,7 @@ func (s *nodePoolService) CreateNodePool(
 			return fmt.Errorf("failed to create workflow outbox entry: %w", err)
 		}
 
-		counts, err = nodePoolCountsFromDB(ctx, tx, []db.NodePool{createdNodePool})
-		return err
+		return nil
 	})
 	if err != nil {
 		var badRequestErr *badRequestError
@@ -217,7 +215,8 @@ func (s *nodePoolService) CreateNodePool(
 		return nil, err
 	}
 
-	return api.CreateNodePool201JSONResponse(apiNodePoolFromDB(&createdNodePool, counts[createdNodePool.ID])), nil
+	// Provisioning is queued by this transaction, so its initial node counts are zero.
+	return api.CreateNodePool201JSONResponse(apiNodePoolFromDB(&createdNodePool, db.NodePoolCounts{})), nil
 }
 
 func clusterIsCAPIBacked(cluster db.Cluster) bool {
@@ -944,12 +943,8 @@ func uuidSliceDedupe(s []uuid.UUID) []uuid.UUID {
 
 // nodePoolCountsFromDB fetches observations once for the requested pools and
 // rejects missing observations rather than reporting an unobserved zero.
-// Write handlers call this inside their transaction so a read failure rolls back
-// the mutation.
+// Update calls this inside its transaction so a read failure rolls back the mutation.
 func nodePoolCountsFromDB(ctx context.Context, queries db.NodePoolQueries, pools []db.NodePool) (map[uuid.UUID]db.NodePoolCounts, error) {
-	if len(pools) == 0 {
-		return map[uuid.UUID]db.NodePoolCounts{}, nil
-	}
 	counts, err := queries.ListNodePoolCounts(ctx, pools)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get node pool counts: %w", err)

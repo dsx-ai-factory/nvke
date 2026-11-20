@@ -228,7 +228,7 @@ func TestNodePoolService_ListNodePools(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.On("ListNodePools", mock.Anything, tt.filters).Return(tt.dbNodePools, tt.dbError)
-			if tt.dbError == nil && len(tt.dbNodePools) > 0 {
+			if tt.dbError == nil {
 				counts := make(map[uuid.UUID]db.NodePoolCounts, len(tt.dbNodePools))
 				for _, pool := range tt.dbNodePools {
 					counts[pool.ID] = db.NodePoolCounts{}
@@ -486,14 +486,6 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			mockDB := &mockDB{}
 			mockDB.MockTx = &mockTx{}
-			mockDB.MockTx.On("ListNodePoolCounts", mock.Anything, mock.Anything).Return(func(_ context.Context, pools []db.NodePool) map[uuid.UUID]db.NodePoolCounts {
-				counts := make(map[uuid.UUID]db.NodePoolCounts, len(pools))
-				for _, pool := range pools {
-					counts[pool.ID] = db.NodePoolCounts{}
-				}
-				return counts
-			}, nil).Maybe()
-
 			// Mock GetCluster on mockDB for validation (validation uses s.db, not the transaction)
 			mockDB.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{
 				ID:           clusterID,
@@ -533,6 +525,7 @@ func TestNodePoolService_CreateNodePool(t *testing.T) {
 
 			require.NoError(t, err)
 			require.NotNil(t, resp)
+			mockDB.MockTx.AssertNotCalled(t, "ListNodePoolCounts", mock.Anything, mock.Anything)
 
 			responseWriter := httptest.NewRecorder()
 			require.NoError(t, resp.VisitCreateNodePoolResponse(responseWriter))
@@ -1922,72 +1915,87 @@ func TestNodePoolCountsRejectMissingObservation(t *testing.T) {
 }
 
 func TestNodePoolWriteCounts(t *testing.T) {
-	for _, operation := range []string{"create", "update"} {
-		for _, fails := range []bool{false, true} {
-			name := operation + "/success"
-			if fails {
-				name = operation + "/counts-error"
+	for _, tt := range []struct {
+		operation string
+		fails     bool
+	}{
+		{operation: "create"},
+		{operation: "update"},
+		{operation: "update", fails: true},
+	} {
+		operation, fails := tt.operation, tt.fails
+		name := operation + "/success"
+		if fails {
+			name = operation + "/counts-error"
+		}
+		t.Run(name, func(t *testing.T) {
+			cluster := forgeDBCluster(db.Cluster{Nico: &db.NicoClusterProvider{OrgID: "test-org", SiteID: uuid.New()}})
+			cluster.ID, cluster.Name, cluster.PodCIDR = uuid.New(), "tenant", "10.240.0.0/16"
+			cluster.ServiceCIDR = "10.120.0.0/24"
+			pool := db.NodePool{ID: uuid.New(), ClusterID: cluster.ID, DesiredCount: 4}
+			tx := &testutil.MockTx{}
+			store := &testutil.MockDB{MockTx: tx}
+			store.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+			tx.On("GetClusterForUpdate", mock.Anything, cluster.ID).Return(cluster, nil).Once()
+			var write *mock.Call
+			if operation == "create" {
+				store.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
+				tx.On("ListNodePools", mock.Anything, db.NodePoolFilters{ClusterID: &cluster.ID}).Return([]db.NodePool{}, nil).Once()
+				write = tx.On("CreateNodePool", mock.Anything, mock.Anything).Return(pool, nil).Once()
+				tx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(db.WorkflowOutbox{}, nil).Once()
+			} else {
+				tx.On("GetNodePool", mock.Anything, pool.ID).Return(pool, nil).Once()
+				tx.On("GetNodePoolForUpdate", mock.Anything, pool.ID).Return(pool, nil).Once()
+				write = tx.On("UpdateNodePool", mock.Anything, mock.Anything).Return(pool, nil).Once()
 			}
-			t.Run(name, func(t *testing.T) {
-				cluster := forgeDBCluster(db.Cluster{Nico: &db.NicoClusterProvider{OrgID: "test-org", SiteID: uuid.New()}})
-				cluster.ID, cluster.Name, cluster.PodCIDR = uuid.New(), "tenant", "10.240.0.0/16"
-				cluster.ServiceCIDR = "10.120.0.0/24"
-				pool := db.NodePool{ID: uuid.New(), ClusterID: cluster.ID, DesiredCount: 4}
-				tx := &testutil.MockTx{}
-				store := &testutil.MockDB{MockTx: tx}
-				store.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
-				tx.On("GetClusterForUpdate", mock.Anything, cluster.ID).Return(cluster, nil).Once()
-				var write *mock.Call
-				if operation == "create" {
-					store.On("GetCluster", mock.Anything, cluster.ID).Return(cluster, nil).Once()
-					tx.On("ListNodePools", mock.Anything, db.NodePoolFilters{ClusterID: &cluster.ID}).Return([]db.NodePool{}, nil).Once()
-					write = tx.On("CreateNodePool", mock.Anything, mock.Anything).Return(pool, nil).Once()
-					tx.On("CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(db.WorkflowOutbox{}, nil).Once()
-				} else {
-					tx.On("GetNodePool", mock.Anything, pool.ID).Return(pool, nil).Once()
-					tx.On("GetNodePoolForUpdate", mock.Anything, pool.ID).Return(pool, nil).Once()
-					write = tx.On("UpdateNodePool", mock.Anything, mock.Anything).Return(pool, nil).Once()
-				}
-				var queryErr error
-				if fails {
-					queryErr = errors.New("count query failed")
-				}
+			var queryErr error
+			if fails {
+				queryErr = errors.New("count query failed")
+			}
+			if operation == "update" {
 				tx.On("ListNodePoolCounts", mock.Anything, []db.NodePool{pool}).Return(map[uuid.UUID]db.NodePoolCounts{
 					pool.ID: {NodeCount: 5, ReadyNodeCount: 3, UpdatedNodeCount: 2},
 				}, queryErr).Once().NotBefore(write)
-				svc := server.NewNodePoolService(slog.Default(), store, config.TeleportConfig{}, nil)
-				var result api.NodePool
-				var err error
-				if operation == "create" {
-					var response api.CreateNodePoolResponseObject
-					response, err = svc.CreateNodePool(t.Context(), api.CreateNodePoolRequestObject{Body: &api.CreateNodePoolRequest{
-						ClusterID: cluster.ID, Name: "workers", NodeNamePrefix: "w", DesiredNodeCount: 4,
-						Nico: &api.NicoNodePoolProvider{InstanceTypeID: uuid.New(), SubnetIDs: []uuid.UUID{uuid.New()}, Release: "worker-release"},
-					}})
-					if err == nil {
-						require.IsType(t, api.CreateNodePool201JSONResponse{}, response, "%#v", response)
-						result = api.NodePool(response.(api.CreateNodePool201JSONResponse))
-					}
-				} else {
-					var response api.UpdateNodePoolResponseObject
-					response, err = svc.UpdateNodePool(t.Context(), api.UpdateNodePoolRequestObject{NodePoolID: pool.ID, Body: &api.UpdateNodePoolRequest{}})
-					if err == nil {
-						result = api.NodePool(response.(api.UpdateNodePool200JSONResponse))
-					}
+			}
+			svc := server.NewNodePoolService(slog.Default(), store, config.TeleportConfig{}, nil)
+			var result api.NodePool
+			var err error
+			if operation == "create" {
+				var response api.CreateNodePoolResponseObject
+				response, err = svc.CreateNodePool(t.Context(), api.CreateNodePoolRequestObject{Body: &api.CreateNodePoolRequest{
+					ClusterID: cluster.ID, Name: "workers", NodeNamePrefix: "w", DesiredNodeCount: 4,
+					Nico: &api.NicoNodePoolProvider{InstanceTypeID: uuid.New(), SubnetIDs: []uuid.UUID{uuid.New()}, Release: "worker-release"},
+				}})
+				if err == nil {
+					require.IsType(t, api.CreateNodePool201JSONResponse{}, response, "%#v", response)
+					result = api.NodePool(response.(api.CreateNodePool201JSONResponse))
 				}
-				if fails {
-					require.ErrorContains(t, err, "count query failed")
+			} else {
+				var response api.UpdateNodePoolResponseObject
+				response, err = svc.UpdateNodePool(t.Context(), api.UpdateNodePoolRequestObject{NodePoolID: pool.ID, Body: &api.UpdateNodePoolRequest{}})
+				if err == nil {
+					result = api.NodePool(response.(api.UpdateNodePool200JSONResponse))
+				}
+			}
+			if fails {
+				require.ErrorContains(t, err, "count query failed")
+			} else {
+				require.NoError(t, err)
+				if operation == "create" {
+					require.Zero(t, *result.ObservedNodeCount)
+					require.Zero(t, *result.ReadyNodeCount)
+					require.Zero(t, *result.UpdatedNodeCount)
+					tx.AssertNotCalled(t, "ListNodePoolCounts", mock.Anything, mock.Anything)
 				} else {
-					require.NoError(t, err)
 					require.Equal(t, 5, *result.ObservedNodeCount)
 					require.Equal(t, 3, *result.ReadyNodeCount)
 					require.Equal(t, 2, *result.UpdatedNodeCount)
 				}
-				store.AssertExpectations(t)
-				tx.AssertExpectations(t)
-				store.AssertNotCalled(t, "ListNodePoolCounts", mock.Anything, mock.Anything)
-			})
-		}
+			}
+			store.AssertExpectations(t)
+			tx.AssertExpectations(t)
+			store.AssertNotCalled(t, "ListNodePoolCounts", mock.Anything, mock.Anything)
+		})
 	}
 }
 
@@ -2022,6 +2030,7 @@ func TestListNodePoolsBatchCounts(t *testing.T) {
 
 func TestListNodePoolsEmptyCounts(t *testing.T) {
 	store := &testutil.MockDB{}
+	store.On("ListNodePoolCounts", mock.Anything, []db.NodePool{}).Return(map[uuid.UUID]db.NodePoolCounts{}, nil).Once()
 	store.On("ListNodePools", mock.Anything, db.NodePoolFilters{}).Return([]db.NodePool{}, nil).Once()
 	service := server.NewNodePoolService(slog.Default(), store, config.TeleportConfig{}, nil)
 	response, err := service.ListNodePools(t.Context(), api.ListNodePoolsRequestObject{})
@@ -2029,6 +2038,5 @@ func TestListNodePoolsEmptyCounts(t *testing.T) {
 	pools := response.(api.ListNodePools200JSONResponse).NodePools
 	require.NotNil(t, pools)
 	require.Empty(t, pools)
-	store.AssertNotCalled(t, "ListNodePoolCounts", mock.Anything, mock.Anything)
 	store.AssertExpectations(t)
 }
