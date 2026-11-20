@@ -17,7 +17,7 @@ name: "spire-agent"
 arch: "${ARCH}"
 platform: "linux"
 version: "${DEB_VERSION}"
-# "1.14.1+tpm1.9.0-4" is a Debian version, not a semver one.
+# "1.14.1+tpm1.9.0-5" is a Debian version, not a semver one.
 version_schema: none
 section: admin
 priority: optional
@@ -76,6 +76,10 @@ contents:
   - src: "../../../files/spire-agent.conf.tmpl"
     dst: "/usr/lib/nvke/spire-agent.conf.tmpl"
     file_info: { mode: 0644 }
+
+  - src: "../../../files/spire-check-imds.sh"
+    dst: "/usr/lib/nvke/spire-check-imds.sh"
+    file_info: { mode: 0755 }
 
   - dst: "/etc/spire-agent"
     type: dir

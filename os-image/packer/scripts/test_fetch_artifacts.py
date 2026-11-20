@@ -21,6 +21,13 @@ class AgentPackageTest(unittest.TestCase):
                 make = tools / "make"
                 make.write_text('''#!/usr/bin/env bash
 set -eu
+if [[ "$2" == */packages/spire-agent ]]; then
+  for expected in "IMDS_AGENT_FILE=${IMDS_AGENT_FILE}" "IMDS_AGENT_SHA256=${IMDS_AGENT_SHA256}" "IMDS_AGENT_ARCH=${ARCH}"; do
+    found=0
+    for arg in "$@"; do [[ "$arg" != "$expected" ]] || found=1; done
+    [[ "$found" == 1 ]] || { echo "missing $expected" >&2; exit 1; }
+  done
+fi
 if [[ "$2" == */agent ]]; then
   [[ "$3" == "deb-${ARCH}" ]] || { echo "expected agent Debian build" >&2; exit 1; }
   for arg in "$@"; do
@@ -40,6 +47,8 @@ fi
                     ["bash", str(script)],
                     env={**os.environ, "PATH": f"{tools}:{os.environ['PATH']}",
                          "ARCH": arch, "ARTIFACTS_DIR": str(artifacts),
+                         "IMDS_AGENT_FILE": str(root / "local material"),
+                         "IMDS_AGENT_SHA256": "a" * 64, "IMDS_AGENT_ARCH": arch,
                          "NKE_TARGET_UBUNTU_SERIES": "26.04",
                          "SOURCE_ROOT": str(script.parents[3]),
                          "NGC_API_KEY": "", "NKE_PACKAGE_BUILDER": "host"},

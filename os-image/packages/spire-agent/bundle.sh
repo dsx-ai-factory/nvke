@@ -4,11 +4,12 @@
 #
 # Download, verify and stage the three upstream binaries the spire-agent .deb
 # ships: SPIRE's agent, and the TPM node attestor plugin's agent-side binary
-# and its EK-reading helper.
+# and its EK-reading helper. Optionally stage a verified local IMDS executable.
 #
 # Usage:
 #   bundle.sh [--write-lock] --spire-version X.Y.Z --tpm-version X.Y.Z \
-#             --arch amd64 --dist DIR --lock-dir DIR
+#             --arch amd64 --dist DIR --lock-dir DIR \
+#             [--imds-agent-file FILE --imds-agent-sha256 SHA256 --imds-agent-arch ARCH]
 #
 # Default mode stages DIR/<spire>+tpm<tpm>/<arch>/ and enforces the lock.
 # --write-lock resolves every arch from upstream and rewrites the lock
@@ -33,8 +34,14 @@ TPM_VERSION=""
 ARCH=amd64
 DIST=""
 LOCK_DIR=""
+IMDS_AGENT_FILE=""
+IMDS_AGENT_SHA256=""
+IMDS_AGENT_ARCH=""
 while (($#)); do
   case "$1" in
+    --imds-agent-file) IMDS_AGENT_FILE="$2"; shift 2 ;;
+    --imds-agent-sha256) IMDS_AGENT_SHA256="$2"; shift 2 ;;
+    --imds-agent-arch) IMDS_AGENT_ARCH="$2"; shift 2 ;;
     --write-lock) WRITE_LOCK=1; shift ;;
     --spire-version) SPIRE_VERSION="${2#v}"; shift 2 ;;
     --tpm-version) TPM_VERSION="${2#v}"; shift 2 ;;
@@ -55,6 +62,17 @@ LOCK_FILE="${LOCK_DIR}/${BUNDLE_VERSION}.lock"
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "${WORK}"' EXIT
+
+# Snapshot before checking, so the staged bytes are exactly the checked bytes.
+IMDS_NAME=dsx-imds-node-attestor-agent
+if [[ -n "$IMDS_AGENT_FILE$IMDS_AGENT_SHA256$IMDS_AGENT_ARCH" ]]; then
+  ((WRITE_LOCK == 0)) || die "IMDS inputs are local materials, not upstream lock entries"
+  [[ -n "$IMDS_AGENT_FILE" && -n "$IMDS_AGENT_SHA256" && -n "$IMDS_AGENT_ARCH" ]] ||
+    die "IMDS input requires --imds-agent-file, --imds-agent-sha256 and --imds-agent-arch"
+  [[ -f "$IMDS_AGENT_FILE" && ! -L "$IMDS_AGENT_FILE" ]] || die "missing regular IMDS input file: $IMDS_AGENT_FILE"
+  install -m 0755 "$IMDS_AGENT_FILE" "$WORK/$IMDS_NAME"
+  bash "$(dirname "${BASH_SOURCE[0]}")/verify-imds.sh" "$WORK/$IMDS_NAME" "$IMDS_AGENT_SHA256" "$IMDS_AGENT_ARCH" "$ARCH"
+fi
 
 # component_url prints the release tarball URL for component $1 on arch $2.
 component_url() {
@@ -146,6 +164,10 @@ fi
 
 OUT="${DIST}/${BUNDLE_VERSION}/${ARCH}"
 mkdir -p "$OUT"
+# An absent input must not inherit the previous run's optional payload.
+for old in "$OUT/$IMDS_NAME" "$OUT/$IMDS_NAME.sha256"; do
+  if [[ -e "$old" || -L "$old" ]]; then unlink "$old"; fi
+done
 for component in "${COMPONENTS[@]}"; do
   locked="$(lock_sha "$component" "$ARCH")"
   [[ "$locked" =~ ^[0-9a-f]{64}$ ]] ||
@@ -167,4 +189,8 @@ for component in "${COMPONENTS[@]}"; do
   install -m 0755 "${WORK}/${member}" "$dest"
   printf '%s\n' "$locked" >"${dest}.from"
 done
+if [[ -n "$IMDS_AGENT_FILE" ]]; then
+  install -m 0755 "$WORK/$IMDS_NAME" "$OUT/$IMDS_NAME"
+  printf '%s\n' "$IMDS_AGENT_SHA256" > "$OUT/$IMDS_NAME.sha256"
+fi
 echo "staged ${COMPONENTS[*]} for ${ARCH} in ${OUT}"

@@ -61,6 +61,8 @@ REQUIRE_ACCELERATION ?= 0
 # Attempts check-acceleration makes before giving up on an unusable /dev/kvm; the bake sets 6, laptops keep 1.
 KVM_SETTLE_RETRIES ?= 1
 export NKE_PACKAGE_BUILDER ?= auto
+# Optional local IMDS material, forwarded to native and VM package builds.
+export IMDS_AGENT_FILE IMDS_AGENT_SHA256 IMDS_AGENT_ARCH
 # Label applied to the root filesystem. Cloud-image importers can use this
 # stable identifier instead of depending on a partition or device path.
 ROOT_FS_LABEL ?= cloudimg-rootfs

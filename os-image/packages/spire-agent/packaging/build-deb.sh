@@ -15,7 +15,7 @@
 # Environment:
 #   SPIRE_VERSION       SPIRE release, e.g. 1.14.1 (required).
 #   TPM_PLUGIN_VERSION  spire-tpm-plugin release, e.g. 1.9.0 (required).
-#   DEB_REVISION        Debian packaging revision (default 1).
+#   DEB_REVISION        Debian packaging revision (default 5).
 #   NFPM_BIN            Path to the nfpm binary (default: nfpm on PATH).
 set -euo pipefail
 
@@ -33,7 +33,7 @@ OUT_DIR="$(cd "$3" && pwd)"
 
 : "${SPIRE_VERSION:?build-deb.sh: SPIRE_VERSION is required}"
 : "${TPM_PLUGIN_VERSION:?build-deb.sh: TPM_PLUGIN_VERSION is required}"
-DEB_REVISION="${DEB_REVISION:-1}"
+DEB_REVISION="${DEB_REVISION:-5}"
 NFPM_BIN="${NFPM_BIN:-nfpm}"
 
 command -v "${NFPM_BIN}" >/dev/null 2>&1 || {
@@ -52,6 +52,16 @@ for required in spire-agent tpm_attestor_agent get_tpm_pubhash; do
   }
 done
 
+# Recheck the staged optional material before nfpm reads it, including bundles
+# supplied directly by external builders. A payload without its digest is invalid.
+IMDS_NAME=dsx-imds-node-attestor-agent
+IMDS_CONTENTS=""
+if [[ -e "$SRC/$IMDS_NAME" || -L "$SRC/$IMDS_NAME" || -e "$SRC/$IMDS_NAME.sha256" ]]; then
+  [[ -f "$SRC/$IMDS_NAME.sha256" ]] || { echo "build-deb.sh: missing IMDS SHA-256 sidecar" >&2; exit 1; }
+  bash "$PACKAGING_DIR/../verify-imds.sh" "$SRC/$IMDS_NAME" "$(cat "$SRC/$IMDS_NAME.sha256")" "$ARCH" "$ARCH"
+  IMDS_CONTENTS="$PACKAGING_DIR/imds-contents.yaml"
+fi
+
 # nfpm's `scripts:` fields get no env-var expansion, so nfpm.yaml points at
 # this fixed, package-relative path. The maintainer scripts need no templating,
 # so this is a plain copy.
@@ -67,5 +77,13 @@ export ARCH SRC SPIRE_VERSION TPM_PLUGIN_VERSION DEB_REVISION DEB_VERSION
 
 # cd into PACKAGING_DIR: nfpm.yaml's ../../../files and scripts entries are
 # given as paths relative to it.
-(cd "${PACKAGING_DIR}" && "${NFPM_BIN}" package -f nfpm.yaml -p deb -t "${OUT_DIR}")
+# Insert the optional contents only when verified. No placeholder executable
+# or missing-file exception is needed for packages without IMDS.
+config=$(mktemp)
+trap 'unlink "$config"' EXIT
+awk -v extra="$IMDS_CONTENTS" '
+  /^deb:/ && extra != "" { while ((getline line < extra) > 0) print line; close(extra) }
+  { print }
+' "$PACKAGING_DIR/nfpm.yaml" > "$config"
+(cd "${PACKAGING_DIR}" && "${NFPM_BIN}" package -f "$config" -p deb -t "${OUT_DIR}")
 echo "wrote ${OUT_DIR}/spire-agent_${DEB_VERSION}_${ARCH}.deb"

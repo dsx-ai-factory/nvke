@@ -81,7 +81,9 @@ make -C "${repo_root}/os-image/packages/cni-ovn" debs "${cni_ovn_args[@]}"
 # needs the plugin to join one; without it the agent can only use a join token,
 # which the site cluster never mints.
 echo "building spire-agent deb (${repo_root}/os-image/packages/spire-agent)"
-spire_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}")
+spire_args=(OUT_DIR="${ARTIFACTS_DIR}/debs" ARCH="${ARCH}"
+  IMDS_AGENT_FILE="${IMDS_AGENT_FILE:-}" IMDS_AGENT_SHA256="${IMDS_AGENT_SHA256:-}"
+  IMDS_AGENT_ARCH="${IMDS_AGENT_ARCH:-}")
 if [[ -n "${SPIRE_VERSION:-}" ]]; then
   spire_args+=(SPIRE_VERSION="${SPIRE_VERSION}")
 fi

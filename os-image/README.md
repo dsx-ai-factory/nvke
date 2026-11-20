@@ -438,6 +438,29 @@ Packer inputs and output state while preserving the downloaded ISO and prepared
 packages. `make clean-fde-output` and `make clean-non-fde-output` additionally
 remove the selected variant's completed output.
 
+### Optional IMDS node attestor
+
+Pass a local executable, its authenticated expected SHA-256 and architecture
+through the standalone Make/Packer path. Replace the quoted digest placeholder
+with the authenticated expected digest before running the command:
+
+```bash
+make -C packer os-image-non-fde ARCH=arm64 \
+  IMDS_AGENT_FILE=/absolute/materials/dsx-imds-node-attestor-agent \
+  IMDS_AGENT_SHA256='<expected-64-character-lowercase-sha256>' \
+  IMDS_AGENT_ARCH=arm64
+```
+
+The native and Nix VM package builders both forward this input; the VM builder
+copies files outside the checkout explicitly. Package creation rejects a wrong
+digest or ELF architecture. With no input, the package omits the binary and
+TPM stays the default. A direct Packer material build consumes the resulting
+`spire-agent` package through `image-inputs`, with no separate binary download.
+See the [package contract](packages/spire-agent/README.md#optional-dsx-imds-agent).
+Boot smoke checks executable ownership and the installed checksum when the
+optional binary is present, and skips those checks otherwise. This is package
+validation, not a claim of real IMDS attestation acceptance.
+
 ## Full-disk-encryption (FDE) variant
 
 An opt-in build that lays down an LVM-on-LUKS2 root volume via the Ubuntu

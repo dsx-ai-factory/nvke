@@ -27,7 +27,13 @@ OUT_DIR ?=
 # upstream version does. Revision 2 adds the DSX IMDS node attestor plugin.
 # Revision 3 moves spire-configure.sh under /usr/lib/nvke and renames the unit
 # to nvke-spire-configure.service. Revision 4 removes the DSX IMDS plugin.
-DEB_REVISION ?= 4
+# Revision 5 accepts an optional, locally supplied and verified IMDS plugin.
+DEB_REVISION ?= 5
+
+# All three are required together; ARCH remains the package target.
+IMDS_AGENT_FILE ?=
+IMDS_AGENT_SHA256 ?=
+IMDS_AGENT_ARCH ?=
 
 BUNDLE_VERSION := $(SPIRE_VERSION)+tpm$(TPM_PLUGIN_VERSION)
 
@@ -58,7 +64,9 @@ debs: check-host check-deb-tools bundle ## Build spire-agent_<version>_$(ARCH).d
 
 .PHONY: bundle
 bundle: check-host ## Download, verify and stage the upstream binaries into DIST_DIR.
-	./bundle.sh $(BUNDLE_ARGS) --arch "$(ARCH)"
+	./bundle.sh $(BUNDLE_ARGS) --arch "$(ARCH)" \
+		--imds-agent-file "$(IMDS_AGENT_FILE)" --imds-agent-sha256 "$(IMDS_AGENT_SHA256)" \
+		--imds-agent-arch "$(IMDS_AGENT_ARCH)"
 
 .PHONY: lock
 lock: check-host ## Regenerate lock/<version>.lock from upstream, for every arch. Review the diff, then commit it.
@@ -100,6 +108,10 @@ $(NFPM_BIN):
 .PHONY: test
 test: ## Exercise cold bundle builds for both architectures using local archives.
 	python3 test_bundle.py
+
+.PHONY: test-packages
+test-packages: nfpm ## Inspect real .deb contents for both architectures, with and without IMDS.
+	NFPM_BIN="$(NFPM_BIN)" python3 test_bundle.py
 
 .PHONY: check-host
 check-host: ## Fail early when this host cannot run the bundle step.

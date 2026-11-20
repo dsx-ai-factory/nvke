@@ -18,7 +18,7 @@ def register(ctx):
     if not source_dir.startswith("/"):
         source_dir = os.path.abspath(os.path.join(ctx.main_dir, source_dir))
     if not os.path.exists(os.path.join(source_dir, "go.mod")):
-        fail("dsx_imds_attestation_source_dir does not contain a dsx-identity checkout: %s" % source_dir)
+        fail("dsx_imds_attestation_source_dir does not contain a nvidia-workload-identity checkout: %s" % source_dir)
 
     fixture_dir = ctx.provider_dir
     output_dir = os.path.join(ctx.main_dir, ".local", "dsx-imds-attestation")
