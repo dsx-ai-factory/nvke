@@ -32,6 +32,14 @@ const (
 	httpRetryInitialDelay = 2 * time.Second
 )
 
+// httpResponseHeaderTimeout bounds one attempt that has a connection but no
+// headers. httpDownloadTimeout bounds the whole download, including the body
+// and the retries. Tests shorten both.
+var (
+	httpResponseHeaderTimeout = 30 * time.Second
+	httpDownloadTimeout       = 10 * time.Minute
+)
+
 // BundleSourceType represents the type of bundle source
 type BundleSourceType int
 
@@ -404,6 +412,19 @@ func URLExists(ctx context.Context, url string) error {
 	return nil
 }
 
+// bundleHTTPClient bounds each attempt's wait for headers. http.DefaultClient
+// has no header timeout, so a peer that accepts and then stalls never returns.
+func bundleHTTPClient() *http.Client {
+	var transport *http.Transport
+	if base, ok := http.DefaultTransport.(*http.Transport); ok {
+		transport = base.Clone()
+	} else {
+		transport = &http.Transport{}
+	}
+	transport.ResponseHeaderTimeout = httpResponseHeaderTimeout
+	return &http.Client{Transport: transport}
+}
+
 // httpDoWithRetry issues a request, retrying transport errors and 5xx with
 // backoff. Artifact downloads run on freshly provisioned nodes whose networking
 // has just come up, so a single transient failure should not fail an install.
@@ -416,7 +437,7 @@ func httpDoWithRetry(ctx context.Context, method, url string) (*http.Response, e
 		if err != nil {
 			return nil, err
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := bundleHTTPClient().Do(req)
 		switch {
 		case err != nil:
 			lastErr = err
@@ -509,45 +530,63 @@ func DownloadAndExtractArchive(b *Bundle, source *BundleSource) (string, error) 
 	return downloadAndExtractFromHTTP(b)
 }
 
-// downloadAndExtractFromHTTP downloads the bundle from HTTP/S3 and extracts it
+// downloadAndExtractFromHTTP downloads the bundle from HTTP/S3 and extracts it.
+// The returned directory is removed unless extraction succeeds. Callers install
+// from that directory, so a failed download must not leave it behind.
 func downloadAndExtractFromHTTP(b *Bundle) (string, error) {
 	outputDir, err := os.MkdirTemp("", fmt.Sprintf("%s_%s-", b.Name, b.Version))
 	if err != nil {
 		return "", fmt.Errorf("failed to create tmp dir: %w", err)
 	}
+	// keep is set only after extraction succeeds, so a failed download
+	// does not leave the temp directory behind.
+	keep := false
+	defer func() {
+		if keep {
+			return
+		}
+		if rmErr := os.RemoveAll(outputDir); rmErr != nil {
+			slog.Warn("failed to remove bundle temp dir", "dir", outputDir, "error", rmErr)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), httpDownloadTimeout)
+	defer cancel()
 
 	slog.Info("attempt download of bundle from HTTP", "URL", b.URL)
-	resp, err := httpDoWithRetry(context.Background(), http.MethodGet, b.URL)
+	resp, err := httpDoWithRetry(ctx, http.MethodGet, b.URL)
 	if err != nil {
-		return outputDir, fmt.Errorf("failed to download tgz: %w", err)
+		return "", fmt.Errorf("failed to download tgz: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return outputDir, fmt.Errorf("bad response: %s", resp.Status)
+		return "", fmt.Errorf("bad response: %s", resp.Status)
 	}
 
 	// Write the downloaded archive to a temporary file
 	tmpFile := filepath.Join(outputDir, "bundle.tgz")
 	out, err := os.Create(tmpFile)
 	if err != nil {
-		return outputDir, fmt.Errorf("failed to create temp file: %w", err)
+		return "", fmt.Errorf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(tmpFile) // Clean up the archive file
-	if _, err := io.Copy(out, resp.Body); err != nil {
+	if _, copyErr := io.Copy(out, resp.Body); copyErr != nil {
 		out.Close()
-		return outputDir, fmt.Errorf("failed to write temp archive: %w", err)
+		return "", fmt.Errorf("failed to write temp archive: %w", copyErr)
 	}
 	out.Close()
-	// Extract the archive contents, stripping the top-level directory
-	cmd := exec.Command("tar", "-xzf", tmpFile, "--strip-components=1", "-C", outputDir)
+	// Extract the archive contents, stripping the top-level directory.
+	// The download deadline also stops an extract that outlives it.
+	cmd := exec.CommandContext(ctx, "tar", "-xzf", tmpFile, "--strip-components=1", "-C", outputDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
-		return outputDir, fmt.Errorf("tar extraction failed: %w", err)
+		return "", fmt.Errorf("tar extraction failed: %w", err)
 	}
 
+	keep = true
 	return outputDir, nil
 }
 
