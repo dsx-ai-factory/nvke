@@ -13,12 +13,17 @@ import (
 	"github.com/spiffe/go-spiffe/v2/svid/jwtsvid"
 )
 
-// ControllerAudience is the renamed JWT-SVID audience. A compatible controller
-// accepts it as the token's only audience; old controllers require the legacy value.
+// ControllerAudience is the renamed JWT-SVID audience, and what the agent
+// requests by default. A controller at or past the dual-accept release takes it
+// as the token's only audience.
 const ControllerAudience = "nvke-controller"
 
-// LegacyControllerAudience keeps new agents compatible with old controllers
-// until the controller selects the renamed audience in the node's env file.
+// LegacyControllerAudience is the audience this agent requested before the
+// default flipped. It stays selectable through --controller-audience, because a
+// controller older than the dual-accept release requires it and rejects
+// ControllerAudience outright — which costs that controller its node agent, not
+// just the token. Remove it only after no such controller is deployed and no
+// persisted AGENT_ARGS explicitly selects this legacy audience.
 const LegacyControllerAudience = "nke-controller"
 
 // DefaultRefreshBefore is how far ahead of expiry a cached token is replaced,
