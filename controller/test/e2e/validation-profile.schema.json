@@ -1,0 +1,184 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dsx-ai-factory/nvke/controller/test/e2e/validation-profile.schema.json",
+  "title": "NVKE ValidationProfile",
+  "description": "What the NVKE validation image expects of a management cluster and its tenants. Every field is optional; an unset one keeps the default for deploy/nico.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["apiVersion", "kind"],
+  "properties": {
+    "apiVersion": { "const": "validate.nvke.dev/v1alpha1" },
+    "kind": { "const": "ValidationProfile" },
+    "controller": {
+      "description": "Where the NVKE controller runs. Each field sets the variable in parentheses, and a run that sets that variable to something else fails.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespace": { "type": "string", "description": "The controller's namespace (NVKE_CONTROLLER_NAMESPACE). Default nvke-controller." },
+        "service": { "type": "string", "description": "The controller's Service (NVKE_CONTROLLER_SERVICE)." },
+        "port": { "type": ["string", "integer"], "description": "The controller Service's port, by number or name (NVKE_CONTROLLER_SERVICE_PORT)." },
+        "healthTimeout": { "type": "string", "description": "How long the health checks wait for the controller, as a Go duration such as 90s (NVKE_CONTROLLER_HEALTH_TIMEOUT). Default 60s." },
+        "expectedVersion": { "type": "string", "description": "The controller version the version check expects. NVKE_CONTROLLER_EXPECTED_VERSION overrides it for one run." }
+      }
+    },
+    "auth": {
+      "description": "The identity the suite mints its controller token for. Each field sets the variable in parentheses, and a run that sets that variable to something else fails.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "audience": { "type": "string", "description": "The token audience (NKE_E2E_AUDIENCE). Default: read from the controller's auth ConfigMap." },
+        "namespace": { "type": "string", "description": "The ServiceAccount's namespace (NKE_E2E_TOKEN_NAMESPACE)." },
+        "serviceAccount": { "type": "string", "description": "The ServiceAccount (NKE_E2E_TOKEN_SERVICE_ACCOUNT)." }
+      }
+    },
+    "managementCluster": {
+      "description": "The management cluster the controller runs on.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespaces": { "$ref": "#/$defs/namespaces" },
+        "components": { "$ref": "#/$defs/components" },
+        "certManager": { "$ref": "#/$defs/certManager" },
+        "storageClasses": { "$ref": "#/$defs/storageClasses" },
+        "pvcStorageClass": { "$ref": "#/$defs/pvcStorageClass" },
+        "requiredWorkloads": { "$ref": "#/$defs/requiredWorkloads" },
+        "workloadVersions": { "$ref": "#/$defs/workloadVersions" },
+        "apiServer": { "$ref": "#/$defs/apiServer" },
+        "reservedMemory": { "$ref": "#/$defs/reservedMemory" },
+        "scope": {
+          "enum": ["cluster", "namespaces"],
+          "description": "How much of the cluster the health checks hold to: cluster, the default, or namespaces, for a management cluster shared with workloads NVKE neither installs nor depends on. Problems outside the namespaces are reported, not failed."
+        },
+        "kubernetesVersion": { "type": "string", "description": "The Kubernetes version the cluster was built with. NVKE_MGMT_CLUSTER_KUBERNETES_VERSION overrides it for one run. Unset in both fails the version check." },
+        "probe": {
+          "description": "Where the probe pods run and what they run.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "namespace": { "type": "string", "description": "The probe pods' namespace. Default: the suite's own." },
+            "image": { "$ref": "#/$defs/probeImage" },
+            "pullSecrets": { "$ref": "#/$defs/pullSecrets" }
+          }
+        }
+      }
+    },
+    "tenant": {
+      "description": "What every tenant is expected to have. A run names the tenant to check with NVKE_TENANT_CLUSTER.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespaces": { "$ref": "#/$defs/namespaces" },
+        "components": { "$ref": "#/$defs/components" },
+        "certManager": { "$ref": "#/$defs/certManager" },
+        "storageClasses": { "$ref": "#/$defs/storageClasses" },
+        "pvcStorageClass": { "$ref": "#/$defs/pvcStorageClass" },
+        "requiredWorkloads": { "$ref": "#/$defs/requiredWorkloads" },
+        "workloadVersions": { "$ref": "#/$defs/workloadVersions" },
+        "apiServer": { "$ref": "#/$defs/apiServer" },
+        "reservedMemory": { "$ref": "#/$defs/reservedMemory" },
+        "namespace": { "type": "string", "description": "The tenant namespace the validation ServiceAccount may create in, where the probe pods run. Default nvke-validate." },
+        "probe": {
+          "description": "What the probe pods run.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": { "$ref": "#/$defs/probeImage" },
+            "pullSecrets": { "$ref": "#/$defs/pullSecrets" }
+          }
+        },
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "nodes": { "type": "integer", "minimum": 0, "description": "How many nodes must advertise GPUs. Unset skips the GPU checks." },
+            "image": { "type": "string", "description": "The GPU workload's image, which needs sh. Default nvcr.io/nvidia/cuda:12.9.1-base-ubuntu24.04." }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "namespaces": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 },
+      "description": "The namespaces that must each run a workload, replacing the default list."
+    },
+    "components": {
+      "type": "array",
+      "description": "The optional components the cluster runs: each a name, or a name and the namespace to look in when not its usual one.",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/$defs/componentName" },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name"],
+            "properties": {
+              "name": { "$ref": "#/$defs/componentName" },
+              "namespace": { "type": "string", "minLength": 1 }
+            }
+          }
+        ]
+      }
+    },
+    "componentName": {
+      "enum": ["argocd", "cnpg", "teleport", "kube-vip", "cert-manager"]
+    },
+    "certManager": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "approval": {
+          "enum": ["any", "policy"],
+          "description": "How cert-manager approves a request: any, the default, where its own approver approves every one, or policy, where approver-policy approves only what a CertificateRequestPolicy allows."
+        }
+      }
+    },
+    "storageClasses": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "StorageClasses that must exist."
+    },
+    "pvcStorageClass": {
+      "type": "string",
+      "description": "The class the PVC check binds from. Default: the cluster's default class."
+    },
+    "requiredWorkloads": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+      "description": "Deployments, StatefulSets or DaemonSets, as namespace/name, that must exist and be fully available."
+    },
+    "workloadVersions": {
+      "type": "object",
+      "propertyNames": { "pattern": "^[^/]+/[^/]+$" },
+      "additionalProperties": { "type": "string", "minLength": 1 },
+      "description": "Workloads, as namespace/name, one of whose containers must run an image tagged with the version. NVKE_MGMT_CLUSTER_WORKLOAD_VERSIONS or NVKE_TENANT_WORKLOAD_VERSIONS replaces the list for one run."
+    },
+    "apiServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "flags": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "Flags every API server must run with, and their values."
+        },
+        "etcdEncrypted": { "type": "boolean", "description": "Every API server must run with an encryption provider config." }
+      }
+    },
+    "reservedMemory": {
+      "type": "string",
+      "description": "The least memory every node must hold back from pods, as a Kubernetes quantity such as 2Gi."
+    },
+    "probeImage": {
+      "type": "string",
+      "description": "The probe pods' image, which needs sh, nslookup and curl."
+    },
+    "pullSecrets": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Secrets in the probe namespace the probe pods pull their image with."
+    }
+  }
+}

@@ -15,11 +15,11 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/kube"
 )
 
-func TestUnit_SiteValidateFromEnvDefaults(t *testing.T) {
-	settings, err := siteValidateFromEnv(envMap(nil), filepath.Join(t.TempDir(), "absent"))
+func TestUnit_SiteValidateFromProfileDefaults(t *testing.T) {
+	settings, err := siteValidateFromProfile(profileManagementCluster{}, envMap(nil), filepath.Join(t.TempDir(), "absent"))
 	require.NoError(t, err)
 	require.False(t, settings.enabled)
-	require.Empty(t, settings.kubernetesVersion)
+	require.Empty(t, settings.kubernetesVersion.value)
 	require.Equal(t, siteNamespaces(controller.ServiceNamespace), settings.checks.namespaces)
 	require.Contains(t, settings.checks.namespaces, siteNamespace{name: controller.ServiceNamespace, source: "deploy path item controller"})
 	require.False(t, settings.checks.failFast, "the image reports every check, not just the first failure")
@@ -29,41 +29,53 @@ func TestUnit_SiteValidateFromEnvDefaults(t *testing.T) {
 	require.False(t, settings.checkIdentity)
 }
 
-func TestUnit_SiteValidateFromEnvControllerNamespace(t *testing.T) {
-	settings, err := siteValidateFromEnv(envMap(map[string]string{controller.EnvNamespace: "my-controller"}), filepath.Join(t.TempDir(), "absent"))
+func TestUnit_SiteValidateFromProfileControllerNamespace(t *testing.T) {
+	settings, err := siteValidateFromProfile(profileManagementCluster{}, envMap(map[string]string{controller.EnvNamespace: "my-controller"}), filepath.Join(t.TempDir(), "absent"))
 	require.NoError(t, err)
 	require.Equal(t, siteNamespaces("my-controller"), settings.checks.namespaces)
 	require.NotContains(t, settings.checks.namespaces, siteNamespace{name: controller.ServiceNamespace, source: "deploy path item controller"},
 		"the default list takes the controller's namespace from the settings it reads, not the process environment")
 }
 
-func TestUnit_SiteValidateFromEnvOverrides(t *testing.T) {
-	settings, err := siteValidateFromEnv(envMap(map[string]string{
-		siteValidateEnv:          "true",
-		siteKubernetesVersionEnv: " 1.34.2 ",
-		siteNamespacesEnv:        "kube-system, nke ,,cert-manager",
-		siteProbeNamespaceEnv:    "probes",
-		siteProbeImageEnv:        "registry.example/kubectl:1",
-		siteProbePullSecretsEnv:  " mirror, ,ngc",
-	}), filepath.Join(t.TempDir(), "absent"))
+func TestUnit_SiteValidateFromProfileOverrides(t *testing.T) {
+	settings, err := siteValidateFromProfile(profileManagementCluster{
+		profileExpectations: profileExpectations{Namespaces: []string{"kube-system", " nke ", "", "cert-manager"}},
+		KubernetesVersion:   " 1.34.2 ",
+		Probe: profileManagementProbe{
+			Namespace:    "probes",
+			profileProbe: profileProbe{Image: "registry.example/kubectl:1", PullSecrets: []string{" mirror", " ", "ngc"}},
+		},
+	}, envMap(map[string]string{siteValidateEnv: "true"}), filepath.Join(t.TempDir(), "absent"))
 	require.NoError(t, err)
 	require.True(t, settings.enabled)
-	require.Equal(t, "1.34.2", settings.kubernetesVersion)
+	require.Equal(t, resolvedVersion{field: "managementCluster.kubernetesVersion", value: "1.34.2", source: "profile"}, settings.kubernetesVersion)
 	require.Equal(t, []siteNamespace{
-		{name: "kube-system", source: siteNamespacesEnv},
-		{name: "nke", source: siteNamespacesEnv},
-		{name: "cert-manager", source: siteNamespacesEnv},
+		{name: "kube-system", source: "managementCluster.namespaces"},
+		{name: "nke", source: "managementCluster.namespaces"},
+		{name: "cert-manager", source: "managementCluster.namespaces"},
 	}, settings.checks.namespaces)
 	require.Equal(t, "probes", settings.checks.probeNamespace)
 	require.Equal(t, probeImage{ref: "registry.example/kubectl:1", pullSecrets: []corev1.LocalObjectReference{{Name: "mirror"}, {Name: "ngc"}}}, settings.checks.probeImage)
 	require.Empty(t, settings.checks.excusedNamespace, "a probe namespace given is still checked")
 }
 
+func TestUnit_SiteKubernetesVersionEnvOverridesProfile(t *testing.T) {
+	settings, err := siteValidateFromProfile(profileManagementCluster{KubernetesVersion: "1.34.2"},
+		envMap(map[string]string{siteKubernetesVersionEnv: "1.35.0"}), filepath.Join(t.TempDir(), "absent"))
+	require.NoError(t, err)
+	require.Equal(t, "1.35.0", settings.kubernetesVersion.value)
+	require.Contains(t, settings.describe(), "managementCluster.kubernetesVersion = 1.35.0 (NVKE_MGMT_CLUSTER_KUBERNETES_VERSION, overriding the profile's 1.34.2)")
+
+	settings, err = siteValidateFromProfile(profileManagementCluster{}, envMap(nil), filepath.Join(t.TempDir(), "absent"))
+	require.NoError(t, err)
+	require.Contains(t, settings.describe(), "managementCluster.kubernetesVersion is unset")
+}
+
 func TestUnit_SiteValidateExcusesOnlyOwnNamespace(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "namespace")
 	require.NoError(t, os.WriteFile(file, []byte("validation-runner\n"), 0o600))
 
-	settings, err := siteValidateFromEnv(envMap(map[string]string{siteProbeNamespaceEnv: "probes"}), file)
+	settings, err := siteValidateFromProfile(profileManagementCluster{Probe: profileManagementProbe{Namespace: "probes"}}, envMap(nil), file)
 	require.NoError(t, err)
 	require.Equal(t, "probes", settings.checks.probeNamespace)
 	require.Equal(t, "validation-runner", settings.checks.excusedNamespace)
@@ -74,21 +86,25 @@ func TestUnit_SiteValidateProbeDefaultsToOwnNamespace(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "namespace")
 	require.NoError(t, os.WriteFile(file, []byte("validation-runner\n"), 0o600))
 
-	settings, err := siteValidateFromEnv(envMap(nil), file)
+	settings, err := siteValidateFromProfile(profileManagementCluster{}, envMap(nil), file)
 	require.NoError(t, err)
 	require.Equal(t, "validation-runner", settings.checks.probeNamespace)
 	require.Equal(t, "validation-runner", settings.checks.excusedNamespace)
 }
 
-func TestUnit_SiteValidateFromEnvRejects(t *testing.T) {
-	for name, env := range map[string]map[string]string{
-		"not a boolean":   {siteValidateEnv: "yes please"},
-		"empty namespace": {siteNamespacesEnv: " , "},
-		"unknown scope":   {siteScopeEnv: "nke"},
+func TestUnit_SiteValidateFromProfileRejects(t *testing.T) {
+	for name, tc := range map[string]struct {
+		profile profileManagementCluster
+		env     map[string]string
+		want    string
+	}{
+		"not a boolean":   {env: map[string]string{siteValidateEnv: "yes please"}, want: siteValidateEnv},
+		"empty namespace": {profile: profileManagementCluster{profileExpectations: profileExpectations{Namespaces: []string{" "}}}, want: "managementCluster.namespaces names no namespace"},
+		"unknown scope":   {profile: profileManagementCluster{Scope: "namespace"}, want: `managementCluster.scope: want cluster or namespaces, got "namespace"`},
 	} {
 		t.Run(name, func(t *testing.T) {
-			_, err := siteValidateFromEnv(envMap(env), filepath.Join(t.TempDir(), "absent"))
-			require.Error(t, err)
+			_, err := siteValidateFromProfile(tc.profile, envMap(tc.env), filepath.Join(t.TempDir(), "absent"))
+			require.ErrorContains(t, err, tc.want)
 		})
 	}
 }
@@ -96,26 +112,27 @@ func TestUnit_SiteValidateFromEnvRejects(t *testing.T) {
 func TestUnit_SiteValidateScope(t *testing.T) {
 	absent := filepath.Join(t.TempDir(), "absent")
 	for _, raw := range []string{"", " cluster "} {
-		settings, err := siteValidateFromEnv(envMap(map[string]string{siteScopeEnv: raw}), absent)
+		settings, err := siteValidateFromProfile(profileManagementCluster{Scope: raw}, envMap(nil), absent)
 		require.NoError(t, err)
 		require.Nil(t, settings.checks.scope, "%q checks the whole cluster", raw)
 	}
 
-	settings, err := siteValidateFromEnv(envMap(map[string]string{
-		siteScopeEnv:            "namespaces",
-		siteNamespacesEnv:       "kube-system,nke",
-		siteComponentsEnv:       "argocd,cnpg=databases",
-		controller.EnvNamespace: "nke",
-	}), absent)
+	settings, err := siteValidateFromProfile(profileManagementCluster{
+		Scope: "namespaces",
+		profileExpectations: profileExpectations{
+			Namespaces: []string{"kube-system", "nke"},
+			Components: []profileComponent{{Name: componentArgoCD}, {Name: componentCNPG, Namespace: "databases"}},
+		},
+	}, envMap(map[string]string{controller.EnvNamespace: "nke"}), absent)
 	require.NoError(t, err)
 	require.Equal(t, siteScope{"kube-system": true, "nke": true, "argocd": true, "databases": true}, settings.checks.scope,
 		"the required namespaces and each declared component's own")
-	require.Contains(t, settings.describe(), siteScopeEnv+"=namespaces: argocd, databases, kube-system, nke")
+	require.Contains(t, settings.describe(), "managementCluster.scope: namespaces: argocd, databases, kube-system, nke")
 
-	settings, err = siteValidateFromEnv(envMap(map[string]string{
-		siteScopeEnv:      "namespaces",
-		siteNamespacesEnv: "team-a",
-	}), absent)
+	settings, err = siteValidateFromProfile(profileManagementCluster{
+		Scope:               "namespaces",
+		profileExpectations: profileExpectations{Namespaces: []string{"team-a"}},
+	}, envMap(nil), absent)
 	require.NoError(t, err)
 	require.Equal(t, siteScope{"team-a": true, "kube-system": true, controller.ServiceNamespace: true}, settings.checks.scope,
 		"a list without kube-system or the controller's namespace still scopes them in")
@@ -141,7 +158,7 @@ func podIn(namespace string) corev1.Pod {
 }
 
 func TestUnit_SiteVersionProblemsWithoutExpectedVersion(t *testing.T) {
-	require.Equal(t, []string{"no expected Kubernetes version is set (" + siteKubernetesVersionEnv + ")"},
+	require.Equal(t, []string{"no expected Kubernetes version is set (managementCluster.kubernetesVersion or " + siteKubernetesVersionEnv + ")"},
 		versionProblems("", "v1.34.2", nil))
 }
 

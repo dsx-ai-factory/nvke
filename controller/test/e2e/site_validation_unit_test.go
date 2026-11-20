@@ -26,9 +26,9 @@ func TestUnit_SiteLaneExpectations(t *testing.T) {
 	expect := siteLaneExpectations("local-path")
 	require.Equal(t, map[string]string{componentCertManager: "cert-manager"}, expect.components)
 	require.Equal(t, []string{"local-path"}, expect.storageClasses)
-	require.Equal(t, "NVKE_SITE_COMPONENTS", expect.env(siteComponentsEnv), "the lane's are a site's expectations")
-	require.Contains(t, expect.describe(), "NVKE_SITE_COMPONENTS=cert-manager=cert-manager")
-	require.Contains(t, expect.describe(), "NVKE_SITE_STORAGE_CLASSES=local-path")
+	require.Equal(t, "managementCluster.components", expect.field(fieldComponents), "the lane's are a management cluster's expectations")
+	require.Contains(t, expect.describe(), "managementCluster.components: cert-manager=cert-manager")
+	require.Contains(t, expect.describe(), "managementCluster.storageClasses: local-path")
 }
 
 func TestUnit_SiteNodeProblems(t *testing.T) {

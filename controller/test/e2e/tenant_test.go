@@ -878,7 +878,7 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 }
 
 // keepTenantKubeconfig writes the kubeconfig the controller publishes for a
-// tenant that outlives the run into dir, beside the site node's key. Best
+// tenant that outlives the run into dir, beside the management cluster node's key. Best
 // effort: the tenant is kept either way.
 func keepTenantKubeconfig(ctx context.Context, test *tenantTest, dir string) {
 	kubeconfig, err := test.tenantClients.PublishedKubeconfig(ctx, test.cluster.Name)

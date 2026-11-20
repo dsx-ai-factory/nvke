@@ -199,17 +199,17 @@ no Go at all.
 
 ## Validation image
 
-`Dockerfile` packages the suite as an image that validates a running site, and
-optionally one of its tenants, from a pod inside the site's cluster, as an
-in-cluster test runner runs it. The image carries every spec and runs those its
-two switches select: specs that install and change nothing lasting on the
-cluster they check, unless `NVKE_E2E_KEEP_ON_FAILURE=true` keeps a failed
-spec's objects for inspection.
+`Dockerfile` packages the suite as an image that validates a running
+management cluster, and optionally one of its tenants, from a pod inside the
+management cluster, as an in-cluster test runner runs it. The image carries
+every spec and runs those its two switches select: specs that install and
+change nothing lasting on the cluster they check, unless
+`NVKE_E2E_KEEP_ON_FAILURE=true` keeps a failed spec's objects for inspection.
 
-| Run | `NVKE_SITE_VALIDATE` | `NVKE_TENANT_VALIDATE` | Specs labelled | Specs |
+| Run | `NVKE_MGMT_CLUSTER_VALIDATE` | `NVKE_TENANT_VALIDATE` | Specs labelled | Specs |
 | --- | --- | --- | --- | --- |
-| The site (the image's default) | `true` | `false` | `site-validate` | 34 |
-| The site and a tenant | `true` | `true` | `site-validate` or `tenant-validate` | 71 |
+| The management cluster (the image's default) | `true` | `false` | `mgmt-cluster-validate` | 34 |
+| The management cluster and a tenant | `true` | `true` | `mgmt-cluster-validate` or `tenant-validate` | 71 |
 | A tenant alone | `false` | `true` | `tenant-validate` | 40 |
 
 Every run includes the three [health specs](#health-specs), which carry both
@@ -219,44 +219,44 @@ labels, so every run checks the controller: a tenant has none of its own. Both
 
 ### What it checks
 
-The site and a tenant share the checks below, so each runs once per cluster.
-A check that does not apply to a cluster skips, saying why. An input in the
-table is the name of an environment variable; the [site](#validation-image-variables)
-and [tenant](#tenant-checks) variable tables describe each one.
+The management cluster and a tenant share the checks below, so each runs once
+per cluster. A check that does not apply to a cluster skips, saying why. An
+input in the table is a [validation profile](#validation-profile) field, under
+`managementCluster` or `tenant`, or an environment variable.
 
-| # | Check | Labels | On a site | On a tenant |
+| # | Check | Labels | On a management cluster | On a tenant |
 | --- | --- | --- | --- | --- |
 | 1 | Every node Ready and schedulable | `readiness` | Always. kubeadm's control-plane taint is allowed where another node takes the work. | Always. A node may carry the taints its node pool declares and, on a control-plane node, kubeadm's; any other taint that keeps pods off fails. |
-| 2 | Every Deployment, StatefulSet and DaemonSet available, and each required namespace running a ready pod | `readiness` | Always. Namespaces from `NVKE_SITE_NAMESPACES`. | Always. Namespaces from `NVKE_TENANT_NAMESPACES`. |
+| 2 | Every Deployment, StatefulSet and DaemonSet available, and each required namespace running a ready pod | `readiness` | Always. Namespaces from `managementCluster.namespaces`. | Always. Namespaces from `tenant.namespaces`. |
 | 3 | No pod failing in any namespace, and none starting to in the next 30 seconds | `readiness` | Always | Always |
-| 4 | Every cert-manager Certificate Ready | `readiness` | Always | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager` |
+| 4 | Every cert-manager Certificate Ready | `readiness` | Always | Where `tenant.components` lists `cert-manager` |
 | 5 | The controller API lists clusters | `readiness` | Always | Never: a tenant runs no controller |
 | 6 | Every API server `/readyz` and `/livez` check passing, etcd's included | `readiness` | Always | Always |
 | 7 | `kube-scheduler` and `kube-controller-manager` Ready on every control-plane node | `readiness` | Always | Always |
 | 8 | CoreDNS available | `readiness` | Always | Always |
-| 9 | The API server and every kubelet at the cluster's Kubernetes version | `readiness` | Always, against `NVKE_SITE_KUBERNETES_VERSION`; unset fails | Always, against the controller's record unless `NVKE_TENANT_KUBERNETES_VERSION` overrides it |
+| 9 | The API server and every kubelet at the cluster's Kubernetes version | `readiness` | Always, against `managementCluster.kubernetesVersion` or `NVKE_MGMT_CLUSTER_KUBERNETES_VERSION`; unset in both fails | Always, against the controller's record unless `NVKE_TENANT_KUBERNETES_VERSION` overrides it |
 | 10 | A pod resolving a cluster DNS name | `readiness` | Always | Always |
-| 11 | Argo CD running | `component` | Where `NVKE_SITE_COMPONENTS` lists `argocd` | Where `NVKE_TENANT_COMPONENTS` lists `argocd` |
+| 11 | Argo CD running | `component` | Where `managementCluster.components` lists `argocd` | Where `tenant.components` lists `argocd` |
 | 12 | Every Argo CD Application Synced and Healthy | `component` | As check 11 | As check 11 |
-| 13 | The CloudNativePG operator running, every database cluster healthy | `component` | Where `NVKE_SITE_COMPONENTS` lists `cnpg` | Where `NVKE_TENANT_COMPONENTS` lists `cnpg` |
-| 14 | The Teleport agent running | `component` | Where `NVKE_SITE_COMPONENTS` lists `teleport` | Where `NVKE_TENANT_COMPONENTS` lists `teleport` |
-| 15 | cert-manager running | `component` | Where `NVKE_SITE_COMPONENTS` lists `cert-manager`. Checks 2, 4 and 31 already cover it. | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager` |
-| 16 | kube-vip Ready on every control-plane node | `component` | Where `NVKE_SITE_COMPONENTS` lists `kube-vip` | Where the controller records a control-plane VIP, or `NVKE_TENANT_COMPONENTS` lists `kube-vip` |
-| 17 | Named workloads present, each with a ready pod | | Where `NVKE_SITE_REQUIRED_WORKLOADS` is set | Where `NVKE_TENANT_REQUIRED_WORKLOADS` is set |
-| 18 | Named workloads at their versions | | Where `NVKE_SITE_WORKLOAD_VERSIONS` is set | Where `NVKE_TENANT_WORKLOAD_VERSIONS` is set |
-| 19 | Every API server running the flags kubeadm-config sets, and those the run names | | Always, plus `NVKE_SITE_APISERVER_FLAGS` | Always, plus `NVKE_TENANT_APISERVER_FLAGS` |
-| 20 | Every API server running with an encryption provider config | | Where `NVKE_SITE_ETCD_ENCRYPTED=true` | Where the controller records encryption at rest, or `NVKE_TENANT_ETCD_ENCRYPTED=true` |
+| 13 | The CloudNativePG operator running, every database cluster healthy | `component` | Where `managementCluster.components` lists `cnpg` | Where `tenant.components` lists `cnpg` |
+| 14 | The Teleport agent running | `component` | Where `managementCluster.components` lists `teleport` | Where `tenant.components` lists `teleport` |
+| 15 | cert-manager running | `component` | Where `managementCluster.components` lists `cert-manager`. Checks 2, 4 and 31 already cover it. | Where `tenant.components` lists `cert-manager` |
+| 16 | kube-vip Ready on every control-plane node | `component` | Where `managementCluster.components` lists `kube-vip` | Where the controller records a control-plane VIP, or `tenant.components` lists `kube-vip` |
+| 17 | Named workloads present, each with a ready pod | | Where `managementCluster.requiredWorkloads` is set | Where `tenant.requiredWorkloads` is set |
+| 18 | Named workloads at their versions | | Where `managementCluster.workloadVersions` is set | Where `tenant.workloadVersions` is set |
+| 19 | Every API server running the flags kubeadm-config sets, and those the run names | | Always, plus `managementCluster.apiServer.flags` | Always, plus `tenant.apiServer.flags` |
+| 20 | Every API server running with an encryption provider config | | Where `managementCluster.apiServer.etcdEncrypted: true` | Where the controller records encryption at rest, or `tenant.apiServer.etcdEncrypted: true` |
 | 21 | etcd running with the quota kubeadm-config sets | | Where kubeadm runs a local etcd | Where kubeadm runs a local etcd |
-| 22 | Every node holding back at least the memory the run names | | Where `NVKE_SITE_RESERVED_MEMORY` is set | Where `NVKE_TENANT_RESERVED_MEMORY` is set |
-| 23 | Every StorageClass the run names present | | Where `NVKE_SITE_STORAGE_CLASSES` is set | Where `NVKE_TENANT_STORAGE_CLASSES` is set |
+| 22 | Every node holding back at least the memory the run names | | Where `managementCluster.reservedMemory` is set | Where `tenant.reservedMemory` is set |
+| 23 | Every StorageClass the run names present | | Where `managementCluster.storageClasses` is set | Where `tenant.storageClasses` is set |
 | 24 | Anonymous access refused, and the suite's own identity held to read access | | Always; the identity part only in a pod | Always; the identity part only in a pod |
 | 25 | A ready endpoint behind every admission webhook Service | | Always | Always |
-| 26 | The API server's `/readyz` at kubeadm's `controlPlaneEndpoint`, from a pod | `creates` | Where kubeadm-config sets the endpoint and a node other than kube-vip's lease holder can run the probe | As on a site |
+| 26 | The API server's `/readyz` at kubeadm's `controlPlaneEndpoint`, from a pod | `creates` | Where kubeadm-config sets the endpoint and a node other than kube-vip's lease holder can run the probe | As on a management cluster |
 | 27 | Traffic between pods, and through a Service by name and by ClusterIP, across two nodes where there are two | `creates` | Always | Always |
-| 28 | A NetworkPolicy enforced | `creates` | Unless a NetworkPolicy in the probe namespace already selects the check's pods | As on a site, in `NVKE_TENANT_NAMESPACE` |
+| 28 | A NetworkPolicy enforced | `creates` | Unless a NetworkPolicy in the probe namespace already selects the check's pods | As on a management cluster, in `tenant.namespace` |
 | 29 | A StatefulSet pod resolved and reached by its headless Service name | `creates` | Always | Always |
-| 30 | A PersistentVolumeClaim bound and written from a pod | `creates` | From `NVKE_SITE_PVC_STORAGE_CLASS`, else the default StorageClass; skips without either | From `NVKE_TENANT_PVC_STORAGE_CLASS`, else the tenant's default StorageClass; skips without either |
-| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates` | Always. With `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, the request must be approved or denied instead; a denial passes, and the report says so. Where no Ready `CertificateRequestPolicy` selects the check's Issuer in the probe namespace, approver-policy would never decide, so the check creates nothing and skips, saying why. That test does not cover the RBAC binding that lets cert-manager `use` a policy: a policy that selects the Issuer but is not bound leaves the request undecided, and the check fails, naming the policies that selected it | Where `NVKE_TENANT_COMPONENTS` lists `cert-manager`, and as on a site with `NVKE_TENANT_CERT_MANAGER_APPROVAL` |
+| 30 | A PersistentVolumeClaim bound and written from a pod | `creates` | From `managementCluster.pvcStorageClass`, else the default StorageClass; skips without either | From `tenant.pvcStorageClass`, else the tenant's default StorageClass; skips without either |
+| 31 | A certificate issued by a new self-signed cert-manager Issuer | `creates` | Always. With `managementCluster.certManager.approval: policy`, the request must be approved or denied instead; a denial passes, and the report says so. Where no Ready `CertificateRequestPolicy` selects the check's Issuer in the probe namespace, approver-policy would never decide, so the check creates nothing and skips, saying why. That test does not cover the RBAC binding that lets cert-manager `use` a policy: a policy that selects the Issuer but is not bound leaves the request undecided, and the check fails, naming the policies that selected it | Where `tenant.components` lists `cert-manager`, and as on a management cluster with `tenant.certManager.approval` |
 
 A tenant also runs these, which compare it with the controller's record of it:
 
@@ -266,15 +266,15 @@ A tenant also runs these, which compare it with the controller's record of it:
 | 33 | Every node carries its node pool's labels and taints | | Always |
 | 34 | Every node holds back at least its pool's system and kube reserved memory | | Where a pool reserves any |
 | 35 | NodeLocal DNS running on every Ready node | `readiness` | Always |
-| 36 | `NVKE_TENANT_GPU_NODES` nodes advertise `nvidia.com/gpu`, and no node labeled `nvidia.com/gpu.present` advertises none | `gpu` | Where `NVKE_TENANT_GPU_NODES` is set |
-| 37 | A pod given one GPU lists it with `nvidia-smi -L` | `gpu`, `creates` | Where `NVKE_TENANT_GPU_NODES` is above `0` |
+| 36 | `tenant.gpu.nodes` nodes advertise `nvidia.com/gpu`, and no node labeled `nvidia.com/gpu.present` advertises none | `gpu` | Where `tenant.gpu.nodes` is set |
+| 37 | A pod given one GPU lists it with `nvidia-smi -L` | `gpu`, `creates` | Where `tenant.gpu.nodes` is above `0` |
 
 Each of checks 1–31 also carries `site-software` or `site-distro`, and each of
 checks 32–37 carries `tenant`. Any of these labels can be used in
 `-ginkgo.label-filter`.
 
-**Pods the check leaves out (check 3).** On a site, the runner's own namespace,
-where an earlier run's pods may be left; on a tenant, `NVKE_TENANT_NAMESPACE`.
+**Pods the check leaves out (check 3).** On a management cluster, the runner's own namespace,
+where an earlier run's pods may be left; on a tenant, `tenant.namespace`.
 Pods an earlier run's probes left, labeled `e2e.nvidia.com/validation-probe`,
 are left out wherever they are.
 
@@ -284,9 +284,9 @@ RoleBinding or ClusterRoleBinding may grant `system:anonymous` or
 `system:public-info-viewer`, `system:service-account-issuer-discovery` and
 kube-public's `kubeadm:bootstrap-signer-clusterinfo`. The suite's own identity
 must be unable to read Secrets or bind roles where it is one this README
-grants: on a site, the image's service account, so only in a pod; on a tenant,
-the provisioned ServiceAccount, wherever the suite runs. A site run outside a
-pod, or a lane that reaches its tenant as admin, runs as some other identity,
+grants: on a management cluster, the image's service account, so only in a
+pod; on a tenant, the provisioned ServiceAccount, wherever the suite runs. A
+management cluster run outside a pod, or a lane that reaches its tenant as admin, runs as some other identity,
 which is not checked. Through a proxy that demands a client certificate, such
 as Teleport's, the anonymous request never reaches the API server. The
 bindings, and the identity where it applies, are still checked and fail the
@@ -308,7 +308,7 @@ probe may run on it, which the log says.
 with short-lived objects in the probe namespace that they delete whether they
 pass or fail, unless `NVKE_E2E_KEEP_ON_FAILURE=true` keeps a failed spec's
 objects. A runner that may create nothing adds
-`-ginkgo.label-filter='(site-validate || tenant-validate) && !creates'`. Each
+`-ginkgo.label-filter='(mgmt-cluster-validate || tenant-validate) && !creates'`. Each
 object carries an `e2e.nvidia.com/site-run` label naming its run. The DNS probe
 (check 10) also creates a pod, and is not labeled `creates`.
 
@@ -340,7 +340,7 @@ account. That account needs:
   `cert-manager.io` Certificates, and, where the run
   lists their components, `argoproj.io` Applications and `postgresql.cnpg.io`
   Clusters; for the `creates` specs with
-  `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, `list` on `policy.cert-manager.io`
+  `managementCluster.certManager.approval: policy`, `list` on `policy.cert-manager.io`
   CertificateRequestPolicies, and `get` on Namespaces where a policy selects
   them by label; and `get` on the non-resource URLs `/readyz`, `/livez` and
   `/version`
@@ -361,123 +361,208 @@ account. That account needs:
   StatefulSets, PersistentVolumeClaims, NetworkPolicies and `cert-manager.io`
   Issuers and Certificates, `list` on NetworkPolicies, `get` on `pods/log` and
   `get` and `delete` on Secrets (the issued certificate's); and, with
-  `NVKE_SITE_CERT_MANAGER_APPROVAL=policy`, `list` on `cert-manager.io`
+  `managementCluster.certManager.approval: policy`, `list` on `cert-manager.io`
   CertificateRequests
 
 It needs nothing more, and should be given nothing more: the RBAC check fails
 an identity that can read Secrets across the cluster or bind roles.
 [`deploy/validate-site.yaml`](deploy/validate-site.yaml) grants exactly this,
-and [Running it on a site](#running-it-on-a-site) applies it.
+and [Running it on a management cluster](#running-it-on-a-management-cluster) applies it.
 
 ### Validation image variables
 
-Configure it with the [health spec variables](#health-specs) and these:
+Configure it with a [validation profile](#validation-profile), the
+[health spec variables](#health-specs) and these:
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `NVKE_SITE_VALIDATE` | Turns the site checks on. The image sets it; elsewhere they skip. | Unset |
-| `NVKE_VALIDATE_PROFILE` | Path to a [validation profile](#validation-profile): defaults for these variables, for a site not laid out like `deploy/nico`. | Unset |
-| `NVKE_SITE_KUBERNETES_VERSION` | The Kubernetes version the site was built with. Unset fails the version check. | Unset |
-| `NVKE_SITE_NAMESPACES` | Comma-separated namespaces that must each run a ready pod, replacing the default list: `kube-system`, `cert-manager`, `capi-system` and those `deploy/nico` installs into. | The `deploy/nico` list |
-| `NVKE_SITE_PROBE_NAMESPACE` | Where the probe pods and every `creates` object go. | The pod's own namespace, else `default` |
-| `NVKE_SITE_PROBE_IMAGE` | The probe and server pods' image, which needs `sh`, `nslookup`, `wget`, `curl` and `nc`. Point it at a mirror on a site without internet access. | The suite's kubectl image |
-| `NVKE_SITE_PROBE_PULL_SECRETS` | Comma-separated Secrets in the probe namespace that the probe and server pods pull their image with. They run as the namespace's `default` service account, not the runner's, so a pull Secret on the runner's account does not reach them. | Unset |
-| `NVKE_SITE_COMPONENTS` | Optional components the site runs, comma-separated, each `name` or `name=namespace`: `argocd` (default namespace `argocd`), `cnpg` (`cnpg-system`), `teleport` (`teleport-agent`), `kube-vip` (`kube-system`), and `cert-manager` (`cert-manager`). Every site runs cert-manager and checks 2, 4 and 31 cover it; listing it adds check 15. | Unset |
-| `NVKE_SITE_SCOPE` | `cluster` or `namespaces`. `namespaces` holds checks 2, 3, 4, 12 and 13 to the `NVKE_SITE_NAMESPACES` namespaces and each `NVKE_SITE_COMPONENTS` component's, an Argo CD Application by the namespace it deploys to. What those checks find elsewhere goes in the report and fails nothing. The other checks stay cluster-wide. See [a shared site](#a-shared-site). | `cluster` |
-| `NVKE_SITE_REQUIRED_WORKLOADS` | `namespace/workload`, comma-separated: a Deployment, StatefulSet or DaemonSet that must exist and run a ready pod. | Unset |
-| `NVKE_SITE_WORKLOAD_VERSIONS` | `namespace/workload=version`, comma-separated: a Deployment, StatefulSet or DaemonSet one of whose containers runs an image tagged `version`, with or without a leading `v`. | Unset |
-| `NVKE_SITE_APISERVER_FLAGS` | Flags every API server runs, `name=value` separated by semicolons, because values hold commas. Added to those kubeadm-config sets; a conflict between the two fails. | Unset |
-| `NVKE_SITE_ETCD_ENCRYPTED` | `true` requires `--encryption-provider-config` on every API server. It does not show which provider the config uses. | Unset |
-| `NVKE_SITE_RESERVED_MEMORY` | The least memory every node holds back from pods (capacity less allocatable), such as `2Gi`. That counts the kubelet's hard eviction threshold, 100Mi by default, with its kube and system reservations: set it to their sum. | Unset |
-| `NVKE_SITE_CERT_MANAGER_APPROVAL` | How cert-manager approves a request: `any`, where its own approver approves every one, or `policy`, where approver-policy approves only what a `CertificateRequestPolicy` allows. With `policy`, check 31 requires the approver to decide on its request, and passes on a denial, reporting it; where no policy selects its Issuer, it skips, saying why. | `any` |
-| `NVKE_SITE_STORAGE_CLASSES` | Comma-separated StorageClasses that must exist. | Unset |
-| `NVKE_SITE_PVC_STORAGE_CLASS` | The class the PVC check binds from. | The default class |
-| `NVKE_E2E_KEEP_ON_FAILURE` | `true` leaves a failed `creates` spec's objects in the probe namespace to be inspected, site or tenant, and logs each one kept. The pod check leaves that namespace out, but checks 2 and 4 read the whole cluster, so a kept StatefulSet or Certificate fails the next run: delete every kept object by its `e2e.nvidia.com/site-run` label first. | Unset: deleted |
+| `NVKE_MGMT_CLUSTER_VALIDATE` | Turns the management cluster checks on. The image sets it; elsewhere they skip. | Unset |
+| `NVKE_VALIDATE_PROFILE` | Path to the [validation profile](#validation-profile), for a management cluster not laid out like `deploy/nico`. | Unset |
+| `NVKE_MGMT_CLUSTER_KUBERNETES_VERSION` | The Kubernetes version the management cluster was built with, overriding `managementCluster.kubernetesVersion` for one run. Unset in both fails the version check. | The profile's |
+| `NVKE_MGMT_CLUSTER_WORKLOAD_VERSIONS` | `namespace/workload=version`, comma-separated, replacing `managementCluster.workloadVersions` for one run. | The profile's |
+| `NVKE_E2E_KEEP_ON_FAILURE` | `true` leaves a failed `creates` spec's objects in the probe namespace to be inspected, management cluster or tenant, and logs each one kept. The pod check leaves that namespace out, but checks 2 and 4 read the whole cluster, so a kept StatefulSet or Certificate fails the next run: delete every kept object by its `e2e.nvidia.com/site-run` label first. | Unset: deleted |
 
 Where the controller authenticates its API, the controller API check
-authenticates as `NKE_E2E_TOKEN_NAMESPACE`/`NKE_E2E_TOKEN_SERVICE_ACCOUNT`,
-whose defaults are the development identity in
-`deploy/k8s/nvke-auth-dev.yaml`. A production site has no such identity: set
-both to one the site's controller authorizes to list clusters. Where it does
-not, because `apiAuth` is off or absent and there is no authentication
-ConfigMap, the suite sends no token.
+authenticates as `NKE_E2E_TOKEN_NAMESPACE`/`NKE_E2E_TOKEN_SERVICE_ACCOUNT`
+(`auth.namespace`/`auth.serviceAccount` in a profile), whose defaults are the
+development identity in `deploy/k8s/nvke-auth-dev.yaml`. A production
+management cluster has no such identity: set both to one its controller
+authorizes to list clusters. Where it does not, because `apiAuth` is off or
+absent and there is no authentication ConfigMap, the suite sends no token.
 
-`NVKE_CONTROLLER_NAMESPACE` matters wherever the controller is not installed in
-`nke-controller`, and `NVKE_CONTROLLER_SERVICE` wherever its release is not
-named that. Set `NVKE_CONTROLLER_EXPECTED_VERSION` and
-`NVKE_SITE_KUBERNETES_VERSION`: the image sets
+`NVKE_CONTROLLER_NAMESPACE` (`controller.namespace`) matters wherever the
+controller is not installed in `nvke-controller`, and `NVKE_CONTROLLER_SERVICE`
+(`controller.service`) wherever its release is not named that. Give both
+versions, in the profile or the environment: the image sets
 `NVKE_E2E_REQUIRE_EXPECTED_VERSION=true`, so a run without either fails.
 
 ### Validation profile
 
-The defaults above describe a site built from `deploy/nico`. A site laid out
-differently can keep its settings in one YAML file and point
-`NVKE_VALIDATE_PROFILE` at it, instead of passing each variable. The keys are
-the variable names. A value is taken exactly as written, so `1.30` stays
-`1.30`, or is a list of strings, which is joined with commas; the
-`APISERVER_FLAGS` variables take a string, because they separate with
-semicolons.
+The defaults describe a management cluster built from `deploy/nico`. A
+management cluster laid out differently describes itself in a
+`ValidationProfile`, and `NVKE_VALIDATE_PROFILE` points the image at it.
+[`validation-profile.schema.json`](validation-profile.schema.json) is its JSON
+Schema, which editors that read a `yaml-language-server` comment check as you
+type. Point the comment at the schema in the release tag the image was built
+from, here `v0.24.0`, so the editor checks the fields that image reads:
 
 ```yaml
-NVKE_CONTROLLER_NAMESPACE: my-controller
-NVKE_CONTROLLER_SERVICE: my-controller
-NVKE_SITE_NAMESPACES: [kube-system, cert-manager, capi-system, capnico-system, my-controller]
-NVKE_SITE_COMPONENTS: [argocd, cnpg]
-NVKE_SITE_CERT_MANAGER_APPROVAL: policy
+# yaml-language-server: $schema=https://raw.githubusercontent.com/dsx-ai-factory/nvke/v0.24.0/controller/test/e2e/validation-profile.schema.json
+apiVersion: validate.nvke.dev/v1alpha1
+kind: ValidationProfile
+controller:
+  namespace: my-controller
+  service: my-controller
+  expectedVersion: v0.24.0       # NVKE_CONTROLLER_EXPECTED_VERSION overrides it
+auth:
+  namespace: my-controller
+  serviceAccount: nvke-validate
+managementCluster:
+  namespaces: [kube-system, cert-manager, capi-system, capnico-system, my-controller]
+  scope: namespaces              # or cluster, the default
+  components:
+    - argocd
+    - {name: cnpg, namespace: databases}  # where it is not in cnpg-system
+  certManager: {approval: policy}
+  storageClasses: [local-path]
+  pvcStorageClass: local-path
+  requiredWorkloads: [spire-server/spire-server]
+  workloadVersions:              # NVKE_MGMT_CLUSTER_WORKLOAD_VERSIONS overrides them
+    kube-system/calico-node: v3.29.1
+  apiServer:
+    etcdEncrypted: true
+    flags:
+      profiling: "false"
+      tls-cipher-suites: TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+  reservedMemory: 2Gi
+  kubernetesVersion: v1.34.2     # NVKE_MGMT_CLUSTER_KUBERNETES_VERSION overrides it
+  probe:
+    namespace: nvke-validate
+    image: mirror.example/kubectl:1.34
+    pullSecrets: [mirror]
+tenant:
+  namespace: nvke-validate
+  namespaces: [kube-system, gpu-operator]
+  gpu: {nodes: 4}
 ```
 
+Every field is optional; one left out keeps its `deploy/nico` default.
+
+| Field | Purpose | Default |
+| --- | --- | --- |
+| `controller.namespace`, `.service`, `.port` | Where the controller runs, the port by number or name. Each sets `NVKE_CONTROLLER_NAMESPACE`, `_SERVICE` or `_SERVICE_PORT`. | `nvke-controller`, `nvke-controller`, `8080` |
+| `controller.healthTimeout` | How long the health specs wait, as a Go duration. Sets `NVKE_CONTROLLER_HEALTH_TIMEOUT`. | `60s` |
+| `controller.expectedVersion` | The version the controller must report. | Unset: fails |
+| `auth.audience`, `.namespace`, `.serviceAccount` | The identity the suite presents to the controller API. Each sets `NKE_E2E_AUDIENCE`, `NKE_E2E_TOKEN_NAMESPACE` or `NKE_E2E_TOKEN_SERVICE_ACCOUNT`. | The development identity |
+| `managementCluster.namespaces` | Namespaces that must each run a ready pod, replacing the default list: `kube-system`, `cert-manager`, `capi-system` and those `deploy/nico` installs into. | The `deploy/nico` list |
+| `managementCluster.scope` | `cluster` or `namespaces`. `namespaces` holds checks 2, 3, 4, 12 and 13 to `managementCluster.namespaces` and each declared component's namespace, an Argo CD Application by the namespace it deploys to. What those checks find elsewhere goes in the report and fails nothing. The other checks stay cluster-wide. See [a shared management cluster](#a-shared-management-cluster). | `cluster` |
+| `managementCluster.kubernetesVersion` | The Kubernetes version the cluster was built with. | Unset: fails |
+| `managementCluster.probe.namespace` | Where the probe pods and every `creates` object go. | The pod's own namespace, else `default` |
+| `.probe.image` | The probe and server pods' image, which needs `sh`, `nslookup`, `wget`, `curl` and `nc`. Point it at a mirror on a cluster without internet access. | The suite's kubectl image |
+| `.probe.pullSecrets` | Secrets in the probe namespace that the probe and server pods pull their image with. They run as the namespace's `default` service account, not the runner's, so a pull Secret on the runner's account does not reach them. | None |
+| `.components` | Optional components the cluster runs, each a name, or `{name, namespace}` where it is not in its usual namespace: `argocd` (`argocd`), `cnpg` (`cnpg-system`), `teleport` (`teleport-agent`), `kube-vip` (`kube-system`) and `cert-manager` (`cert-manager`). A name listed twice fails. Every management cluster runs cert-manager and checks 2, 4 and 31 cover it; listing it adds check 15. | None |
+| `.requiredWorkloads` | `namespace/workload`: a Deployment, StatefulSet or DaemonSet that must exist and run a ready pod. | None |
+| `.workloadVersions` | `namespace/workload` to a version: a Deployment, StatefulSet or DaemonSet one of whose containers runs an image tagged with it, with or without a leading `v`. | None |
+| `.apiServer.flags` | Flags every API server runs, and their values. Added to those kubeadm-config sets; a conflict between the two fails. | None |
+| `.apiServer.etcdEncrypted` | `true` requires `--encryption-provider-config` on every API server. It does not show which provider the config uses. | `false` |
+| `.reservedMemory` | The least memory every node holds back from pods (capacity less allocatable), such as `2Gi`. That counts the kubelet's hard eviction threshold, 100Mi by default, with its kube and system reservations: set it to their sum. | Unset |
+| `.certManager.approval` | How cert-manager approves a request: `any`, where its own approver approves every one, or `policy`, where approver-policy approves only what a `CertificateRequestPolicy` allows. With `policy`, check 31 requires the approver to decide on its request, and passes on a denial, reporting it; where no policy selects its Issuer, it skips, saying why. | `any` |
+| `.storageClasses` | StorageClasses that must exist. | None |
+| `.pvcStorageClass` | The class the PVC check binds from. | The default class |
+
+The fields from `.probe` down take the same form under `tenant`, which the
+[tenant checks](#tenant-checks) describe.
+
 Keep in a profile what changes rarely: where things are installed and what
-the site runs. Pass the versions, which change with every upgrade, per run:
+the management cluster runs. The versions change with every upgrade, so the
+environment overrides them for one run:
 
 ```bash
-docker run --rm -v "$PWD/validate-profile.yaml:/profile.yaml:ro" \
+docker run --rm -v "$PWD/validation-profile.yaml:/profile.yaml:ro" \
   -e NVKE_VALIDATE_PROFILE=/profile.yaml \
   -e NVKE_CONTROLLER_EXPECTED_VERSION="$EXPECTED_VERSION" \
-  -e NVKE_SITE_KUBERNETES_VERSION="$KUBERNETES_VERSION" ... "$VALIDATE_IMAGE"
+  -e NVKE_MGMT_CLUSTER_KUBERNETES_VERSION="$KUBERNETES_VERSION" ... "$VALIDATE_IMAGE"
 ```
 
 The image runs as UID 65532, so the file must be readable by others. In a pod,
-mount it from a ConfigMap, whose files are by default. A variable set in the
-environment wins over the profile, so one run can still change one value; set
-it blank to get its built-in default back. The run log and the report's
-validation inputs say which keys the profile set and which the environment
-overrode.
+mount it from a ConfigMap, whose files are by default. The run log and the
+report's validation inputs list what the profile set, and say where each
+version came from:
 
-A profile describes the site, and the checks decide what that means for them:
-it names no checks to leave out. A check that does not apply skips with its
-reason, which the JUnit report keeps.
+```text
+controller.expectedVersion = v0.24.0 (NVKE_CONTROLLER_EXPECTED_VERSION, overriding the profile's v0.23.1)
+```
 
-A profile cannot set the switches that turn a run on (`NVKE_SITE_VALIDATE`,
+The `controller` and `auth` fields set variables the rest of the suite reads.
+Where the environment sets one of those to something else, the run fails
+rather than pick one:
+
+```text
+controller.namespace is "nke" in the profile but NVKE_CONTROLLER_NAMESPACE is "nke-system"; set one
+```
+
+A profile describes the management cluster, and the checks decide what that
+means for them: it names no checks to leave out. A check that does not apply
+skips with its reason, which the JUnit report keeps.
+
+The run fails before any check on a field the profile does not have, a value
+of the wrong type, a second YAML document, another `apiVersion` or `kind`, or
+a profile named but missing or setting nothing, naming the field:
+
+```text
+managementCluster.scope: want cluster or namespaces, got "namespace"
+```
+
+A profile cannot set the switches that turn a run on (`NVKE_MGMT_CLUSTER_VALIDATE`,
 `NVKE_TENANT_VALIDATE`, `NVKE_E2E_REQUIRE_EXPECTED_VERSION`, which the image
 sets) or the variables that name one tenant (`NVKE_TENANT_CLUSTER`,
-`NVKE_TENANT_TOKEN_SECRET`, `NVKE_TENANT_KUBERNETES_VERSION`). An unknown key
-fails the run, as does a profile named but missing or setting nothing, a key
-given an empty value or list, or a second YAML document. It holds no credentials: none of the
-variables it can set is one, and it cannot turn authentication off
-(`NKE_E2E_AUTH_DISABLE`).
+`NVKE_TENANT_TOKEN_SECRET`, `NVKE_TENANT_KUBERNETES_VERSION`). It holds no
+credentials and cannot turn authentication off (`NKE_E2E_AUTH_DISABLE`).
 
-This repository ships no profiles. A site's profile belongs with the rest of
-that site's configuration.
+This repository ships no profiles. A management cluster's profile belongs with
+the rest of that management cluster's configuration.
 
-#### A shared site
+#### Variables the image no longer reads
 
-By default checks 2, 3 and 4 read the whole cluster, so on a site that also
-runs other teams' workloads, one of theirs failing fails the run. Set
-`NVKE_SITE_SCOPE: namespaces` in that site's profile to hold those checks, and
-the Argo CD and CloudNativePG ones, to the namespaces nvke installs into or
-depends on: `NVKE_SITE_NAMESPACES` and the declared components' namespaces,
-plus `kube-system` and the controller's namespace, which are always in scope.
-List there any namespace nvke relies on but does not install, such as the
-CNI's or the one its database clusters run in, or it goes unchecked. Problems
-outside the scope go in the report as `... outside NVKE_SITE_SCOPE` entries.
+Before the profile was typed, each field was a variable. The image now fails a
+run that sets one, even blank, naming the field that replaced it:
+
+```text
+NVKE_SITE_COMPONENTS is no longer read: set managementCluster.components in the validation profile (NVKE_VALIDATE_PROFILE)
+```
+
+`NVKE_SITE_VALIDATE`, `NVKE_SITE_KUBERNETES_VERSION` and
+`NVKE_SITE_WORKLOAD_VERSIONS` became `NVKE_MGMT_CLUSTER_VALIDATE`,
+`NVKE_MGMT_CLUSTER_KUBERNETES_VERSION` and
+`NVKE_MGMT_CLUSTER_WORKLOAD_VERSIONS`. Every other `NVKE_SITE_*` variable, and
+each `NVKE_TENANT_*` variable for what tenants have in common, is a field:
+`NVKE_SITE_PROBE_PULL_SECRETS` is `managementCluster.probe.pullSecrets` and
+`NVKE_TENANT_GPU_NODES` is `tenant.gpu.nodes`. A list that was comma-separated
+is a YAML list, `NVKE_SITE_COMPONENTS`' `name=namespace` is a
+`{name, namespace}` entry, and
+`NVKE_SITE_APISERVER_FLAGS`' semicolon-separated `name=value` is a map of
+flags.
+
+#### A shared management cluster
+
+By default checks 2, 3 and 4 read the whole cluster, so on a management
+cluster that also runs other teams' workloads, one of theirs failing fails the
+run. Set `managementCluster.scope: namespaces` in that management cluster's
+profile to hold those checks, and the Argo CD and CloudNativePG ones, to the
+namespaces nvke installs into or depends on: `managementCluster.namespaces`
+and the declared components' namespaces, plus `kube-system` and the
+controller's namespace, which are always in scope. List there any namespace
+nvke relies on but does not install, such as the CNI's or the one its database
+clusters run in, or it goes unchecked. Problems outside the scope go in the
+report as `... outside managementCluster.scope` entries.
 Nodes, the API server, CoreDNS, admission webhooks and RBAC stay cluster-wide,
 because a broken one breaks nvke whoever owns it.
 
 ### From a workstation
 
-`qualify validate` runs the image with Docker against a site your
+`qualify validate` runs the image with Docker against a management cluster your
 workstation can reach, as one command, and summarizes the result. The checks
-run as the kubeconfig's identity, not as a service account in the site.
+run as the kubeconfig's identity, not as a service account in the management cluster.
 
 #### What you need
 
@@ -496,12 +581,12 @@ run as the kubeconfig's identity, not as a service account in the site.
 
 Without `--image`, each run builds the image from your checkout for your
 machine's architecture, tagged `nvke-validate:<git describe>`, so its checks
-are the checkout's. Hold a site to the checks its controller shipped with by
+are the checkout's. Hold a management cluster to the checks its controller shipped with by
 passing `--image` built from that release tag, as
 [building the image yourself](#building-the-image-yourself) describes. No
-published image exists yet. An image from a tag whose README does not
-document [validation profiles](#validation-profile) or `NVKE_SITE_SCOPE`
-ignores them.
+published image exists yet. An image built from a tag before the
+[validation profile](#validation-profile) was a `ValidationProfile` refuses
+one, and one from before profiles ignores it.
 
 An `--image` must be this Dockerfile's image, or one
 [extended from it](#extending-the-image) that keeps its `ENV` switches and
@@ -512,7 +597,7 @@ An `--image` must be this Dockerfile's image, or one
 - It adds only `-ginkgo.label-filter` (and `-ginkgo.dry-run`), so the report
   paths must come from the image's `ENTRYPOINT`. The summary reads
   `/artifacts/junit-test-report.xml`.
-- It relies on the image's `NVKE_SITE_VALIDATE=true` and
+- It relies on the image's `NVKE_MGMT_CLUSTER_VALIDATE=true` and
   `NVKE_E2E_REQUIRE_EXPECTED_VERSION=true`; without the second, a run with no
   expected version would skip the version check, which reads as a pass.
 
@@ -521,14 +606,14 @@ container runs as your own user and group, not the image's `65532`, so it can
 write `artifacts/` on your disk. It runs on the image's platform, so an
 `amd64`-only image on an Apple Silicon Mac runs emulated, and much slower.
 
-#### A site kept by `qualify local`
+#### A management cluster kept by `qualify local`
 
 ```bash
 go run ./release/cmd/qualify validate --run-dir <qualify local run dir>
 ```
 
 The run directory must come from a run with `--keep-site`, whose
-`node-keys/` holds one site record. The node's address, login and SSH key,
+`node-keys/` holds one management cluster record. The node's address, login and SSH key,
 its kubeconfig and both versions come from the run, so this needs no profile
 and no versions. The node is reached through its jump host, so `tsh` must be
 able to `tsh ssh` to the jump host as the record's login: a `tsh login` to
@@ -537,14 +622,14 @@ the Teleport cluster the jump host is enrolled in, or `TELEPORT_PROXY` and
 `FORGE_TELEPORT_PROXY` sets it. See [reaching the jump host](#reaching-the-jump-host).
 The node must present the host key the record holds, and must finish the SSH
 handshake within a minute. A record from a run that recorded no host key is
-refused; keep the site again with a run that does.
+refused; keep the management cluster again with a run that does.
 
-#### A site behind Teleport
+#### A management cluster behind Teleport
 
 ```bash
 tsh login --proxy=<proxy> --user=<user>
 tsh kube ls                          # the name to pass
-go run ./release/cmd/qualify validate --teleport-cluster <name> --profile <site profile> \
+go run ./release/cmd/qualify validate --teleport-cluster <name> --profile <profile> \
   --controller-version <version> --kubernetes-version <version>
 ```
 
@@ -552,17 +637,17 @@ The run starts `tsh proxy kube` for the cluster and stops it when it ends.
 Your Teleport role must give you that cluster, with Kubernetes groups that
 hold at least the permissions below.
 
-#### A site any kubeconfig reaches
+#### A management cluster any kubeconfig reaches
 
 ```bash
-go run ./release/cmd/qualify validate --kubeconfig <file> [--context <name>] --profile <site profile> \
+go run ./release/cmd/qualify validate --kubeconfig <file> [--context <name>] --profile <profile> \
   --controller-version <version> --kubernetes-version <version>
 ```
 
 The image has no exec credential plugins, so the kubeconfig must carry
 client certificates or a token; one that runs `tsh`, `kubelogin` or a cloud
 CLI fails before any check runs, and `--teleport-cluster` is the way in for a
-Teleport site. A server on `127.0.0.1` is reached from the container: through
+management cluster behind Teleport. A server on `127.0.0.1` is reached from the container: through
 `host.docker.internal` under Docker Desktop, and through the host's network
 on Linux.
 
@@ -570,25 +655,26 @@ on Linux.
 
 | Flag | What it is | Where it comes from |
 | --- | --- | --- |
-| `--profile` | The site's [validation profile](#validation-profile): a YAML file of `NVKE_SITE_*` and controller settings saying how the site is laid out. Without one the checks expect a site built from `deploy/nico`. | The site's own configuration. This repository ships none. |
-| `--controller-version` | The version the controller must report at `/api/version`, compared exactly. A release built at its tag reports the tag, such as `v0.23.1`; another build reports its `git describe`, such as `v0.23.1-0-g347baabc`, which its image tag does not show. | The release you deployed. To see what the controller reports: `kubectl get --raw /api/v1/namespaces/<namespace>/services/nvke-controller:8080/proxy/api/version`, with the controller's namespace, `nvke-controller` by default |
-| `--kubernetes-version` | The version the site was built to run, such as `v1.34.2`. | The site's build record, not the API server: check 9 compares the API server and every kubelet with it. |
+| `--profile` | The management cluster's [validation profile](#validation-profile), saying how it is laid out. Without one the checks expect a management cluster built from `deploy/nico`. | The management cluster's own configuration. This repository ships none. |
+| `--controller-version` | The version the controller must report at `/api/version`, compared exactly. It overrides the profile's `controller.expectedVersion`, and is required without one. A release built at its tag reports the tag, such as `v0.23.1`; another build reports its `git describe`, such as `v0.23.1-0-g347baabc`, which its image tag does not show. | The release you deployed. To see what the controller reports: `kubectl get --raw /api/v1/namespaces/<namespace>/services/nvke-controller:8080/proxy/api/version`, with the controller's namespace, `nvke-controller` by default |
+| `--kubernetes-version` | The version the management cluster was built to run, such as `v1.34.2`. It overrides the profile's `managementCluster.kubernetesVersion`, and is required without one. | The management cluster's build record, not the API server: check 9 compares the API server and every kubelet with it. |
 | `--full` | Also run the `creates` checks: 26–31, and 37 on a tenant. | |
 | `--only <expr>` | A Ginkgo label expression the run is narrowed to, such as `readiness`. | |
 | `--dry-run` | List what would run, and run nothing. | |
 | `--image` | Run this image instead of building one. | See [the image](#the-image). |
-| `--out` | Where the run's files go. | Default: `validate-<time>` under `--run-dir`, else `nvke/validate/<site>-<time>` under your user cache directory (`~/Library/Caches` on macOS, `~/.cache` on Linux). |
+| `--out` | Where the run's files go. | Default: `validate-<time>` under `--run-dir`, else `nvke/validate/<cluster>-<time>` under your user cache directory (`~/Library/Caches` on macOS, `~/.cache` on Linux). |
 
 Any `NVKE_*` or `NKE_E2E_*` variable in your environment reaches the image
-as it is and wins over the profile, so one run can change one value. That is
-also how a run adds [a tenant](#tenant-checks) (`NVKE_TENANT_VALIDATE=true`
+as it is. One the profile also sets fails the run where the two differ,
+except a version, which overrides the profile's for one run. That is how a
+run adds [a tenant](#tenant-checks) (`NVKE_TENANT_VALIDATE=true`
 and `NVKE_TENANT_CLUSTER`) and how it names the identity the controller API
 check presents where the controller authenticates
 (`NKE_E2E_TOKEN_NAMESPACE`, `NKE_E2E_TOKEN_SERVICE_ACCOUNT`).
-[Running it on a site](#running-it-on-a-site) shows how to tell whether it
+[Running it on a management cluster](#running-it-on-a-management-cluster) shows how to tell whether it
 does. `--controller-version`, `--kubernetes-version` and `--profile` set
 their own variables, so the environment's values of those are not passed.
-The run refuses to start where `NVKE_SITE_VALIDATE`,
+The run refuses to start where `NVKE_MGMT_CLUSTER_VALIDATE`,
 `NVKE_E2E_REQUIRE_EXPECTED_VERSION` or `NKE_E2E_AUTH_DISABLE` is set, even to
 nothing: the image sets them, and changing one can turn every check off.
 
@@ -598,16 +684,16 @@ The kubeconfig's identity needs the permissions
 [running the image](#running-the-image) lists for the service account. In a
 read-only run, that includes creating and deleting the DNS probe pod in the
 probe namespace. From a workstation that namespace is `default` unless
-`NVKE_SITE_PROBE_NAMESPACE` names another. Where the controller
+`managementCluster.probe.namespace` names another. Where the controller
 authenticates its API, the identity also needs `create` on
 `serviceaccounts/token` for the `NKE_E2E_TOKEN_*` service account.
 
-That identity is what keeps the run from changing the site. The label
+That identity is what keeps the run from changing the management cluster. The label
 filter is not a guard, as the Dockerfile notes. In a pod, the narrow service
 account of [running the image](#running-the-image) is. From a workstation,
 it is your kubeconfig's identity. An admin identity works, but then the
 filter `qualify validate` sets is all that holds the run to the specs it
-selects. `--only` narrows that filter and cannot widen it. On a shared site,
+selects. `--only` narrows that filter and cannot widen it. On a shared management cluster,
 use an identity bound to `deploy/validate-site.yaml`'s ClusterRole and Roles
 rather than an admin one. Check 24 tests the runner's own identity only in a
 pod, so an admin identity does not fail it from a workstation.
@@ -626,7 +712,7 @@ the counts, every failure, the reason for each skip, and what a check
 reported without failing, such as a scoped check's findings outside its
 scope. It exits non-zero when a check fails, and when no check passed, as
 where every one skipped or `--only` selected none. An interrupt reaches the
-suite, which deletes what it made on the site before it exits.
+suite, which deletes what it made on the management cluster before it exits.
 
 ### Tenant checks
 
@@ -640,11 +726,13 @@ NVKE's [tenant automation](../../../docs/tenant-clusters/kubernetes-api-access.m
 path, and never reads the kubeconfig the controller publishes, which with OIDC
 off is an admin credential. In the tenant, that ServiceAccount needs:
 
-- the cluster-wide reads the site checks need, listed above, without the
-  controller's namespace or the token request
-- in `NVKE_TENANT_NAMESPACE`, the rights the probe namespace needs on the site
+- the cluster-wide reads the management cluster checks need, listed above,
+  without the controller's namespace or the token request
+- in `tenant.namespace`, the rights the probe namespace needs on the
+  management cluster
 
-On the site, the suite's own account also needs `get` on the Secret named by
+On the management cluster, the suite's own account also needs `get` on the
+Secret named by
 `NVKE_TENANT_TOKEN_SECRET`, in its own namespace. The runner writes the
 ServiceAccount's token to it under `token` and the tenant's CA under `ca.crt`,
 as a `kubernetes.io/service-account-token` Secret in the tenant carries them,
@@ -655,27 +743,36 @@ VIP or is reached some other way. Without `server`, the suite uses
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `NVKE_TENANT_CLUSTER` | The tenant to validate, by name. Required when `NVKE_TENANT_VALIDATE` is true. | Unset |
-| `NVKE_TENANT_TOKEN_SECRET` | The Secret, in the suite's namespace on the site, that holds the tenant credential. | `nvke-validate-<cluster>` |
-| `NVKE_TENANT_NAMESPACE` | The tenant namespace the probe pods and every `creates` object go in. Its pods are left out of the pod check. | `nvke-validate` |
-| `NVKE_TENANT_KUBERNETES_VERSION` | Overrides the version the controller records. | The record's |
-| `NVKE_TENANT_NAMESPACES` | Comma-separated namespaces that must each run a ready pod. | `kube-system` |
-| `NVKE_TENANT_PROBE_IMAGE` | As `NVKE_SITE_PROBE_IMAGE`, in the tenant. | The suite's kubectl image |
-| `NVKE_TENANT_PROBE_PULL_SECRETS` | As `NVKE_SITE_PROBE_PULL_SECRETS`, in `NVKE_TENANT_NAMESPACE`. The GPU pod pulls with them too. | Unset |
-| `NVKE_TENANT_GPU_NODES` | How many nodes must advertise GPUs. | Unset |
-| `NVKE_TENANT_GPU_IMAGE` | The GPU pod's image, which needs `sh`; the NVIDIA container runtime supplies `nvidia-smi`. | `nvcr.io/nvidia/cuda:12.9.1-base-ubuntu24.04` |
+| `NVKE_TENANT_TOKEN_SECRET` | The Secret, in the suite's namespace on the management cluster, that holds the tenant credential. | `nvke-validate-<cluster>` |
+| `NVKE_TENANT_KUBERNETES_VERSION` | Overrides the version the controller records. The profile has no field for it: the controller records each tenant's own, so there is nothing to describe. | The record's |
+| `NVKE_TENANT_WORKLOAD_VERSIONS` | `namespace/workload=version`, comma-separated, replacing `tenant.workloadVersions` for one run. | The profile's |
 
-The tenant's expectations mirror the site's: each `NVKE_SITE_*` expectation
-variable has an `NVKE_TENANT_*` twin, read the same way and listed against
-checks 11–23, 30 and 31 in [What it checks](#what-it-checks). One differs:
-`NVKE_TENANT_PVC_STORAGE_CLASS` picks the StorageClass check 30 claims from,
-and nothing else; check 23 reads `NVKE_TENANT_STORAGE_CLASSES`.
+What the tenants have in common is in the profile's `tenant` section. It
+describes every tenant a run is pointed at alike, so tenants built
+differently, such as GPU and CPU-only ones, each take their own profile, and
+the runner passes the one that fits the tenant `NVKE_TENANT_CLUSTER` names:
 
-The image is not published. A site builds it from its controller's release
+| Field | Purpose | Default |
+| --- | --- | --- |
+| `tenant.namespace` | The tenant namespace the probe pods and every `creates` object go in. Its pods are left out of the pod check. | `nvke-validate` |
+| `tenant.namespaces` | Namespaces that must each run a ready pod. | `kube-system` |
+| `tenant.probe.image`, `.probe.pullSecrets` | As under `managementCluster`, in `tenant.namespace`. The GPU pod pulls with the Secrets too. | The suite's kubectl image, none |
+| `tenant.gpu.nodes` | How many nodes must advertise GPUs. | Unset |
+| `tenant.gpu.image` | The GPU pod's image, which needs `sh`; the NVIDIA container runtime supplies `nvidia-smi`. | `nvcr.io/nvidia/cuda:12.9.1-base-ubuntu24.04` |
+
+The rest mirror the management cluster's: `components`, `certManager`,
+`storageClasses`, `pvcStorageClass`, `requiredWorkloads`, `workloadVersions`,
+`apiServer` and `reservedMemory` take the same form under `tenant`, and are
+listed against checks 11–23, 30 and 31 in [What it checks](#what-it-checks).
+One differs: `tenant.pvcStorageClass` picks the StorageClass check 30 claims
+from, and nothing else; check 23 reads `tenant.storageClasses`.
+
+The image is not published. A management cluster builds it from its controller's release
 tag, as [Building the image yourself](#building-the-image-yourself)
 describes, so the tests it runs are the tests that shipped with its
 controller.
 
-The entrypoint sets `-ginkgo.timeout=3h`. A healthy site finishes far sooner,
+The entrypoint sets `-ginkgo.timeout=3h`. A healthy cluster finishes far sooner,
 but on a broken one each check waits out its own limit, and a suite timeout
 reports the checks it did not reach as interrupted. A runner that restates the
 entrypoint should keep the flag, and its own step timeout should be longer.
@@ -703,7 +800,7 @@ mkdir -p artifacts
 docker run --rm --user "$(id -u):$(id -g)" \
   -v "$PWD/artifacts:/artifacts" -v "$HOME/.kube/config:/kube/config:ro" \
   -e KUBECONFIG=/kube/config -e NVKE_CONTROLLER_EXPECTED_VERSION=v0.23.1 \
-  -e NVKE_SITE_KUBERNETES_VERSION=v1.34.2 nvke-validate:local
+  -e NVKE_MGMT_CLUSTER_KUBERNETES_VERSION=v1.34.2 nvke-validate:local
 ```
 
 ### Building the image yourself
@@ -740,7 +837,7 @@ cat controller/test/e2e/bin/validate-image-digest.txt
 ```
 
 `validate-image-push VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS=v0.23.1`
-pushes it to the site's own registry instead, as `<repository>:v0.23.1`.
+pushes it to the management cluster's own registry instead, as `<repository>:v0.23.1`.
 `<repository>` is the whole repository path, such as
 `registry.example.com/nvke-validate`. Either target derives the rest from the
 checkout.
@@ -772,16 +869,17 @@ Arguments that change where things come from, not what, keep the digest:
 Any other change, such as the platforms or attestations added with
 `--provenance` or `--sbom`, gives a different digest.
 
-### Keeping a site's image current
+### Keeping a management cluster's image current
 
-A site needs one image per controller version it runs, not the newest one.
+A management cluster needs one image per controller version it runs, not the
+newest one.
 Build each release tag, `vX.Y.Z` or `vX.Y.Z-rc.N`, when it appears, and push
-it to the site's registry under that version. The nightly `vX.Y.Z-beta.N` tags
+it to the management cluster's registry under that version. The nightly `vX.Y.Z-beta.N` tags
 are not releases:
 
 ```bash
 git ls-remote --tags --refs https://github.com/dsx-ai-factory/nvke.git 'v*' | grep -v -- '-beta\.'
-ver=v0.23.1   # a tag the site's registry does not have yet
+ver=v0.23.1   # a tag the management cluster's registry does not have yet
 git clone --branch "${ver}" --depth 1 https://github.com/dsx-ai-factory/nvke.git "nvke-${ver}"
 make -C "nvke-${ver}/controller/test/e2e" validate-image-push VALIDATE_VERSION="${ver}" \
   VALIDATE_REPO=<repository> VALIDATE_PUSH_TAGS="${ver}"
@@ -790,44 +888,43 @@ make -C "nvke-${ver}/controller/test/e2e" validate-image-push VALIDATE_VERSION="
 Each tag gets its own checkout, so building the next one never meets the last
 one's directory.
 
-A run picks the image whose tag is the site's controller version and sets
-`NVKE_CONTROLLER_EXPECTED_VERSION` to the image's tag. The image requires
-that variable, so a run against a site whose controller is another version
-fails the version check rather than passing on the wrong tests. Upgrading a
-site's controller means running the next tag.
+A run picks the image whose tag is the management cluster's controller
+version and sets `NVKE_CONTROLLER_EXPECTED_VERSION` to the image's tag. The
+image requires a version, so a run against a management cluster whose
+controller is another version fails the version check rather than passing on
+the wrong tests. Upgrading the controller means running the next tag.
 
 Rebuilding a tag on the same builder gives the same digest, so a retried job
 pushes the same image again. A job can also rebuild a tag it has already
 pushed and compare the digests, to check that nothing in its own build path
 changed.
 
-### Running it on a site
+### Running it on a management cluster
 
-[`deploy/validate-site.yaml`](deploy/validate-site.yaml) runs the site checks
-as a Job in an `nvke-validate` namespace, with the RBAC above, and keeps the
+[`deploy/validate-site.yaml`](deploy/validate-site.yaml) runs the management
+cluster checks as a Job in an `nvke-validate` namespace, with the RBAC above, and keeps the
 results on a claim. To run the image from a workstation instead, see
 [from a workstation](#from-a-workstation).
 
-The Job runs every `site-validate` check, the `creates` ones included. For a
+The Job runs every `mgmt-cluster-validate` check, the `creates` ones included. For a
 run that creates nothing, give its container
-`args: ["-ginkgo.label-filter=site-validate && !creates"]`; the `ENTRYPOINT`
-keeps its report paths ahead of them. On a site other teams share, set
-`NVKE_SITE_SCOPE` as [a shared site](#a-shared-site) describes. An image built
-from a tag whose README does not document `NVKE_SITE_SCOPE` or
-[validation profiles](#validation-profile) ignores them.
+`args: ["-ginkgo.label-filter=mgmt-cluster-validate && !creates"]`; the `ENTRYPOINT`
+keeps its report paths ahead of them. On a management cluster other teams
+share, set `managementCluster.scope` as
+[a shared management cluster](#a-shared-management-cluster) describes.
 
 Release tags up to `v0.23.1` have no `controller/test/e2e/deploy/`. Where the
-site's tag has it, use the manifests from the checkout the image was built
+management cluster's tag has it, use the manifests from the checkout the image was built
 from; otherwise take them from `main`, keeping the image built from the
 release tag. Run these from the directory that holds the checkout, with the
-kube context pointing at the site:
+kube context pointing at the management cluster:
 
 ```bash
-ver=v0.23.1                                 # the site's controller version
+ver=v0.23.1                                 # the management cluster's controller version
 image=<repository>:${ver}                   # pushed from ${ver} above
 git clone --depth 1 https://github.com/dsx-ai-factory/nvke.git nvke-main   # only for a tag without deploy/
 deploy=nvke-main/controller/test/e2e/deploy   # or nvke-${ver}/controller/test/e2e/deploy
-k8s=<version>                               # the Kubernetes version the site is meant to run
+k8s=<version>                               # the Kubernetes version the cluster is meant to run
 read -r ctrl_ns ctrl < <(kubectl get deploy -A -l app.kubernetes.io/name=nvke-controller \
   -o jsonpath='{.items[0].metadata.namespace} {.items[0].metadata.name}')
 token_ns=<namespace> token_sa=<service account>   # see below
@@ -852,9 +949,10 @@ The version check compares `ver` exactly with what the controller reports,
 A release built at its tag reports the tag. A controller that reports more,
 such as `v0.23.1-0-g347baabc`, fails the check against its image tag, so put
 what it should report in the Job's `NVKE_CONTROLLER_EXPECTED_VERSION`.
-`k8s` is the version the site was built to run, from its build record rather
-than the cluster: check 9 compares the API server and every kubelet with it,
-so a version read from the API server would pass a site running the wrong one.
+`k8s` is the version the cluster was built to run, from its build record
+rather than the cluster: check 9 compares the API server and every kubelet
+with it, so a version read from the API server would pass a cluster running
+the wrong one.
 
 `token_ns`/`token_sa` name the identity the suite presents to the controller
 API, one the controller authorizes to list clusters; `validate-site-token.yaml`
@@ -876,39 +974,38 @@ ConfigMap with another name, managed outside the chart, add
 `NKE_E2E_AUDIENCE` to the Job's `env`, set to one of the `audiences` it lists.
 
 Where the registry needs credentials, add `imagePullSecrets` to the Job and
-the artifacts pod. Add any [variables](#validation-image-variables) the site's
-expectations need to the Job's `env`, or keep them in a
-[validation profile](#validation-profile): put it in a ConfigMap before
-applying the Job, and uncomment the Job's profile volume, mount and
-`NVKE_VALIDATE_PROFILE`:
+the artifacts pod. Describe a management cluster not laid out like
+`deploy/nico` in a [validation profile](#validation-profile): put it in a
+ConfigMap before applying the Job, and uncomment the Job's profile volume,
+mount and `NVKE_VALIDATE_PROFILE`:
 
 ```bash
 kubectl create namespace nvke-validate --dry-run=client -o yaml | kubectl apply -f -
 kubectl -n nvke-validate create configmap nvke-validate-profile \
-  --from-file=profile.yaml=<site profile>
+  --from-file=profile.yaml=<profile>
 ```
 
 The Job's `env` always sets both versions, `NVKE_CONTROLLER_NAMESPACE`,
 `NVKE_CONTROLLER_SERVICE`, `NKE_E2E_TOKEN_NAMESPACE` and
-`NKE_E2E_TOKEN_SERVICE_ACCOUNT`, blank where `fill` had nothing for them, and
-the environment wins over a profile, so a profile's values of those do not
-apply in the Job. Set them through `fill`, or delete their entries from the
-Job.
+`NKE_E2E_TOKEN_SERVICE_ACCOUNT`, blank where `fill` had nothing for them. A
+blank one leaves the profile's value. A version set there overrides the
+profile's; any of the others set there to something other than the profile's
+fails the run. Set each in one place.
 
-Three of the variables need more RBAC than `validate-site.yaml` grants by
-default: listing `argocd` or `cnpg` in `NVKE_SITE_COMPONENTS` needs the
+Three of the profile's fields need more RBAC than `validate-site.yaml` grants
+by default: listing `argocd` or `cnpg` in `managementCluster.components` needs the
 commented Application or Cluster rule in its ClusterRole uncommented,
-`NVKE_SITE_CERT_MANAGER_APPROVAL=policy` needs the commented
+`managementCluster.certManager.approval: policy` needs the commented
 CertificateRequest rule in `nvke-validate-probe` and the commented
 CertificateRequestPolicy rule, with the Namespace one where a policy selects by
 label, in the ClusterRole uncommented, and setting
-`NVKE_SITE_PROBE_NAMESPACE` needs the `nvke-validate-probe` Role and
-RoleBinding moved to that namespace. A profile that sets them needs the same.
+`managementCluster.probe.namespace` needs the `nvke-validate-probe` Role and
+RoleBinding moved to that namespace.
 
 Follow the run, then read the Job's conditions. `Complete` means no selected
 spec failed. Some may still have skipped, saying why, where an input they
-need is unset: the reports list them, so read those before calling the site
-validated. `Failed` means a spec failed, or the Job ended without finishing
+need is unset: the reports list them, so read those before calling the
+management cluster validated. `Failed` means a spec failed, or the Job ended without finishing
 the suite, such as a pod that never started or a run past the Job's deadline;
 the logs and `kubectl -n nvke-validate describe job nvke-validate`
 say which. Neither means it is still running. Recent Kubernetes versions also
@@ -944,7 +1041,7 @@ A run that finds no reports on the claim never started the suite; the Job's
 events say why. To remove everything, `fill` each file into
 `kubectl delete -f -`.
 
-This validates the site only. Validating a tenant as well needs the runner to
+This validates the management cluster only. Validating a tenant as well needs the runner to
 provision the tenant credential first, as [Tenant checks](#tenant-checks)
 describes.
 
@@ -1225,12 +1322,12 @@ reached as the tenant's admin rather than a provisioned ServiceAccount. Its
 probe pods run in `nvke-validate`, which the lane creates if it is missing
 and, on a tenant that outlives the run, removes again. To validate an
 existing tenant instead of creating one, run `nico-forge && !site-controller`
-against its site controller with `lifecycle.reuseCluster` naming it; the
-site lane builds a new site, so it refuses `lifecycle.reuseCluster`. The
-lane takes the Kubernetes version from the spec it built. For the site it
+against its management cluster with `lifecycle.reuseCluster` naming it; the
+site lane builds a new management cluster, so it refuses `lifecycle.reuseCluster`. The
+lane takes the Kubernetes version from the spec it built. For the management cluster it
 lists what it installed: `cert-manager` as a component (check 15) and the
 stack's default StorageClass (check 23). It sets no other component,
-workload, flag, memory, storage or GPU input, for the site or the tenant, so
+workload, flag, memory, storage or GPU input, for the management cluster or the tenant, so
 the checks that wait on one of those skip there. The tenant's expectations from its
 controller record still apply: kube-vip (check 16) where the record has a
 control-plane VIP, and encryption (check 20) where it records encryption at
@@ -1317,20 +1414,20 @@ keeps every tenant as well, passed or not, and skips the spec that deletes one;
 `qualify local --keep-tenant` sets it, and the workflow never does.
 `lifecycle.nodeKeyDir` writes the site node's SSH key there, so a kept node can
 be logged into after the run; `qualify local` sets it with either keep flag.
-A kept site's admin kubeconfig goes there too, as `<node>.kubeconfig`, aimed at
+A kept management cluster's admin kubeconfig goes there too, as `<node>.kubeconfig`, aimed at
 `127.0.0.1` on the node's API server port, so it works once that port is
 forwarded to the node's loopback through the jump host. A kept tenant's
 kubeconfig, as the controller publishes it, goes there as `<cluster>.kubeconfig`.
-A kept site's `<node>.json` records how it is reached: its address, login,
+A kept management cluster's `<node>.json` records how it is reached: its address, login,
 jump host and kubeconfig, with no credential. All are mode 0600.
 
-To run the [validation image](#running-the-image) against a kept site, run
+To run the [validation image](#running-the-image) against a kept management cluster, run
 `qualify validate --run-dir` on the run, as [From a workstation](#from-a-workstation)
 shows. It reads the node's record, forwards its API server port through the
-jump host, and takes the two versions from the run's `steps.env`. A lane site
+jump host, and takes the two versions from the run's `steps.env`. A lane management cluster
 is laid out like `deploy/nico`, so its profile needs only what the lane
-declares: `NVKE_SITE_COMPONENTS: [cert-manager]` and its StorageClass in
-`NVKE_SITE_STORAGE_CLASSES`.
+declares: `cert-manager` in `managementCluster.components` and its
+StorageClass in `managementCluster.storageClasses`.
 
 Prerequisites, all read from the shell that runs the suite. Neither the proxy
 nor the jump host nor any identifier is checked in, and secrets are read only

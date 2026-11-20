@@ -10,6 +10,7 @@ import (
 	"io"
 	"maps"
 	"os"
+	"reflect"
 	"slices"
 	"strings"
 
@@ -19,189 +20,353 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/controller"
 )
 
-// validateProfileEnv names a YAML file of defaults for the validation image's
-// inputs, for a site whose layout is not deploy/nico. Its keys are the input
-// variables themselves, so a profile is what a site would otherwise pass as
-// a list of -e flags, and every input reads the same way with or without one.
-// A variable set in the environment wins over the profile.
+// validateProfileEnv names the ValidationProfile file that describes the
+// management cluster and tenant a validation run checks, for a layout that is
+// not deploy/nico. validation-profile.schema.json is its schema.
 //
-// The suite ships no profiles. A site's profile describes that site, and
-// lives with whatever else describes it.
+// The suite ships no profiles. A management cluster's profile describes that
+// management cluster, and lives with whatever else describes it.
 const validateProfileEnv = "NVKE_VALIDATE_PROFILE"
 
-// validateProfileSummary says what the profile set, for the report. Empty when
-// no profile was given.
-var validateProfileSummary string
+const (
+	validateProfileAPIVersion = "validate.nvke.dev/v1alpha1"
+	validateProfileKind       = "ValidationProfile"
+)
+
+// Sections of a profile, which name the fields in messages.
+const (
+	sectionManagementCluster = "managementCluster"
+	sectionTenant            = "tenant"
+)
+
+// validationProfile is the profile file. Every field is optional: an unset one
+// keeps the default for deploy/nico.
+type validationProfile struct {
+	APIVersion        string                   `yaml:"apiVersion"`
+	Kind              string                   `yaml:"kind"`
+	Controller        profileController        `yaml:"controller"`
+	Auth              profileAuth              `yaml:"auth"`
+	ManagementCluster profileManagementCluster `yaml:"managementCluster"`
+	Tenant            profileTenant            `yaml:"tenant"`
+}
+
+type profileController struct {
+	Namespace       string `yaml:"namespace"`
+	Service         string `yaml:"service"`
+	Port            string `yaml:"port"`
+	HealthTimeout   string `yaml:"healthTimeout"`
+	ExpectedVersion string `yaml:"expectedVersion"`
+}
+
+type profileAuth struct {
+	Audience       string `yaml:"audience"`
+	Namespace      string `yaml:"namespace"`
+	ServiceAccount string `yaml:"serviceAccount"`
+}
+
+// profileExpectations are what a management cluster and a tenant both declare.
+type profileExpectations struct {
+	Namespaces        []string           `yaml:"namespaces"`
+	Components        []profileComponent `yaml:"components"`
+	CertManager       profileCertManager `yaml:"certManager"`
+	StorageClasses    []string           `yaml:"storageClasses"`
+	PVCStorageClass   string             `yaml:"pvcStorageClass"`
+	RequiredWorkloads []string           `yaml:"requiredWorkloads"`
+	WorkloadVersions  map[string]string  `yaml:"workloadVersions"`
+	APIServer         profileAPIServer   `yaml:"apiServer"`
+	ReservedMemory    string             `yaml:"reservedMemory"`
+}
+
+// profileComponent is one optional component: its name alone, or a mapping
+// with its name and the namespace it runs in where that is not its usual one.
+type profileComponent struct {
+	Name      string `yaml:"name"`
+	Namespace string `yaml:"namespace"`
+}
+
+// UnmarshalYAML takes either form. It refuses unknown keys itself: a
+// decoder's KnownFields does not reach a custom unmarshaler.
+func (c *profileComponent) UnmarshalYAML(n *yaml.Node) error {
+	switch n.Kind {
+	case yaml.ScalarNode:
+		c.Name = n.Value
+		return nil
+	case yaml.MappingNode:
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			key, value := n.Content[i], n.Content[i+1]
+			if value.Kind != yaml.ScalarNode {
+				return fmt.Errorf("line %d: component field %s takes a string", value.Line, key.Value)
+			}
+			switch key.Value {
+			case "name":
+				c.Name = value.Value
+			case "namespace":
+				c.Namespace = value.Value
+			default:
+				return fmt.Errorf("line %d: field %s not found in a component; it has name and namespace", key.Line, key.Value)
+			}
+		}
+		return nil
+	case yaml.DocumentNode, yaml.SequenceNode, yaml.AliasNode:
+	}
+	return fmt.Errorf("line %d: a component is a name or {name, namespace}", n.Line)
+}
+
+type profileCertManager struct {
+	Approval string `yaml:"approval"`
+}
+
+type profileAPIServer struct {
+	Flags         map[string]string `yaml:"flags"`
+	EtcdEncrypted bool              `yaml:"etcdEncrypted"`
+}
+
+type profileProbe struct {
+	Image       string   `yaml:"image"`
+	PullSecrets []string `yaml:"pullSecrets"`
+}
+
+type profileManagementCluster struct {
+	profileExpectations `yaml:",inline"`
+	Scope               string                 `yaml:"scope"`
+	KubernetesVersion   string                 `yaml:"kubernetesVersion"`
+	Probe               profileManagementProbe `yaml:"probe"`
+}
+
+type profileManagementProbe struct {
+	Namespace    string `yaml:"namespace"`
+	profileProbe `yaml:",inline"`
+}
+
+type profileTenant struct {
+	profileExpectations `yaml:",inline"`
+	Namespace           string       `yaml:"namespace"`
+	Probe               profileProbe `yaml:"probe"`
+	GPU                 profileGPU   `yaml:"gpu"`
+}
+
+type profileGPU struct {
+	Nodes *int   `yaml:"nodes"`
+	Image string `yaml:"image"`
+}
+
+// validateProfile is the profile this run loaded, zero without one. TestE2E
+// sets it before the spec tree is built.
+var validateProfile validationProfile
+
+// validateProfileNotes say what the profile set, for the report.
+var validateProfileNotes []string
 
 // runNotes are the report lines that say what the profile set before any spec
 // read its settings.
 func runNotes() []string {
-	if validateProfileSummary == "" {
-		return nil
-	}
-	return []string{validateProfileSummary}
+	return slices.Clone(validateProfileNotes)
 }
 
-// siteExpectationEnvs are the inputs siteExpectationsFromEnv reads, each of
-// which a tenant reads too under tenantPrefix.
-var siteExpectationEnvs = []string{
-	siteComponentsEnv,
-	siteStorageClassesEnv,
-	sitePVCStorageClassEnv,
-	siteWorkloadVersionsEnv,
-	siteRequiredWorkloadsEnv,
-	siteAPIServerFlagsEnv,
-	siteEtcdEncryptedEnv,
-	siteReservedMemoryEnv,
-	siteCertManagerApprovalEnv,
-}
-
-// profileKeys are the inputs a profile may set: what describes a site and
-// the tenants built on it. Left out are the inputs that choose what a run
-// does, which the image sets in its own ENV and so would always win over a
-// profile, and those that name one tenant rather than describe the site.
-// TestUnit_ValidateProfileCoversEveryInput lists them.
-var profileKeys = slices.Concat(
-	[]string{
-		controller.EnvNamespace,
-		controller.EnvService,
-		controller.EnvPort,
-		"NVKE_CONTROLLER_EXPECTED_VERSION",
-		"NVKE_CONTROLLER_HEALTH_TIMEOUT",
-		authtoken.EnvAudience,
-		authtoken.EnvNamespace,
-		authtoken.EnvServiceAccount,
-		siteKubernetesVersionEnv,
-		siteNamespacesEnv,
-		siteProbeNamespaceEnv,
-		siteProbeImageEnv,
-		siteProbePullSecretsEnv,
-		siteScopeEnv,
-	},
-	siteExpectationEnvs,
-	tenantTwins(siteExpectationEnvs),
-	[]string{
-		tenantNamespaceEnv,
-		tenantNamespacesEnv,
-		tenantProbeImageEnv,
-		tenantProbePullSecretsEnv,
-		tenantGPUNodesEnv,
-		tenantGPUImageEnv,
-	},
-)
-
-func tenantTwins(siteEnvs []string) []string {
-	twins := make([]string, 0, len(siteEnvs))
-	for _, name := range siteEnvs {
-		twins = append(twins, siteExpectations{prefix: tenantPrefix}.env(name))
-	}
-	return twins
-}
-
-// loadValidateProfile reads a profile. A value is a scalar, taken as written so
-// that 1.30 stays 1.30 rather than becoming a number, or a list of scalars,
-// joined with commas. The APISERVER_FLAGS inputs separate with semicolons,
-// because their values hold commas, so they take a scalar. A blank value or an
-// empty list would set nothing, so it is refused rather than read as unset.
-func loadValidateProfile(path string) (map[string]string, error) {
+// loadValidateProfile reads a profile, refusing an unknown field, a value of
+// the wrong type, a second document, or another apiVersion or kind.
+func loadValidateProfile(path string) (validationProfile, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", validateProfileEnv, err)
+		return validationProfile{}, fmt.Errorf("%s: %w", validateProfileEnv, err)
 	}
-	decoder := yaml.NewDecoder(bytes.NewReader(data))
-	var doc yaml.Node
-	if err := decoder.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("%s: parsing %s: %w", validateProfileEnv, path, err)
-	}
-	var next yaml.Node
-	if err := decoder.Decode(&next); !errors.Is(err, io.EOF) {
-		return nil, fmt.Errorf("%s: %s holds more than one YAML document", validateProfileEnv, path)
-	}
-	// A profile that sets nothing is a wrong file or ConfigMap key far more
-	// often than a site built from deploy/nico, which needs no profile.
-	if len(doc.Content) == 0 || doc.Content[0].Kind == yaml.MappingNode && len(doc.Content[0].Content) == 0 {
-		return nil, fmt.Errorf("%s: %s sets nothing; a site that needs no profile is run without one", validateProfileEnv, path)
-	}
-	values := map[string]string{}
-	root := doc.Content[0]
-	if root.Kind != yaml.MappingNode {
-		return nil, fmt.Errorf("%s: %s is not a mapping of variable to value", validateProfileEnv, path)
-	}
-
-	for i := 0; i+1 < len(root.Content); i += 2 {
-		keyNode, valueNode := root.Content[i], root.Content[i+1]
-		key := keyNode.Value
-		if !slices.Contains(profileKeys, key) {
-			return nil, fmt.Errorf("%s: %s sets %s, which a profile cannot (it can set: %s)", validateProfileEnv, path, key, strings.Join(slices.Sorted(slices.Values(profileKeys)), ", "))
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	var p validationProfile
+	if err := dec.Decode(&p); err != nil {
+		if errors.Is(err, io.EOF) {
+			return validationProfile{}, fmt.Errorf("%s=%s is empty", validateProfileEnv, path)
 		}
-		if _, dup := values[key]; dup {
-			return nil, fmt.Errorf("%s: %s sets %s twice", validateProfileEnv, path, key)
-		}
-		switch valueNode.Kind {
-		case yaml.ScalarNode:
-			if valueNode.Tag == "!!null" || strings.TrimSpace(valueNode.Value) == "" {
-				return nil, fmt.Errorf("%s: %s gives %s no value", validateProfileEnv, path, key)
-			}
-			values[key] = valueNode.Value
-		case yaml.SequenceNode:
-			if strings.HasSuffix(key, "_APISERVER_FLAGS") {
-				return nil, fmt.Errorf("%s: %s gives %s as a list; it takes a string of name=value separated by semicolons", validateProfileEnv, path, key)
-			}
-			if len(valueNode.Content) == 0 {
-				return nil, fmt.Errorf("%s: %s gives %s an empty list", validateProfileEnv, path, key)
-			}
-			entries := make([]string, 0, len(valueNode.Content))
-			for _, entry := range valueNode.Content {
-				if entry.Kind != yaml.ScalarNode || entry.Tag == "!!null" || strings.TrimSpace(entry.Value) == "" {
-					return nil, fmt.Errorf("%s: %s: %s holds an entry that is not a string", validateProfileEnv, path, key)
-				}
-				entries = append(entries, entry.Value)
-			}
-			values[key] = strings.Join(entries, ",")
-		case yaml.DocumentNode, yaml.MappingNode, yaml.AliasNode:
-			return nil, fmt.Errorf("%s: %s: %s is not a string or a list of strings", validateProfileEnv, path, key)
-		}
+		return validationProfile{}, fmt.Errorf("%s=%s: %w", validateProfileEnv, path, err)
 	}
-	return values, nil
+	if err := dec.Decode(new(yaml.Node)); !errors.Is(err, io.EOF) {
+		return validationProfile{}, fmt.Errorf("%s=%s holds more than one document", validateProfileEnv, path)
+	}
+	if p.APIVersion != validateProfileAPIVersion || p.Kind != validateProfileKind {
+		return validationProfile{}, fmt.Errorf("%s=%s: want apiVersion %s and kind %s, got %q and %q",
+			validateProfileEnv, path, validateProfileAPIVersion, validateProfileKind, p.APIVersion, p.Kind)
+	}
+	if reflect.DeepEqual(p, validationProfile{APIVersion: p.APIVersion, Kind: p.Kind}) {
+		return validationProfile{}, fmt.Errorf("%s=%s sets nothing", validateProfileEnv, path)
+	}
+	if err := p.check(); err != nil {
+		return validationProfile{}, fmt.Errorf("%s=%s: %w", validateProfileEnv, path, err)
+	}
+	return p, nil
 }
 
-// applyValidateProfile sets every profile value whose variable the environment
-// leaves unset, and returns the keys it set and the keys the environment
-// overrode, each sorted. A variable set blank overrides too: every input reads
-// blank as its built-in default, so blanking one is how a run asks for that.
-func applyValidateProfile(values map[string]string, lookupEnv func(string) (string, bool), setenv func(string, string)) ([]string, []string) {
-	var set, overridden []string
-	for _, key := range slices.Sorted(maps.Keys(values)) {
-		if _, ok := lookupEnv(key); ok {
-			overridden = append(overridden, key)
+// check parses every field the way the specs will, so a bad value fails the
+// run before any spec rather than every spec that reads it.
+func (p validationProfile) check() error {
+	none := func(string) string { return "" }
+	var errs []error
+	if _, err := siteValidateFromProfile(p.ManagementCluster, none, ""); err != nil {
+		errs = append(errs, err)
+	}
+	if _, err := tenantValidateFromProfile(p.Tenant, none, ""); err != nil {
+		errs = append(errs, err)
+	}
+	if p.Controller.HealthTimeout != "" {
+		if _, err := parseHealthTimeout(p.Controller.HealthTimeout); err != nil {
+			errs = append(errs, fmt.Errorf("controller.healthTimeout: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// sharedInput is a profile field the rest of the suite reads from the
+// environment, as the lanes set it.
+type sharedInput struct {
+	field, env, value string
+}
+
+func (p validationProfile) sharedInputs() []sharedInput {
+	return []sharedInput{
+		{"controller.namespace", controller.EnvNamespace, p.Controller.Namespace},
+		{"controller.service", controller.EnvService, p.Controller.Service},
+		{"controller.port", controller.EnvPort, p.Controller.Port},
+		{"controller.healthTimeout", controllerHealthTimeoutEnv, p.Controller.HealthTimeout},
+		{"auth.audience", authtoken.EnvAudience, p.Auth.Audience},
+		{"auth.namespace", authtoken.EnvNamespace, p.Auth.Namespace},
+		{"auth.serviceAccount", authtoken.EnvServiceAccount, p.Auth.ServiceAccount},
+	}
+}
+
+// applyValidateProfile sets the environment the suite reads from the
+// profile's shared inputs, refusing one the environment sets to something
+// else. A version is a per-run input, so the environment's wins over the
+// profile's. It returns what it set, for the report.
+func applyValidateProfile(p validationProfile, getenv func(string) string, setenv func(key, value string)) ([]string, error) {
+	var notes, conflicts []string
+	for _, in := range p.sharedInputs() {
+		if in.value == "" {
 			continue
 		}
-		setenv(key, values[key])
-		set = append(set, key)
+		switch env := getenv(in.env); env {
+		case "":
+			setenv(in.env, in.value)
+			notes = append(notes, fmt.Sprintf("%s = %s (profile)", in.field, in.value))
+		case in.value:
+			notes = append(notes, fmt.Sprintf("%s = %s (profile and %s)", in.field, in.value, in.env))
+		default:
+			conflicts = append(conflicts, fmt.Sprintf("%s is %q in the profile but %s is %q; set one", in.field, in.value, in.env, env))
+		}
 	}
-	return set, overridden
+	if len(conflicts) > 0 {
+		return nil, errors.New(strings.Join(conflicts, "\n"))
+	}
+	version := resolveVersion("controller.expectedVersion", p.Controller.ExpectedVersion, expectedVersionEnv, getenv)
+	if version.value != "" && version.source != expectedVersionEnv {
+		setenv(expectedVersionEnv, version.value)
+	}
+	if version.value != "" {
+		notes = append(notes, version.String())
+	}
+	return notes, nil
 }
 
-// useValidateProfile applies the profile validateProfileEnv names, if any,
-// through setenv, which is the test's so the values end with it. It runs
-// before the spec tree is built, because specs read their inputs while
-// building it.
-func useValidateProfile(setenv func(string, string)) (string, error) {
-	path := strings.TrimSpace(os.Getenv(validateProfileEnv))
+// resolvedVersion is a version a run checks against, and where it came from.
+type resolvedVersion struct {
+	field, value, source, overridden string
+}
+
+// resolveVersion picks a version from the environment if set there, else from
+// the profile.
+func resolveVersion(field, profile, env string, getenv func(string) string) resolvedVersion {
+	if v := strings.TrimSpace(getenv(env)); v != "" {
+		return resolvedVersion{field: field, value: v, source: env, overridden: strings.TrimSpace(profile)}
+	}
+	if v := strings.TrimSpace(profile); v != "" {
+		return resolvedVersion{field: field, value: v, source: "profile"}
+	}
+	return resolvedVersion{field: field}
+}
+
+func (v resolvedVersion) String() string {
+	if v.value == "" {
+		return v.field + " is unset"
+	}
+	s := fmt.Sprintf("%s = %s (%s", v.field, v.value, v.source)
+	if v.overridden != "" && v.overridden != v.value {
+		s += fmt.Sprintf(", overriding the profile's %s", v.overridden)
+	}
+	return s + ")"
+}
+
+// retiredInputs are variables the validation image read before profiles were
+// typed, and where each one's setting went.
+var retiredInputs = map[string]string{
+	"NVKE_SITE_VALIDATE":             siteValidateEnv,
+	"NVKE_SITE_KUBERNETES_VERSION":   siteKubernetesVersionEnv,
+	"NVKE_SITE_WORKLOAD_VERSIONS":    siteWorkloadVersionsEnv,
+	"NVKE_SITE_NAMESPACES":           "managementCluster.namespaces",
+	"NVKE_SITE_PROBE_NAMESPACE":      "managementCluster.probe.namespace",
+	"NVKE_SITE_PROBE_IMAGE":          "managementCluster.probe.image",
+	"NVKE_SITE_PROBE_PULL_SECRETS":   "managementCluster.probe.pullSecrets",
+	"NVKE_SITE_COMPONENTS":           "managementCluster.components",
+	"NVKE_SITE_STORAGE_CLASSES":      "managementCluster.storageClasses",
+	"NVKE_SITE_PVC_STORAGE_CLASS":    "managementCluster.pvcStorageClass",
+	"NVKE_SITE_REQUIRED_WORKLOADS":   "managementCluster.requiredWorkloads",
+	"NVKE_SITE_APISERVER_FLAGS":      "managementCluster.apiServer.flags",
+	"NVKE_SITE_ETCD_ENCRYPTED":       "managementCluster.apiServer.etcdEncrypted",
+	"NVKE_SITE_RESERVED_MEMORY":      "managementCluster.reservedMemory",
+	"NVKE_TENANT_NAMESPACE":          "tenant.namespace",
+	"NVKE_TENANT_NAMESPACES":         "tenant.namespaces",
+	"NVKE_TENANT_PROBE_IMAGE":        "tenant.probe.image",
+	"NVKE_TENANT_PROBE_PULL_SECRETS": "tenant.probe.pullSecrets",
+	"NVKE_TENANT_GPU_NODES":          "tenant.gpu.nodes",
+	"NVKE_TENANT_GPU_IMAGE":          "tenant.gpu.image",
+	"NVKE_TENANT_COMPONENTS":         "tenant.components",
+	"NVKE_TENANT_STORAGE_CLASSES":    "tenant.storageClasses",
+	"NVKE_TENANT_PVC_STORAGE_CLASS":  "tenant.pvcStorageClass",
+	"NVKE_TENANT_REQUIRED_WORKLOADS": "tenant.requiredWorkloads",
+	"NVKE_TENANT_APISERVER_FLAGS":    "tenant.apiServer.flags",
+	"NVKE_TENANT_ETCD_ENCRYPTED":     "tenant.apiServer.etcdEncrypted",
+	"NVKE_TENANT_RESERVED_MEMORY":    "tenant.reservedMemory",
+}
+
+// retiredInputProblems names each retired variable the environment sets, so
+// a caller still passing one learns where it went instead of having it
+// silently ignored.
+func retiredInputProblems(lookupEnv func(string) (string, bool)) error {
+	var problems []string
+	for _, name := range slices.Sorted(maps.Keys(retiredInputs)) {
+		if _, ok := lookupEnv(name); !ok {
+			continue
+		}
+		to := retiredInputs[name]
+		if strings.HasPrefix(to, "NVKE_") {
+			problems = append(problems, fmt.Sprintf("%s is no longer read: set %s instead", name, to))
+		} else {
+			problems = append(problems, fmt.Sprintf("%s is no longer read: set %s in the validation profile (%s)", name, to, validateProfileEnv))
+		}
+	}
+	if len(problems) == 0 {
+		return nil
+	}
+	return errors.New(strings.Join(problems, "\n"))
+}
+
+// useValidateProfile refuses retired variables, then loads the profile
+// NVKE_VALIDATE_PROFILE names, if any, and applies its shared inputs. It
+// returns what to print about it.
+func useValidateProfile(lookupEnv func(string) (string, bool), setenv func(key, value string)) ([]string, error) {
+	if err := retiredInputProblems(lookupEnv); err != nil {
+		return nil, err
+	}
+	getenv := func(key string) string { v, _ := lookupEnv(key); return v }
+	path := strings.TrimSpace(getenv(validateProfileEnv))
 	if path == "" {
-		return "", nil
+		return nil, nil
 	}
-	values, err := loadValidateProfile(path)
+	p, err := loadValidateProfile(path)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	set, overridden := applyValidateProfile(values, os.LookupEnv, setenv)
-	summary := fmt.Sprintf("%s=%s set %s", validateProfileEnv, path, strings.Join(set, ", "))
-	if len(set) == 0 {
-		summary = fmt.Sprintf("%s=%s set nothing", validateProfileEnv, path)
+	notes, err := applyValidateProfile(p, getenv, setenv)
+	if err != nil {
+		return nil, err
 	}
-	if len(overridden) > 0 {
-		summary += "; the environment overrode " + strings.Join(overridden, ", ")
-	}
-	return summary, nil
+	validateProfile = p
+	return append([]string{fmt.Sprintf("%s=%s (%s %s)", validateProfileEnv, path, validateProfileAPIVersion, validateProfileKind)}, notes...), nil
 }

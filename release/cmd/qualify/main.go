@@ -55,7 +55,7 @@ func root() *cobra.Command {
   verify     check that everything a plan names is published
   summary    render a plan, or the streams' JUnit reports, as Markdown
   local      run one stream on hardware from this checkout, as the workflow does
-  validate   run the validation image against a site`,
+  validate   run the validation image against a management cluster`,
 		SilenceUsage: true,
 	}
 	cmd.AddCommand(planCmd())
