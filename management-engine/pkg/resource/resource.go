@@ -98,6 +98,8 @@ type ClientConfig struct {
 	// Namespace is required only for namespaced resources and resolves scope once per operation.
 	// The trusted host supplies it. The namespace must not come from untrusted resource input.
 	Namespace func(context.Context) (string, error)
+	// Naming selects the HTTP contract; its zero value uses snake_case.
+	Naming Naming
 }
 
 // RequestOptions carries concurrency information for one operation.
@@ -126,10 +128,27 @@ func requestOptions(ctx context.Context) *RequestOptions {
 
 // List contains one bounded public page. Its reader defines continuation consistency.
 type List[E any] struct {
-	Items   []E    `json:"items"`
-	PageKey string `json:"pageKey"`
-	HasMore bool   `json:"hasMore"`
+	Items   []E    `json:"items" description:"The resources on this page."`
+	PageKey string `json:"pageKey" description:"Continuation for the next page. Empty on the last page."`
+	HasMore bool   `json:"hasMore" description:"Whether another page follows."`
 }
+
+const (
+	// DefaultMaxBodyBytes is the default limit on a public JSON request body.
+	DefaultMaxBodyBytes = 1 << 20
+	// MaxRequestTimeout is the default and maximum public request deadline.
+	MaxRequestTimeout = 30 * time.Second
+	// DefaultPageSize is the number of results returned when no page size is supplied.
+	DefaultPageSize = 100
+	// MaxPageSize is the largest permitted public page size.
+	MaxPageSize = 500
+	// MaxPageKeyBytes bounds an opaque continuation supplied by a caller.
+	MaxPageKeyBytes = 16384
+	// MaxFieldSelectorBytes bounds a public field selector before parsing it.
+	MaxFieldSelectorBytes = 4096
+	// MaxCatalogSourceItems bounds each catalog source or dependency scan before public filtering.
+	MaxCatalogSourceItems = 10000
+)
 
 // ListOptions are the only public list controls.
 type ListOptions struct {
@@ -144,6 +163,9 @@ type DeleteOptions struct{ PropagationPolicy string }
 
 // ServerOptions configures WithLimits. Zero values use its default body size and deadline.
 type ServerOptions struct {
-	MaxBodyBytes   int64
+	MaxBodyBytes int64
+	// RequestTimeout bounds handler work, so hosts still need HTTP transport timeouts.
 	RequestTimeout time.Duration
+	// Naming formats errors produced before resource dispatch.
+	Naming Naming
 }

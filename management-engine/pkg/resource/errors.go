@@ -55,19 +55,37 @@ const (
 	unexpectedBodyCode      = "unexpectedBody"
 )
 
+// ProblemCodes returns canonical problem identifiers for contract generation.
+func ProblemCodes() []string {
+	return []string{
+		alreadyExistsCode, bodyTooLargeCode, conflictCode, datastoreUnavailableCode, deadlineFailedCode,
+		forbiddenCode, internalErrorCode, invalidRequestCode, invalidResourceCode, methodNotAllowedCode,
+		notFoundCode, pageExpiredCode, preconditionFailedCode, preconditionRequiredCode, projectionFailedCode,
+		requestTimeoutCode, unauthorizedCode, unsupportedMediaTypeCode,
+	}
+}
+
+// FieldErrorCodes returns canonical field diagnostic identifiers for contract generation.
+func FieldErrorCodes() []string {
+	return []string{
+		identityMismatchCode, invalidCode, invalidJSONCode, invalidPreconditionCode,
+		invalidQueryCode, readOnlyCode, unexpectedBodyCode,
+	}
+}
+
 // FieldError identifies a public JSON field or query parameter with an approved diagnostic.
 type FieldError struct {
-	Field   string `json:"field,omitempty"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
+	Field   string `json:"field,omitempty" description:"A JSON pointer into the body, or a query parameter name."`
+	Code    string `json:"code" description:"A stable identifier for the kind of failure."`
+	Message string `json:"message" description:"An explanation of the failure for a person."`
 }
 
 // Error is a sanitized problem response shared by direct and HTTP clients.
 type Error struct {
-	Status int          `json:"status"`
-	Code   string       `json:"code"`
-	Title  string       `json:"title"`
-	Errors []FieldError `json:"errors,omitempty"`
+	Status int          `json:"status" description:"The HTTP status code of the response."`
+	Code   string       `json:"code" description:"A stable identifier for the kind of problem."`
+	Title  string       `json:"title" description:"A summary of the problem for a person."`
+	Errors []FieldError `json:"errors,omitempty" description:"The fields or query parameters that caused the problem."`
 	cause  error
 }
 

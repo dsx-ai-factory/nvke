@@ -19,6 +19,30 @@ This regenerates deepcopy methods, canonical CRDs and RBAC, and
 `dist/install.yaml`. Runtime manifests and permission rules are maintained under
 `config/`. Preserve `PROJECT` metadata and scaffold markers.
 
+## Public HTTP APIs
+
+The tenant and operator contracts are generated into `api/tenant.openapi.yaml`
+and `api/operator.openapi.yaml` from the registered resources and their schemas.
+Edit the source types and registrations, then run:
+
+```sh
+make generate-openapi generate-openapi-check
+make test-unit test-integration lint lint-openapi
+```
+
+The `Naming` fields returned by `Tenant()` and `Operator()` in
+`pkg/publicapi/surfaces.go` independently select `resource.SnakeCase` (the default)
+or `resource.CamelCase`. This is a source setting shared by the HTTP server and
+OpenAPI generator, not a deployment flag.
+It applies to declared JSON fields, query parameters, selector paths, error
+field paths and error codes such as `already_exists`. Requests must use the
+selected spelling. Dictionary keys, other enum values, headers and opaque
+tokens retain their values. Kubernetes objects keep their canonical field names.
+
+The snake_case documents omit datastore CEL expressions because those rules
+refer to canonical Kubernetes field names. Datastore admission still enforces
+them. The NVKE controller's separate REST API retains its existing contract.
+
 ## Helm chart generation
 
 Run `make chart` after changing a runtime manifest or state definition. It runs

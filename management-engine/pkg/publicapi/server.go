@@ -19,8 +19,29 @@ import (
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
 )
 
+const (
+	// LivenessPath identifies the process liveness endpoint.
+	LivenessPath = "/healthz"
+	// ReadinessPath identifies the datastore readiness endpoint.
+	ReadinessPath = "/readyz"
+)
+
+// MountHealth installs liveness and readiness probes using the supplied datastore check.
+func MountHealth(mux *http.ServeMux, checkReadiness func(context.Context) error) {
+	mux.HandleFunc("GET "+LivenessPath, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	mux.HandleFunc("GET "+ReadinessPath, func(w http.ResponseWriter, r *http.Request) {
+		if err := checkReadiness(r.Context()); err != nil {
+			http.Error(w, "datastore unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+}
+
 // Run parses common flags, mounts the command's public surface, and serves it until shutdown.
-func Run(version string, registrations []resource.Registration, cfg resource.ClientConfig) error {
+func Run(version string, surface Surface, clientConfig resource.ClientConfig) error {
 	address := flag.String("listen", ":8080", "HTTP listen address")
 	contextName := flag.String("context", "", "Datastore kubeconfig context")
 	authConfig := flag.String("auth-config", "", "Authentication configuration file. Empty disables authentication.")
@@ -44,33 +65,29 @@ func Run(version string, registrations []resource.Registration, cfg resource.Cli
 		}
 	}
 
-	datastore, err := config.GetConfigWithContext(*contextName)
+	cfg, err := config.GetConfigWithContext(*contextName)
 	if err != nil {
 		return fmt.Errorf("load datastore configuration: %w", err)
 	}
-	datastore.Timeout = 5 * time.Second
-	disco, err := discovery.NewDiscoveryClientForConfig(datastore)
+	cfg.Timeout = 5 * time.Second
+	disco, err := discovery.NewDiscoveryClientForConfig(cfg)
 	if err != nil {
 		return fmt.Errorf("configure readiness discovery: %w", err)
 	}
-	cfg.Datastore = datastore
+	clientConfig.Datastore = cfg
+	clientConfig.Surface = surface.Name
+	clientConfig.Naming = surface.Naming
 	mux := http.NewServeMux()
-	for _, registration := range registrations {
-		if err := registration.Mount(mux, cfg); err != nil {
-			return fmt.Errorf("mount %s surface: %w", cfg.Surface, err)
+	for _, registration := range surface.Registrations {
+		if err := registration.Mount(mux, clientConfig); err != nil {
+			return fmt.Errorf("mount %s surface: %w", clientConfig.Surface, err)
 		}
 	}
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
+	MountHealth(mux, func(ctx context.Context) error {
+		_, err := disco.ServerResourcesForGroupVersionWithContext(ctx, "service.nvke.nvidia.com/v1")
+		return err
 	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		if _, err := disco.ServerResourcesForGroupVersionWithContext(r.Context(), "service.nvke.nvidia.com/v1"); err != nil {
-			http.Error(w, "datastore unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		w.WriteHeader(http.StatusOK)
-	})
-	handler := resource.WithLimits(mux, resource.ServerOptions{})
+	handler := resource.WithLimits(mux, resource.ServerOptions{Naming: clientConfig.Naming})
 	if authenticator != nil {
 		handler = authenticator.Wrap(handler)
 	}
@@ -81,7 +98,7 @@ func Run(version string, registrations []resource.Registration, cfg resource.Cli
 	ctx := signals.SetupSignalHandler()
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.ListenAndServe() }()
-	slog.Info("serving REST API", "surface", cfg.Surface, "address", *address)
+	slog.Info("serving REST API", "surface", clientConfig.Surface, "address", *address)
 	select {
 	case err := <-serveErr:
 		return fmt.Errorf("serve HTTP: %w", err)

@@ -1,6 +1,6 @@
 body:
   metadata:
-    creationTimestamp: "1970-01-01T00:00:00Z"
+    creation_timestamp: "1970-01-01T00:00:00Z"
     name: control-plane-v1
     uid: UID
   spec:
@@ -9,17 +9,17 @@ body:
     lifecycle:
       deprecated: true
       hidden: false
-    machineImageRef:
+    machine_image_ref:
       name: ubuntu-2404-amd64
-    machineInit:
-      userDataTemplate: |
+    machine_init:
+      user_data_template: |
         #cloud-config
         hostname: nvke-control-plane
 headers:
   Cache-Control:
   - no-store
   Content-Length:
-  - "349"
+  - "355"
   Content-Type:
   - application/json
   Date:
