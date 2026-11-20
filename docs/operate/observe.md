@@ -115,12 +115,19 @@ The series that answer the most common questions:
 | `nvke_controller_node_info` | `tenant_cluster`, `node_pool`, `node_set_id`, `node`, `ip`, `control_plane`, `agent_version`, `spiffe_enabled`, `forge_machine_id`, `release`, `config_profile` | One series per node, control-plane nodes included. A control-plane node outside a node pool has an empty `node_pool`, and its `release` and `config_profile` come from the control-plane configuration. |
 | `nvke_controller_node_condition` | `tenant_cluster`, `node`, `condition`, `status` | Each node condition the API reports, such as `kubernetesReady`, with value 1. |
 | `nvke_controller_node_lifecycle_elapsed_seconds` | `tenant_cluster`, `node`, `node_type`, `state` | How long a node has been in `pending`, `provisioning`, `deleting` or `markedForRecycling`. A value that keeps growing is a stuck node. |
+| `nvke_controller_node_condition_elapsed_seconds` | `tenant_cluster`, `node`, `node_type`, `condition` | Seconds since the condition last changed, for `nodeAgentReady` or `kubernetesReady` not `True` on a provisioned node that is not deleting, and for `rebooting` while `True`. Healthy nodes have no series. |
 | `nvke_controller_node_provision_duration_seconds`, `nvke_controller_node_provision_total` | `tenant_cluster`, `node_type`, `result` | Node provisioning time and outcomes. `result` is `success` or `failure`. |
 | `nvke_controller_node_provisioning_giveups_total` | `cluster_name`, `node_pool_name` | Worker nodes that NVKE deleted because provisioning took longer than its timeout. |
 | `nvke_controller_node_teardown_duration_seconds`, `nvke_controller_node_teardown_total` | `tenant_cluster`, `node_type`, `result` | Node deletion time and outcomes. |
 | `nvke_auth_requests_total`, `nvke_auth_enabled` | `outcome`, `reason`, `issuer`; `mode` | API authentication decisions and the active mode. See [Secure the NVKE API](api-authentication.md). |
 
 `node_type` is `cp` for control-plane nodes and `worker` for workers. The `tenant_cluster` label holds the workload cluster's name.
+
+For `rebooting`, the clock starts when the condition is set, before any reboot wait, and runs for the whole reboot workflow. The soft-reboot wait uses `NODE_REBOOT_INITIAL_TIMEOUT` (default 30m, at most 30m), and `NODE_REBOOT_MAX_TIMEOUT` (default 1h) caps each hard-reboot wait. A value above 3600 marks a long-running reboot. With the default `NODE_REBOOT_INITIAL_TIMEOUT`, it usually means at least one wait timed out:
+
+```text
+nvke_controller_node_condition_elapsed_seconds{condition="rebooting"} > 3600
+```
 
 A NetworkPolicy admits scrapes of port 9090 only from a fixed set of namespaces, including `monitoring`, and from the namespaces in the `metrics.networkPolicy.additionalNamespaces` value, which the deploy path sets to `nktp`. To scrape from a Prometheus in another namespace, write that value, with `nktp` and the new namespace in the list, to a values file, and run the install again with `--values-for controller=<FILE>` added. If you turned on API authentication, also pass `--values-for controller=../auth-values.yaml`, or the install turns authentication off; see [Secure the NVKE API](api-authentication.md). If you passed `--values-for nktp=<FILE>` when you installed, pass it again, or NKTP goes back to the bundled development backend.
 
