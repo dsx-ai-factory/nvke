@@ -218,24 +218,31 @@ systemctl is-enabled openvswitch-switch.service
 systemctl is-active openvswitch-switch.service
 sudo ovs-vsctl show >/dev/null
 
+# BEGIN apt-sources-check (test_provision.BootSmokeSourcesTest runs this block)
 # Ubuntu packages come from one snapshot.ubuntu.com snapshot (#2206). After
-# cloud-init's first boot, no apt source names the live archive, and the
-# Ubuntu sources name a snapshot ID (the expected one, when the caller passes
-# UBUNTU_SNAPSHOT_URI). Comments do not count: 24.04's stub sources.list is
-# nothing but comments.
-apt_sources=$(cat /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null |
-    grep -v '^[[:space:]]*#' || true)
-if grep -Eq '(archive|ports|security)\.ubuntu\.com' <<<"${apt_sources}"; then
-    echo "an apt source names the live Ubuntu archive:" >&2
-    grep -E '(archive|ports|security)\.ubuntu\.com' <<<"${apt_sources}" >&2
+# cloud-init's first boot, every apt source is a snapshot (a URI ending in a
+# snapshot ID, at the expected one when the caller passes UBUNTU_SNAPSHOT_URI)
+# or the image's local repo; nothing else, and so never the live archive.
+# Only what apt reads counts: comment lines (24.04's stub sources.list is
+# nothing else) and files that are not .list or .sources (curtin's
+# ubuntu.sources.curtin.orig backup) are skipped.
+apt_uris=$(cat /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null |
+    grep -v '^[[:space:]]*#' |
+    sed -n -E -e 's/^URIs:[[:space:]]*//p' \
+        -e 's/^deb(-src)?[[:space:]]+(\[[^]]*\][[:space:]]+)?([^[:space:]]+).*/\3/p' |
+    tr -s ' \t' '\n\n' | grep -v '^$' || true)
+[[ -n "${apt_uris}" ]] || { echo "the image has no apt sources at all" >&2; exit 1; }
+foreign=$(grep -v -E -e '^https?://[^[:space:]]+/[0-9]{8}T[0-9]{6}Z/?$' -e '^file:/usr/lib/nvke/debs/?$' <<<"${apt_uris}" || true)
+if [[ -n "${foreign}" ]]; then
+    echo "apt sources other than the Ubuntu snapshot and the local repo:" >&2
+    echo "${foreign}" >&2
     exit 1
 fi
-grep -Eq '/[0-9]{8}T[0-9]{6}Z/?([[:space:]]|$)' <<<"${apt_sources}" ||
-    { echo "no apt source names an Ubuntu snapshot ID" >&2; exit 1; }
 if [[ -n "${expected_snapshot}" ]]; then
-    grep -Fq -- "${expected_snapshot%/}" <<<"${apt_sources}" ||
-        { echo "no apt source names ${expected_snapshot}" >&2; exit 1; }
+    grep -Fxq -e "${expected_snapshot%/}" -e "${expected_snapshot%/}/" <<<"${apt_uris}" ||
+        { echo "no apt source names ${expected_snapshot}; they are:" >&2; echo "${apt_uris}" >&2; exit 1; }
 fi
+# END apt-sources-check
 
 # The local apt repo has to offer what a node installs at cluster create.
 # These are staged rather than installed, so nothing above would notice them

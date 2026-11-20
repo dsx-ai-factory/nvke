@@ -60,9 +60,9 @@ autoinstall:
   # for the installer and for the installed system, which keeps these sources;
   # nothing reads the live archive or security.ubuntu.com. One archive serves
   # both architectures: the snapshot service carries arm64 under /ubuntu, and
-  # its /ubuntu-ports answers 401. The legacy `primary` form is used as given,
-  # without mirror testing; `fallback: abort` stops the install rather than
-  # quietly installing from the ISO alone when the snapshot is unreachable.
+  # its /ubuntu-ports answers 401. Subiquity mirror-checks this single legacy
+  # `primary` candidate, and `fallback: abort` stops the install when that check
+  # fails rather than quietly installing from the ISO alone.
   apt:
     preserve_sources_list: false
     geoip: false

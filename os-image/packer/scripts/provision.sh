@@ -104,7 +104,9 @@ sudo dpkg -i "${spire_agent_deb}"
 # the build's Ubuntu snapshot.
 sudo apt-get update
 # Every apt source is the build's Ubuntu snapshot or the local repo (#2206),
-# before anything is installed from them.
+# before provisioning installs anything from them. (The FDE variant's
+# configure-fde.sh installs its clevis packages earlier; the versions check
+# below covers those too.)
 sudo python3 /var/tmp/check-ubuntu-snapshot.py sources --snapshot-uri "${UBUNTU_SNAPSHOT_URI}"
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y doca-openvswitch-switch
 # DOCA adds ovs-exporter.service, which its postinst enables, wanted by

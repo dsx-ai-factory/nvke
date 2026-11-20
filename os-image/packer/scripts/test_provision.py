@@ -66,7 +66,7 @@ class ProvisionSnapshotChecksTest(unittest.TestCase):
         self.assertEqual(len(hits), 1, f"{needle!r} at {hits}")
         return hits[0]
 
-    def test_sources_are_checked_before_anything_is_installed_from_them(self):
+    def test_sources_are_checked_before_provisioning_installs_from_them(self):
         sources = self.index("check-ubuntu-snapshot.py sources")
         update = self.lines.index("sudo apt-get update")
         self.assertLess(update, sources)
@@ -83,6 +83,69 @@ class ProvisionSnapshotChecksTest(unittest.TestCase):
     def test_the_uploaded_check_does_not_stay_in_the_image(self):
         self.assertLess(self.index("check-ubuntu-snapshot.py versions"),
                         self.index("rm -f /var/tmp/check-ubuntu-snapshot.py"))
+
+
+SNAPSHOT_SOURCES = """Types: deb
+URIs: https://snapshot.ubuntu.com/ubuntu/20261119T000000Z
+Suites: noble noble-updates noble-backports
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+Types: deb
+URIs: https://snapshot.ubuntu.com/ubuntu/20261119T000000Z
+Suites: noble-security
+Components: main restricted universe multiverse
+Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+"""
+
+
+class BootSmokeSourcesTest(unittest.TestCase):
+    """boot-smoke's apt-sources block, run on fixture /etc/apt trees (#2206)."""
+
+    def run_block(self, files, expected=""):
+        text = SCRIPT.with_name("boot-smoke.sh").read_text()
+        block = text.split("# BEGIN apt-sources-check", 1)[1].split("# END apt-sources-check", 1)[0]
+        block = block.split("\n", 1)[1]  # the rest of the BEGIN line is prose
+        with tempfile.TemporaryDirectory() as tmp:
+            apt = Path(tmp) / "apt"
+            (apt / "sources.list.d").mkdir(parents=True)
+            for name, content in files.items():
+                (apt / name).write_text(content)
+            script = "set -euo pipefail\nexpected_snapshot=$1\n" + block.replace("/etc/apt", str(apt))
+            return subprocess.run(["bash", "-c", script, "boot-smoke", expected],
+                                  capture_output=True, text=True, check=False)
+
+    def image(self, **extra):
+        # What a real image carries: 24.04's comment-only sources.list, the
+        # rendered snapshot template, the local repo, curtin's ignored backup.
+        files = {"sources.list": "# Ubuntu sources have moved to /etc/apt/sources.list.d/ubuntu.sources\n",
+                 "sources.list.d/ubuntu.sources": SNAPSHOT_SOURCES,
+                 "sources.list.d/nke-local.list": "deb [trusted=yes] file:/usr/lib/nvke/debs ./\n",
+                 "sources.list.d/ubuntu.sources.curtin.orig": "URIs: http://ports.ubuntu.com/ubuntu-ports/\n"}
+        files.update(extra)
+        return files
+
+    def test_snapshot_and_local_repo_pass(self):
+        result = self.run_block(self.image(), "https://snapshot.ubuntu.com/ubuntu/20261119T000000Z")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_live_archive_fails(self):
+        live = "deb http://ports.ubuntu.com/ubuntu-ports noble main\n"
+        result = self.run_block(self.image(**{"sources.list.d/extra.list": live}))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("ports.ubuntu.com", result.stderr)
+
+    def test_any_other_repository_fails(self):
+        # Neither the snapshot nor the local repo: every source must be one of the two.
+        other = "Types: deb\nURIs: http://mirror.example.org/ubuntu\nSuites: noble\nComponents: main\n"
+        result = self.run_block(self.image(**{"sources.list.d/mirror.sources": other}))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("mirror.example.org", result.stderr)
+
+    def test_other_snapshot_id_fails_when_one_is_expected(self):
+        result = self.run_block(self.image(), "https://snapshot.ubuntu.com/ubuntu/20200101T000000Z")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("20200101T000000Z", result.stderr)
 
 
 class PackerUploadsTheCheckTest(unittest.TestCase):

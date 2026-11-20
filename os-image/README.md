@@ -311,6 +311,17 @@ the series, so `provision.sh` checks it against the installed system's
 for direct Packer callers, which must now pass `-var ubuntu_series=<24.04|26.04>`.
 The Make targets derive it from `UBUNTU_RELEASE`.
 
+`ubuntu_snapshot` and `ubuntu_snapshot_base_url` are optional; their defaults
+pin the build to one `snapshot.ubuntu.com` snapshot
+([docs/ubuntu-snapshot.md](docs/ubuntu-snapshot.md)). The build VM therefore
+needs HTTPS access to `snapshot.ubuntu.com`, or to a mirror of it named by
+`ubuntu_snapshot_base_url`, rather than to `archive.ubuntu.com` and
+`ports.ubuntu.com`. When the snapshot is unreachable, the installer aborts and
+Packer reports only "Timeout waiting for SSH" once `ssh_timeout` (60 minutes
+by default) passes; the reason is in the installer's serial log. Provisioning
+uploads `scripts/check-ubuntu-snapshot.py`, so a caller that stages the
+project must include it.
+
 The Make targets accept `SSH_PRIVATE_KEY_FILE` and `SSH_PUBLIC_KEY_FILE` as an
 optional pair. When both are set, they must be absolute paths. Make verifies
 that they are regular files and that the public key matches the private key,

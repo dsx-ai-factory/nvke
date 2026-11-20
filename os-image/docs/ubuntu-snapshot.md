@@ -35,16 +35,19 @@ mirror, and whether the installed system ends up on snapshot versions.
   the snapshot before the late-commands run. `updates: security` is not
   enough; see below.
 - **Two checks in `provision.sh`**, by `scripts/check-ubuntu-snapshot.py`:
-  - After `apt-get update`, before anything is installed: every apt source is
-    the snapshot or the image's local NVKE repository (`/usr/lib/nvke/debs`).
+  - After `apt-get update`, before provisioning installs from them: every apt
+    source is the snapshot or the image's local NVKE repository
+    (`/usr/lib/nvke/debs`). The FDE variant's `configure-fde.sh` installs its
+    packages before this; the next check covers them.
   - After cleanup, while the indexes still exist: every installed package's
     version is downloadable from the snapshot or the local repository
     (`nvke-agent`, installed from its own `.deb`, is exempt). Any other
     version fails the build. The check prints a digest of the package set:
     `package set sha256: <hex> (<n> packages)`.
-- **`boot-smoke`.** After cloud-init's first boot, no apt source names
-  `archive.ubuntu.com`, `ports.ubuntu.com` or `security.ubuntu.com`, and the
-  Ubuntu sources name a snapshot ID.
+- **`boot-smoke`.** After cloud-init's first boot, every apt source is a
+  snapshot (a URI ending in a snapshot ID, or exactly `UBUNTU_SNAPSHOT_URI`
+  when the caller sets it) or the local repository; anything else, the live
+  archive included, fails.
 
 ## One archive for both architectures
 
@@ -116,8 +119,9 @@ every one of 731 installed packages is at a version the snapshot or the local
 repository serves.
 
 **What `updates: all` costs.** On the Apple-silicon HVF development path,
-the unattended-upgrades step took about 3 minutes (21:57:17 to 22:00:15), and
-the whole bake took 21m51s with `all` against 18m26s with `security`.
+the unattended-upgrades step took about 3 minutes (21:57:17 to 22:00:15). The
+installer phase, from Packer waiting for SSH to connecting, took 10m31s with
+`all` against 8m13s with `security`: 2m18s more.
 
 ## Two builds, one package set
 
@@ -187,7 +191,8 @@ With the base URL pointed at a path the service does not serve, the
 installer's mirror check failed and it stopped: "aborting install since no
 mirror is usable". It did not fall back to installing from the ISO alone.
 Packer only sees that the installer never comes up, and fails with "Timeout
-waiting for SSH" once `ssh_timeout` passes (30 minutes under KVM or HVF). The
+waiting for SSH" once `ssh_timeout` passes: 30 minutes for the Make targets
+under KVM or HVF, and the variable's 60-minute default for direct callers. The
 reason is in the installer's serial log, `build-logs/non-fde-install-console.log`.
 
 ## What nodes carry
