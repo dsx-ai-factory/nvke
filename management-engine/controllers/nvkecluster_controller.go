@@ -575,6 +575,8 @@ func infraTemplateVariables(cluster *internalv1.NVKECluster, pool *internalv1.No
 	return variables
 }
 
+// reconcileNodePool creates or updates a worker pool and reports its observed state.
+// Existing pools can receive scaling and rollout changes even if profile resolution fails.
 func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *internalv1.NVKECluster, pool *internalv1.NodePool, nodePoolTemplate string, observedCluster *api.Cluster) error {
 	var status *internalv1.NodePoolStatus
 	for i := range cluster.Status.NodePools {
@@ -629,10 +631,26 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 	if pool.Replicas == nil || *pool.Replicas < 0 {
 		return invalidNVKEControllerRequest("Node pool replicas must be a nonnegative count")
 	}
+	recycleBudget, err := nodePoolRecycleBudget(pool.Rollout, *pool.Replicas)
+	if err != nil {
+		return err
+	}
 	desiredCount := int(*pool.Replicas)
 	var update api.UpdateNodePoolRequest
 	if observedPool.DesiredNodeCount != desiredCount {
 		update.DesiredNodeCount = &desiredCount
+	}
+	if observedPool.RecycleBudget != recycleBudget {
+		update.RecycleBudget = &recycleBudget
+	}
+	if pool.Rollout != nil {
+		if recycleBudget > 0 && observedPool.AutoModeDisabled {
+			update.AutoModeDisabled = new(false)
+		}
+		// First-cut worker rollouts use no surge capacity.
+		if observedPool.MaxSurge != nil && *observedPool.MaxSurge != 0 {
+			update.MaxSurge = new(0)
+		}
 	}
 	resolved, infra, resolveErr := r.resolveExistingNodeProfile(ctx, cluster, pool, nodePoolTemplate, status, observedPool)
 	if infra != nil {
@@ -648,7 +666,7 @@ func (r *NVKEClusterReconciler) reconcileNodePool(ctx context.Context, cluster *
 			return errors.Join(fmt.Errorf("update infra of nvke controller node pool %q for release %q: %w", pool.Name, resolved.Name, err), resolveErr)
 		}
 		if err != nil {
-			return errors.Join(fmt.Errorf("scale nvke controller node pool %q to %d replicas: %w", pool.Name, desiredCount, err), resolveErr)
+			return errors.Join(fmt.Errorf("update nvke controller node pool %q: %w", pool.Name, err), resolveErr)
 		}
 		observedPool = updatedPool
 	}
@@ -799,7 +817,7 @@ func (r *NVKEClusterReconciler) ensureCluster(ctx context.Context, cluster *inte
 	return observedCluster, nil
 }
 
-// ClusterRemoteName returns the backing cluster name used by the management engine.
+// ClusterRemoteName returns the backing cluster name used by the service.
 func ClusterRemoteName(cluster *internalv1.NVKECluster) string {
 	hash := sha256.Sum256([]byte(cluster.Namespace + "/" + cluster.Name))
 	suffix := fmt.Sprintf("-%x%s", hash[:4], clusterNameSuffix)
@@ -877,6 +895,8 @@ func (r *NVKEClusterReconciler) resolveNVKEControllerRequest(ctx context.Context
 	return request, nil
 }
 
+// resolveNodePoolRequest validates a pool's desired state and builds its creation request.
+// The caller supplies infrastructure after rendering the resolved node profile.
 func resolveNodePoolRequest(clusterID uuid.UUID, pool *internalv1.NodePool) (api.CreateNodePoolRequest, error) {
 	var request api.CreateNodePoolRequest
 	if clusterID == uuid.Nil {
@@ -885,6 +905,10 @@ func resolveNodePoolRequest(clusterID uuid.UUID, pool *internalv1.NodePool) (api
 	if pool.Replicas == nil || *pool.Replicas < 0 {
 		return request, invalidNVKEControllerRequest("Node pool replicas must be a nonnegative count")
 	}
+	recycleBudget, err := nodePoolRecycleBudget(pool.Rollout, *pool.Replicas)
+	if err != nil {
+		return request, err
+	}
 	request = api.CreateNodePoolRequest{
 		ClusterID:                   clusterID,
 		Name:                        string(pool.Name),
@@ -892,6 +916,9 @@ func resolveNodePoolRequest(clusterID uuid.UUID, pool *internalv1.NodePool) (api
 		NodeNamePrefix:              string(pool.Name),
 		ProvisioningMonitorDisabled: new(true),
 		SystemReservedMemory:        "1Gi",
+	}
+	if pool.Rollout != nil {
+		request.RecycleBudget = &recycleBudget
 	}
 	if params := pool.UserParams; params != nil {
 		request.NodeLabels = make(map[string]string, len(params.Labels))

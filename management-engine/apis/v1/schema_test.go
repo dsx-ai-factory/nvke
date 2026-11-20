@@ -429,16 +429,68 @@ func TestControlPlaneClassSpecMutable(t *testing.T) {
 	schema.admit(t, updated, previous)
 }
 
+// TestNVKEClusterSchemaAdmission verifies cluster fields and node-pool rollout validation.
 func TestNVKEClusterSchemaAdmission(t *testing.T) {
 	channelVersion := []string{"spec", "release", "channel", "version"}
+	schema := loadResourceSchema(t, "nvkeclusters")
 
-	loadResourceSchema(t, "nvkeclusters").runCreate(t, "nvkeclusters", []fieldCase{
+	schema.runCreate(t, "nvkeclusters", []fieldCase{
 		{name: "channel with preferred version", path: channelVersion, value: "1.35"},
 		{name: "missing channel", path: []string{"spec", "release", "channel"}, remove: true, invalid: true},
 		{name: "empty channel name", path: []string{"spec", "release", "channel", "name"}, value: "", invalid: true},
 		{name: "empty channel version", path: channelVersion, value: "", invalid: true},
 		{name: "invalid network CIDR", path: []string{"spec", "clusterNetwork", "pods", "cidrBlocks"}, value: []any{"invalid"}, invalid: true},
 	})
+
+	for _, tc := range []struct {
+		name     string
+		nodes    []string
+		strategy string
+		invalid  bool
+	}{
+		{name: "zero count", nodes: []string{"0"}},
+		{name: "zero percentage", nodes: []string{"0%"}},
+		{name: "full percentage", nodes: []string{"100%"}},
+		{name: "maximum count", nodes: []string{"2147483647"}},
+		{name: "mixed budgets", nodes: []string{"3", "10%"}},
+		{name: "negative count", nodes: []string{"-1"}, invalid: true},
+		{name: "overflow", nodes: []string{"2147483648"}, invalid: true},
+		{name: "empty count", nodes: []string{""}, invalid: true},
+		{name: "percentage above 100", nodes: []string{"101%"}, invalid: true},
+		{name: "negative percentage", nodes: []string{"-1%"}, invalid: true},
+		{name: "fractional percentage", nodes: []string{"1.5%"}, invalid: true},
+		{name: "missing percentage", nodes: []string{"%"}, invalid: true},
+		{name: "invalid count", nodes: []string{"one"}, invalid: true},
+		{name: "invalid count after zero", nodes: []string{"0", "invalid"}, invalid: true},
+		{name: "no budgets", invalid: true},
+		{name: "unknown strategy", nodes: []string{"1"}, strategy: "OnDelete", invalid: true},
+	} {
+		t.Run("rollout/"+tc.name, func(t *testing.T) {
+			budgets := make([]any, len(tc.nodes))
+			for i, nodes := range tc.nodes {
+				budgets[i] = map[string]any{"nodes": nodes}
+			}
+			strategy := tc.strategy
+			if strategy == "" {
+				strategy = "RollingUpdate"
+			}
+			pool := map[string]any{
+				"name":         "workers",
+				"instanceType": "gpu",
+				"replicas":     int64(1),
+				"vpcSubnetID":  "44444444-4444-4444-8444-444444444444",
+				"nodeProfile":  "example:1.36.1",
+				"rollout": map[string]any{"strategy": map[string]any{
+					"type":       strategy,
+					"disruption": map[string]any{"budgets": budgets},
+				}},
+			}
+			obj := baseResource(t, "nvkeclusters")
+			setField(obj, []string{"spec", "network", "vpcID"}, "22222222-2222-4222-8222-222222222222")
+			setField(obj, []string{"spec", "nodePools"}, []any{pool})
+			schema.check(t, tc.invalid, obj, nil)
+		})
+	}
 }
 
 func TestNVKEClusterAcceleratedRuntimeAdmission(t *testing.T) {
