@@ -27,6 +27,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
+	"k8s.io/client-go/tools/events"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/controllers/clustercache"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -225,6 +226,10 @@ func TestUnit_KubeletClientCSRControllerApprovesBootstrapRequestor(t *testing.T)
 	require.NoError(t, tenantClient.Get(t.Context(), client.ObjectKey{Name: csr.Name}, approved))
 	require.Equal(t, KubeletClientCSRApprovalReason, approved.Status.Conditions[0].Reason)
 	assertKubeletClientCSRCondition(t, controller.k8sClient, machine, metav1.ConditionFalse, KubeletClientCSRWaitingForSigningReason)
+	require.Equal(t, []string{
+		"Normal " + KubeletCSRApprovedReason + " Approved kubelet CSR worker-a-client",
+		"Normal " + KubeletClientCSRWaitingForSigningReason + " Approved 1 kubelet client CSRs",
+	}, kubeletClientCSREvents(t, controller))
 }
 
 func TestUnit_KubeletClientCSRControllerApprovesWithoutKeyEncipherment(t *testing.T) {
@@ -393,6 +398,9 @@ func TestUnit_KubeletClientCSRControllerWaitsForIdentity(t *testing.T) {
 	require.Equal(t, ctrl.Result{}, result)
 	requireCSRApproved(t, tenantClient, csr.Name, false)
 	assertKubeletClientCSRCondition(t, controller.k8sClient, machine, metav1.ConditionFalse, KubeletClientCSRWaitingForBootstrapIdentityReason)
+	require.Equal(t, []string{
+		"Normal " + KubeletClientCSRWaitingForBootstrapIdentityReason + " Waiting for the Machine bootstrap identity",
+	}, kubeletClientCSREvents(t, controller))
 }
 
 func TestUnit_KubeletClientCSRControllerRejectsDuplicateIdentity(t *testing.T) {
@@ -768,11 +776,28 @@ func newClientCSRControllerForTest(t *testing.T, cluster *clusterv1.Cluster, obj
 		WithObjects(tenantObjects...).
 		Build()
 
-	return NewClientCSRController(
+	controller := NewClientCSRController(
 		managementClient,
 		staticKubeletClientClusterCache{client: tenantClient},
 		slog.New(slog.DiscardHandler),
-	), tenantClient
+	)
+	controller.recorder = events.NewFakeRecorder(32)
+	return controller, tenantClient
+}
+
+func kubeletClientCSREvents(t *testing.T, controller *ClientCSRController) []string {
+	t.Helper()
+	recorder, ok := controller.recorder.(*events.FakeRecorder)
+	require.True(t, ok)
+	var events []string
+	for {
+		select {
+		case event := <-recorder.Events:
+			events = append(events, event)
+		default:
+			return events
+		}
+	}
 }
 
 func newMachineForKubeletClientCSRTest(name, identity string) *clusterv1.Machine {

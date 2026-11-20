@@ -25,6 +25,15 @@ rules:
       - machines/status
     verbs:
       - patch
+  # Events about a Machine are written in the Machine's namespace, which is
+  # not the controller's own namespace.
+  - apiGroups:
+      - events.k8s.io
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
   # The tenant-access controller owns each tenant's kubeconfig Secret by the
   # CAPI Cluster, and OwnerReferencesPermissionEnforcement requires `update` on
   # the owner's finalizers subresource before it will accept an ownerReference
