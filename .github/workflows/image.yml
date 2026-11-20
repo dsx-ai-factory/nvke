@@ -471,7 +471,7 @@ jobs:
           printf '%s\n' \
             'apiVersion: validate.nvke.dev/v1alpha1' \
             'kind: ValidationProfile' \
-            'controller: {namespace: nke}' \
+            'controller: {namespace: nvke-controller}' \
             'managementCluster:' \
             '  namespaces: [kube-system, cert-manager]' \
             '  kubernetesVersion: 1.30' \
@@ -488,7 +488,7 @@ jobs:
             -v "${RUNNER_TEMP}/profile-artifacts:/artifacts" \
             nvke/nvke-validate:ci -ginkgo.dry-run | tee "${RUNNER_TEMP}/profile.log"
           for line in 'NVKE_VALIDATE_PROFILE=/profile.yaml (validate.nvke.dev/v1alpha1 ValidationProfile)' \
-            'controller.namespace = nke (profile)'; do
+            'controller.namespace = nvke-controller (profile)'; do
             grep -qF "${line}" "${RUNNER_TEMP}/profile.log" \
               || { echo "::error::the image did not apply the validation profile: no '${line}'"; exit 1; }
           done

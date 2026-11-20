@@ -30,20 +30,20 @@ func TestUnit_SiteValidateFromProfileDefaults(t *testing.T) {
 }
 
 func TestUnit_SiteValidateFromProfileControllerNamespace(t *testing.T) {
-	settings, err := siteValidateFromProfile(profileManagementCluster{}, envMap(map[string]string{controller.EnvNamespace: "my-controller"}), filepath.Join(t.TempDir(), "absent"))
+	settings, err := siteValidateFromProfile(profileManagementCluster{}, envMap(map[string]string{controller.EnvNamespace: "other-controller"}), filepath.Join(t.TempDir(), "absent"))
 	require.NoError(t, err)
-	require.Equal(t, siteNamespaces("my-controller"), settings.checks.namespaces)
+	require.Equal(t, siteNamespaces("other-controller"), settings.checks.namespaces)
 	require.NotContains(t, settings.checks.namespaces, siteNamespace{name: controller.ServiceNamespace, source: "deploy path item controller"},
 		"the default list takes the controller's namespace from the settings it reads, not the process environment")
 }
 
 func TestUnit_SiteValidateFromProfileOverrides(t *testing.T) {
 	settings, err := siteValidateFromProfile(profileManagementCluster{
-		profileExpectations: profileExpectations{Namespaces: []string{"kube-system", " nke ", "", "cert-manager"}},
+		profileExpectations: profileExpectations{Namespaces: []string{"kube-system", " nvke-controller ", "", "cert-manager"}},
 		KubernetesVersion:   " 1.34.2 ",
 		Probe: profileManagementProbe{
 			Namespace:    "probes",
-			profileProbe: profileProbe{Image: "registry.example/kubectl:1", PullSecrets: []string{" mirror", " ", "ngc"}},
+			profileProbe: profileProbe{Image: "registry.example/kubectl:1", PullSecrets: []string{" mirror", " ", "registry"}},
 		},
 	}, envMap(map[string]string{siteValidateEnv: "true"}), filepath.Join(t.TempDir(), "absent"))
 	require.NoError(t, err)
@@ -51,11 +51,11 @@ func TestUnit_SiteValidateFromProfileOverrides(t *testing.T) {
 	require.Equal(t, resolvedVersion{field: "managementCluster.kubernetesVersion", value: "1.34.2", source: "profile"}, settings.kubernetesVersion)
 	require.Equal(t, []siteNamespace{
 		{name: "kube-system", source: "managementCluster.namespaces"},
-		{name: "nke", source: "managementCluster.namespaces"},
+		{name: "nvke-controller", source: "managementCluster.namespaces"},
 		{name: "cert-manager", source: "managementCluster.namespaces"},
 	}, settings.checks.namespaces)
 	require.Equal(t, "probes", settings.checks.probeNamespace)
-	require.Equal(t, probeImage{ref: "registry.example/kubectl:1", pullSecrets: []corev1.LocalObjectReference{{Name: "mirror"}, {Name: "ngc"}}}, settings.checks.probeImage)
+	require.Equal(t, probeImage{ref: "registry.example/kubectl:1", pullSecrets: []corev1.LocalObjectReference{{Name: "mirror"}, {Name: "registry"}}}, settings.checks.probeImage)
 	require.Empty(t, settings.checks.excusedNamespace, "a probe namespace given is still checked")
 }
 
@@ -120,14 +120,14 @@ func TestUnit_SiteValidateScope(t *testing.T) {
 	settings, err := siteValidateFromProfile(profileManagementCluster{
 		Scope: "namespaces",
 		profileExpectations: profileExpectations{
-			Namespaces: []string{"kube-system", "nke"},
+			Namespaces: []string{"kube-system", "nvke-controller"},
 			Components: []profileComponent{{Name: componentArgoCD}, {Name: componentCNPG, Namespace: "databases"}},
 		},
-	}, envMap(map[string]string{controller.EnvNamespace: "nke"}), absent)
+	}, envMap(map[string]string{controller.EnvNamespace: "nvke-controller"}), absent)
 	require.NoError(t, err)
-	require.Equal(t, siteScope{"kube-system": true, "nke": true, "argocd": true, "databases": true}, settings.checks.scope,
+	require.Equal(t, siteScope{"kube-system": true, "nvke-controller": true, "argocd": true, "databases": true}, settings.checks.scope,
 		"the required namespaces and each declared component's own")
-	require.Contains(t, settings.describe(), "managementCluster.scope: namespaces: argocd, databases, kube-system, nke")
+	require.Contains(t, settings.describe(), "managementCluster.scope: namespaces: argocd, databases, kube-system, nvke-controller")
 
 	settings, err = siteValidateFromProfile(profileManagementCluster{
 		Scope:               "namespaces",
@@ -139,15 +139,15 @@ func TestUnit_SiteValidateScope(t *testing.T) {
 }
 
 func TestUnit_SiteSplitScope(t *testing.T) {
-	pods := []corev1.Pod{podIn("nke"), podIn("other-team"), podIn("kube-system")}
+	pods := []corev1.Pod{podIn("nvke-controller"), podIn("other-team"), podIn("kube-system")}
 	namespace := func(pod corev1.Pod) string { return pod.Namespace }
 
 	in, out := splitScope(nil, pods, namespace)
 	require.Equal(t, pods, in, "no scope keeps everything in")
 	require.Empty(t, out)
 
-	in, out = splitScope(siteScope{"nke": true, "kube-system": true}, pods, namespace)
-	require.Equal(t, []corev1.Pod{podIn("nke"), podIn("kube-system")}, in)
+	in, out = splitScope(siteScope{"nvke-controller": true, "kube-system": true}, pods, namespace)
+	require.Equal(t, []corev1.Pod{podIn("nvke-controller"), podIn("kube-system")}, in)
 	require.Equal(t, []corev1.Pod{podIn("other-team")}, out)
 }
 

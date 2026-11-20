@@ -411,14 +411,14 @@ from, here `v0.24.0`, so the editor checks the fields that image reads:
 apiVersion: validate.nvke.dev/v1alpha1
 kind: ValidationProfile
 controller:
-  namespace: my-controller
-  service: my-controller
+  namespace: nvke-controller
+  service: nvke-controller
   expectedVersion: v0.24.0       # NVKE_CONTROLLER_EXPECTED_VERSION overrides it
 auth:
-  namespace: my-controller
+  namespace: nvke-controller
   serviceAccount: nvke-validate
 managementCluster:
-  namespaces: [kube-system, cert-manager, capi-system, capnico-system, my-controller]
+  namespaces: [kube-system, cert-manager, capi-system, capnico-system, nvke-controller]
   scope: namespaces              # or cluster, the default
   components:
     - argocd
@@ -498,7 +498,7 @@ Where the environment sets one of those to something else, the run fails
 rather than pick one:
 
 ```text
-controller.namespace is "nke" in the profile but NVKE_CONTROLLER_NAMESPACE is "nke-system"; set one
+controller.namespace is "nvke-controller" in the profile but NVKE_CONTROLLER_NAMESPACE is "other-namespace"; set one
 ```
 
 A profile describes the management cluster, and the checks decide what that
@@ -618,8 +618,7 @@ its kubeconfig and both versions come from the run, so this needs no profile
 and no versions. The node is reached through its jump host, so `tsh` must be
 able to `tsh ssh` to the jump host as the record's login: a `tsh login` to
 the Teleport cluster the jump host is enrolled in, or `TELEPORT_PROXY` and
-`TELEPORT_IDENTITY_FILE`. Where `TELEPORT_PROXY` is unset,
-`FORGE_TELEPORT_PROXY` sets it. See [reaching the jump host](#reaching-the-jump-host).
+`TELEPORT_IDENTITY_FILE`. See [reaching the jump host](#reaching-the-jump-host).
 The node must present the host key the record holds, and must finish the SSH
 handshake within a minute. A record from a run that recorded no host key is
 refused; keep the management cluster again with a run that does.
@@ -1320,10 +1319,8 @@ At `full` the lane runs the [validation image](#validation-image)'s site checks,
 `nico-forge` tenant, in either lane, runs checks 1–37 before it is deleted,
 reached as the tenant's admin rather than a provisioned ServiceAccount. Its
 probe pods run in `nvke-validate`, which the lane creates if it is missing
-and, on a tenant that outlives the run, removes again. To validate an
-existing tenant instead of creating one, run `nico-forge && !site-controller`
-against its management cluster with `lifecycle.reuseCluster` naming it; the
-site lane builds a new management cluster, so it refuses `lifecycle.reuseCluster`. The
+and, on a tenant that outlives the run, removes again. The site lane builds a
+new management cluster, so it refuses `lifecycle.reuseCluster`. The
 lane takes the Kubernetes version from the spec it built. For the management cluster it
 lists what it installed: `cert-manager` as a component (check 15) and the
 stack's default StorageClass (check 23). It sets no other component,

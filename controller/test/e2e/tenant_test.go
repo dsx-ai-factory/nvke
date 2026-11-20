@@ -830,7 +830,11 @@ func keepTenantKubeconfig(ctx context.Context, test *tenantTest, dir string) {
 	kubeconfig, err := test.tenantClients.PublishedKubeconfig(ctx, test.cluster.Name)
 	if err == nil {
 		path := filepath.Join(dir, test.cluster.Name+".kubeconfig")
+		// WriteFile sets the mode only on a new file; one already there keeps its own.
 		if err = os.WriteFile(path, kubeconfig, 0o600); err == nil {
+			err = os.Chmod(path, 0o600)
+		}
+		if err == nil {
 			GinkgoLogr.Info("the kept tenant's kubeconfig, as the controller publishes it; its server is the tenant's own address, reached through the jump host",
 				"kubeconfig", path)
 			return

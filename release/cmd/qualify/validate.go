@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"slices"
 	"strconv"
@@ -36,6 +37,9 @@ const validateImageDir = "controller/test/e2e"
 
 // validateJUnit is the report the image writes into its artifacts directory.
 const validateJUnit = "junit-test-report.xml"
+
+// validateJSON is the image's Ginkgo JSON report, beside validateJUnit.
+const validateJSON = "report.json"
 
 // imageInputs are the variables validate sets on the image itself, so the
 // environment's own values of them are not passed through.
@@ -69,9 +73,10 @@ the management cluster is. It may set the controller and Kubernetes versions;
 --controller-version and --kubernetes-version override them for one run, and
 are required without a profile.
 
-The image is built from this checkout unless --image names one. The run is
-read-only, as a runner that may create nothing on the management cluster needs, unless
---full adds the specs that create short-lived objects. Any NVKE_* or NKE_E2E_*
+The image is built from this checkout unless --image names one. Without
+--full the run creates one object, the DNS check's probe pod, and deletes it,
+so the identity needs to create and delete pods in the probe namespace. --full
+adds the specs labeled creates, which make other short-lived objects. Any NVKE_* or NKE_E2E_*
 variable in the environment reaches the image as it is.
 
 Reports, the run log and the inputs used (no credentials) go to --out: by
@@ -162,13 +167,11 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 		return fmt.Errorf("%s set in the environment: the image sets these, and a run that changes one can check nothing and still pass; unset them",
 			strings.Join(set, ", "))
 	}
+	if o.runDir == "" && o.teleportCluster == "" && o.kubeconfig == "" {
+		return errors.New("--run-dir, --teleport-cluster or --kubeconfig must name something; an empty one would fall back to the default kubeconfig")
+	}
 	if o.kubeContext != "" && o.kubeconfig == "" {
 		return errors.New("--context names a --kubeconfig context; --run-dir and --teleport-cluster use the kubeconfig they make")
-	}
-	if os.Getenv("TELEPORT_PROXY") == "" && os.Getenv("FORGE_TELEPORT_PROXY") != "" {
-		if err := os.Setenv("TELEPORT_PROXY", os.Getenv("FORGE_TELEPORT_PROXY")); err != nil {
-			return err
-		}
 	}
 	tools := []string{"docker", "kubectl"}
 	switch {
@@ -233,10 +236,12 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 	if err := os.MkdirAll(filepath.Join(o.out, "artifacts"), 0o700); err != nil {
 		return err
 	}
-	// A reused --out keeps the last run's report, which would be summarized
-	// as this run's if this one wrote none.
-	if err := os.Remove(filepath.Join(o.out, "artifacts", validateJUnit)); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+	// A reused --out keeps the last run's reports, which would be taken
+	// for this run's if this one wrote none.
+	for _, report := range []string{validateJUnit, validateJSON} {
+		if err := os.Remove(filepath.Join(o.out, "artifacts", report)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
 	}
 	fmt.Fprintf(out, "run directory: %s\n", o.out)
 
@@ -275,8 +280,8 @@ func runValidate(ctx context.Context, out io.Writer, o validateOptions) error {
 	if err != nil {
 		return err
 	}
-	kubeconfig := filepath.Join(o.out, "container.kubeconfig")
-	if err := os.WriteFile(kubeconfig, inContainer, 0o600); err != nil {
+	kubeconfig, err := writePrivateTemp(o.out, "container-*.kubeconfig", inContainer)
+	if err != nil {
 		return err
 	}
 	defer os.Remove(kubeconfig)
@@ -380,6 +385,9 @@ func buildValidateImage(ctx context.Context, out io.Writer) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if !dockerTag.MatchString(describe) {
+		return "", fmt.Errorf("git describe gave %q, which is not a Docker tag; pass --image", describe)
+	}
 	image := "nvke-validate:" + describe
 	fmt.Fprintf(out, "building %s\n", image)
 	build := exec.CommandContext(ctx, "make", "-C", filepath.Join(root, validateImageDir), "validate-image",
@@ -407,7 +415,15 @@ func connect(ctx context.Context, o validateOptions, kept keptRecord) (string, e
 			return "", err
 		}
 		logPath := filepath.Join(o.out, "connect.log")
+		// A reused --out appends to the log, so read only what this proxy writes.
+		var offset int64
+		if info, err := os.Stat(logPath); err == nil {
+			offset = info.Size()
+		}
 		proxy := exec.CommandContext(ctx, "tsh", "proxy", "kube", o.teleportCluster, "--port", strconv.Itoa(port), "--format=unix")
+		// tsh writes its kubeconfig to TELEPORT_KUBECONFIG where that is set,
+		// and removes it on exit, so a workstation's own is never the one used.
+		proxy.Env = append(os.Environ(), "TELEPORT_KUBECONFIG="+filepath.Join(o.out, fmt.Sprintf("tsh-proxy-%d.kubeconfig", port)))
 		proxy.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 		exited, err := startLogged(proxy, logPath)
 		if err != nil {
@@ -419,7 +435,10 @@ func connect(ctx context.Context, o validateOptions, kept keptRecord) (string, e
 		// tsh prints the kubeconfig on stderr, and removes it when it exits.
 		for range 10 {
 			log, _ := os.ReadFile(logPath)
-			if path := tshKubeconfig(log); path != "" {
+			if int64(len(log)) < offset {
+				offset = 0
+			}
+			if path := tshKubeconfig(log[offset:]); path != "" {
 				return path, nil
 			}
 			time.Sleep(time.Second)
@@ -726,6 +745,8 @@ func containerKubeconfig(raw []byte, goos string) ([]byte, error) {
 	for _, u := range asList(cfg["users"]) {
 		if user, _ := u["user"].(map[string]any); user["exec"] != nil {
 			return nil, errors.New("the kubeconfig authenticates with an exec plugin, which the image does not have; use --teleport-cluster, or a kubeconfig with certificates or a token")
+		} else if user["tokenFile"] != nil {
+			return nil, errors.New("the kubeconfig reads its token from a file, which the image does not have; embed the token with token: instead")
 		}
 	}
 	if goos == "linux" {
@@ -944,4 +965,28 @@ func withMessage(name, message string) string {
 		return name
 	}
 	return name + ": " + message
+}
+
+// dockerTag is what a Docker tag may hold, so a tag from git describe cannot
+// reach the shell in the make recipe it is passed to.
+var dockerTag = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
+
+// writePrivateTemp writes data to a new file in dir, readable only by the
+// owner, and returns its path. A fixed name could overwrite an input, or keep
+// an existing file's looser mode.
+func writePrivateTemp(dir, pattern string, data []byte) (string, error) {
+	f, err := os.CreateTemp(dir, pattern)
+	if err != nil {
+		return "", err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(f.Name())
+		return "", err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(f.Name())
+		return "", err
+	}
+	return f.Name(), nil
 }
