@@ -24,6 +24,13 @@ Every pull request is routed by its paths, whoever wrote it:
 [`.github/CODEOWNERS`](../.github/CODEOWNERS) requests its reviewers. The
 requested reviewers own the review.
 
+[`community-label.yml`](../.github/workflows/community-label.yml) also labels
+a pull request `community` when its author is not a dsx-ai-factory org member,
+not a repository collaborator, and has no write access. Bots are skipped. A
+member whose org membership is private and who has no write access can still
+be labelled. The label only makes these pull requests easy to find; it changes
+nothing about how they are reviewed or merged.
+
 ## Before CI runs
 
 CI on NVIDIA runners runs from a mirror branch, `pull-request/<N>`. copy-pr-bot
@@ -74,6 +81,7 @@ requests with its weekly issue sweep.
 
 - Waiting on a vetter: [`is:open is:pr label:needs-ok-to-test`](https://github.com/dsx-ai-factory/nvke/pulls?q=is%3Aopen+is%3Apr+label%3Aneeds-ok-to-test)
 - One area, for example the node agent: [`is:open is:pr label:needs-ok-to-test label:area/agent`](https://github.com/dsx-ai-factory/nvke/pulls?q=is%3Aopen+is%3Apr+label%3Aneeds-ok-to-test+label%3Aarea%2Fagent)
+- From the community: [`is:open is:pr label:community`](https://github.com/dsx-ai-factory/nvke/pulls?q=is%3Aopen+is%3Apr+label%3Acommunity)
 - Waiting on the author: [`is:open is:pr label:needs-signed-commits`](https://github.com/dsx-ai-factory/nvke/pulls?q=is%3Aopen+is%3Apr+label%3Aneeds-signed-commits) and [`is:open is:pr label:needs-dco`](https://github.com/dsx-ai-factory/nvke/pulls?q=is%3Aopen+is%3Apr+label%3Aneeds-dco)
 
 ## For contributors
