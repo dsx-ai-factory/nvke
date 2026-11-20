@@ -482,8 +482,8 @@ credential. `qualify validate` reads it to run the
 against the kept management cluster, through the same jump host, with the run's versions:
 
 ```bash
-go run ./release/cmd/qualify validate --run-dir <run-dir>          # read-only
-go run ./release/cmd/qualify validate --run-dir <run-dir> --full   # also the specs that create objects
+go run ./release/cmd/qualify validate --run-dir <run-dir>          # creates and deletes only the DNS probe pod
+go run ./release/cmd/qualify validate --run-dir <run-dir> --full   # also the specs that create other objects
 ```
 
 ### What it reads from your shell

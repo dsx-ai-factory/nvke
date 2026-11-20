@@ -67,18 +67,21 @@ func TestKeptSite(t *testing.T) {
 }
 
 func TestKeptSiteRejects(t *testing.T) {
-	for name, record := range map[string]string{
-		"no record":       "",
-		"not an address":  `{"name":"site-a","address":"node","user":"u","jumpHost":"j","key":"k","kubeconfig":"c"}`,
-		"no jump host":    `{"name":"site-a","address":"10.0.0.7","user":"u","key":"k","kubeconfig":"c"}`,
-		"no kubeconfig":   `{"name":"site-a","address":"10.0.0.7","user":"u","jumpHost":"j","key":"k"}`,
-		"not json at all": `site-a`,
-		"a bad host key":  `{"name":"site-a","address":"10.0.0.7","user":"u","jumpHost":"j","key":"k","kubeconfig":"c","hostKey":"ssh-ed25519 nope"}`,
-		"no host key":     `{"name":"site-a","address":"10.0.0.7","user":"u","jumpHost":"j","key":"k","kubeconfig":"c"}`,
+	_, hostKey := newHostKey(t)
+	key := `,"hostKey":"` + hostKey + `"}`
+	for name, tc := range map[string]struct{ record, want string }{
+		"no record":       {"", "want one kept management cluster record"},
+		"not an address":  {`{"name":"site-a","address":"node","user":"u","jumpHost":"j","key":"k","kubeconfig":"c"` + key, `address "node" is not an IP`},
+		"no jump host":    {`{"name":"site-a","address":"10.0.0.7","user":"u","key":"k","kubeconfig":"c"` + key, "names no jump host"},
+		"no kubeconfig":   {`{"name":"site-a","address":"10.0.0.7","user":"u","jumpHost":"j","key":"k"` + key, "names no user, key or kubeconfig"},
+		"not json at all": {`site-a`, "site-a"},
+		"a bad host key":  {`{"name":"site-a","address":"10.0.0.7","user":"u","jumpHost":"j","key":"k","kubeconfig":"c","hostKey":"ssh-ed25519 nope"}`, "hostKey:"},
+		"no host key":     {`{"name":"site-a","address":"10.0.0.7","user":"u","jumpHost":"j","key":"k","kubeconfig":"c"}`, "names no host key"},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if _, _, err := keptSite(writeKeptRun(t, record)); err == nil {
-				t.Error("accepted")
+			_, _, err := keptSite(writeKeptRun(t, tc.record))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("err = %v, want %q", err, tc.want)
 			}
 		})
 	}
@@ -217,6 +220,7 @@ func TestRunSwitchesSet(t *testing.T) {
 	if !slices.Equal(got, []string{"NKE_E2E_AUTH_DISABLE", "NVKE_MGMT_CLUSTER_VALIDATE"}) {
 		t.Errorf("got %v; an empty value still turns a switch off, and adding a tenant is allowed", got)
 	}
+	clearRunSwitches(t)
 	t.Setenv("NVKE_E2E_REQUIRE_EXPECTED_VERSION", "false")
 	err := runValidate(t.Context(), io.Discard, validateOptions{kubeconfig: "k"})
 	if err == nil || !strings.Contains(err.Error(), "NVKE_E2E_REQUIRE_EXPECTED_VERSION set in the environment") {
@@ -290,6 +294,7 @@ func TestSummarizeJUnit(t *testing.T) {
 }
 
 func TestContextOnlyWithKubeconfig(t *testing.T) {
+	clearRunSwitches(t)
 	for _, o := range []validateOptions{
 		{runDir: "r", kubeContext: "c"},
 		{teleportCluster: "t", kubeContext: "c"},
@@ -327,5 +332,80 @@ func TestSSHHandshakeTimeout(t *testing.T) {
 	}
 	if elapsed := time.Since(start); elapsed > 10*time.Second {
 		t.Errorf("took %s", elapsed)
+	}
+}
+
+// clearRunSwitches unsets every run switch for the test, restoring them after,
+// so a switch exported on the workstation does not change what runValidate
+// refuses. Setting one empty is not enough: runSwitchesSet counts it.
+func clearRunSwitches(t *testing.T) {
+	t.Helper()
+	for _, name := range runSwitches {
+		value, set := os.LookupEnv(name)
+		t.Setenv(name, "")
+		if err := os.Unsetenv(name); err != nil {
+			t.Fatal(err)
+		}
+		if set {
+			t.Cleanup(func() { os.Setenv(name, value) })
+		}
+	}
+}
+
+func TestEmptySelectionRefused(t *testing.T) {
+	clearRunSwitches(t)
+	for _, o := range []validateOptions{{}, {kubeconfig: ""}, {profile: "p"}} {
+		err := runValidate(t.Context(), io.Discard, o)
+		if err == nil || !strings.Contains(err.Error(), "must name something") {
+			t.Errorf("%+v: err = %v, want an empty selection refused before connecting", o, err)
+		}
+	}
+}
+
+func TestDockerTag(t *testing.T) {
+	for tag, ok := range map[string]bool{
+		"v0.24.0-beta.11-62-gd74161a63":       true,
+		"v0.24.0-beta.11-62-gd74161a63-dirty": true,
+		"d74161a63":                           true,
+		"v1.0$(touch x)":                      false,
+		"v1;rm":                               false,
+		"-v1":                                 false,
+		"":                                    false,
+	} {
+		if dockerTag.MatchString(tag) != ok {
+			t.Errorf("%q: match = %t, want %t", tag, !ok, ok)
+		}
+	}
+}
+
+func TestContainerKubeconfigRefusesTokenFile(t *testing.T) {
+	raw := []byte("users:\n- name: u\n  user:\n    tokenFile: /var/run/token\n")
+	if _, err := containerKubeconfig(raw, "linux"); err == nil || !strings.Contains(err.Error(), "reads its token from a file") {
+		t.Errorf("err = %v, want a tokenFile kubeconfig refused", err)
+	}
+}
+
+func TestWritePrivateTemp(t *testing.T) {
+	dir := t.TempDir()
+	input := filepath.Join(dir, "container.kubeconfig")
+	if err := os.WriteFile(input, []byte("input"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path, err := writePrivateTemp(dir, "container-*.kubeconfig", []byte("data"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path == input {
+		t.Fatal("wrote over a file already there")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != 0o600 {
+		t.Errorf("mode %v, want 0600", info.Mode().Perm())
+	}
+	if got, _ := os.ReadFile(input); string(got) != "input" {
+		t.Errorf("the existing file was changed: %q", got)
 	}
 }

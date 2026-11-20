@@ -298,11 +298,11 @@ func TestUnit_SiteArgoApplicationProblems(t *testing.T) {
 }
 
 func TestUnit_SiteArgoApplicationScopedByDestination(t *testing.T) {
-	nke := unstructuredWith(t, "argocd", "nke", map[string]any{"spec.destination.namespace": "nke"})
+	ours := unstructuredWith(t, "argocd", "nvke-controller", map[string]any{"spec.destination.namespace": "nvke-controller"})
 	other := unstructuredWith(t, "argocd", "other-team", map[string]any{"spec.destination.namespace": "other-team"})
 	clusterScoped := unstructuredWith(t, "argocd", "crds", nil)
-	in, out := splitScope(siteScope{"argocd": true, "nke": true}, []unstructured.Unstructured{nke, other, clusterScoped}, argoApplicationDestination)
-	require.Equal(t, []unstructured.Unstructured{nke}, in, "an Application in Argo CD's namespace is scoped by where it deploys")
+	in, out := splitScope(siteScope{"argocd": true, "nvke-controller": true}, []unstructured.Unstructured{ours, other, clusterScoped}, argoApplicationDestination)
+	require.Equal(t, []unstructured.Unstructured{ours}, in, "an Application in Argo CD's namespace is scoped by where it deploys")
 	require.Equal(t, []unstructured.Unstructured{other, clusterScoped}, out)
 }
 

@@ -44,10 +44,10 @@ func e2eSourceDir(t *testing.T) string {
 func TestUnit_ValidateProfileLoads(t *testing.T) {
 	p, err := loadValidateProfile(writeProfile(t, profileHeader+`
 controller:
-  namespace: my-controller
+  namespace: nvke-controller
   expectedVersion: v0.24.0
 managementCluster:
-  namespaces: [kube-system, cert-manager, my-controller]
+  namespaces: [kube-system, cert-manager, nvke-controller]
   scope: namespaces
   kubernetesVersion: 1.30
   components: [argocd, {name: cnpg, namespace: databases}]
@@ -62,9 +62,9 @@ tenant:
   gpu: {nodes: 2}
 `))
 	require.NoError(t, err)
-	require.Equal(t, "my-controller", p.Controller.Namespace)
+	require.Equal(t, "nvke-controller", p.Controller.Namespace)
 	require.Equal(t, "v0.24.0", p.Controller.ExpectedVersion)
-	require.Equal(t, []string{"kube-system", "cert-manager", "my-controller"}, p.ManagementCluster.Namespaces)
+	require.Equal(t, []string{"kube-system", "cert-manager", "nvke-controller"}, p.ManagementCluster.Namespaces)
 	require.Equal(t, "1.30", p.ManagementCluster.KubernetesVersion, "a version is taken as written, so 1.30 is not read as the number 1.3")
 	require.Equal(t, []profileComponent{{Name: componentArgoCD}, {Name: componentCNPG, Namespace: "databases"}}, p.ManagementCluster.Components)
 	require.Equal(t, profileAPIServer{EtcdEncrypted: true, Flags: map[string]string{"audit-log-path": "/var/log/audit.log", "tls-cipher-suites": "a,b"}}, p.ManagementCluster.APIServer)
@@ -128,26 +128,26 @@ func TestUnit_ValidateProfileRejects(t *testing.T) {
 
 func TestUnit_ValidateProfileSharedInputs(t *testing.T) {
 	p := validationProfile{
-		Controller: profileController{Namespace: "nke", Service: "my-controller", HealthTimeout: "90s"},
-		Auth:       profileAuth{Audience: "nke"},
+		Controller: profileController{Namespace: "nvke-controller", Service: "nvke-controller", HealthTimeout: "90s"},
+		Auth:       profileAuth{Audience: "nvke-controller"},
 	}
-	env := map[string]string{controller.EnvService: "my-controller"}
+	env := map[string]string{controller.EnvService: "nvke-controller"}
 	notes, err := applyValidateProfile(p, envMap(env), func(key, value string) { env[key] = value })
 	require.NoError(t, err)
-	require.Equal(t, "nke", env[controller.EnvNamespace])
+	require.Equal(t, "nvke-controller", env[controller.EnvNamespace])
 	require.Equal(t, "90s", env[controllerHealthTimeoutEnv])
-	require.Equal(t, "nke", env[authtoken.EnvAudience])
+	require.Equal(t, "nvke-controller", env[authtoken.EnvAudience])
 	require.Equal(t, []string{
-		"controller.namespace = nke (profile)",
-		"controller.service = my-controller (profile and NVKE_CONTROLLER_SERVICE)",
+		"controller.namespace = nvke-controller (profile)",
+		"controller.service = nvke-controller (profile and NVKE_CONTROLLER_SERVICE)",
 		"controller.healthTimeout = 90s (profile)",
-		"auth.audience = nke (profile)",
+		"auth.audience = nvke-controller (profile)",
 	}, notes)
 
-	env = map[string]string{controller.EnvNamespace: "nke-system", authtoken.EnvAudience: "other"}
+	env = map[string]string{controller.EnvNamespace: "other-namespace", authtoken.EnvAudience: "other"}
 	_, err = applyValidateProfile(p, envMap(env), func(key, value string) { env[key] = value })
-	require.EqualError(t, err, `controller.namespace is "nke" in the profile but NVKE_CONTROLLER_NAMESPACE is "nke-system"; set one`+"\n"+
-		`auth.audience is "nke" in the profile but NKE_E2E_AUDIENCE is "other"; set one`)
+	require.EqualError(t, err, `controller.namespace is "nvke-controller" in the profile but NVKE_CONTROLLER_NAMESPACE is "other-namespace"; set one`+"\n"+
+		`auth.audience is "nvke-controller" in the profile but NKE_E2E_AUDIENCE is "other"; set one`)
 }
 
 func TestUnit_ValidateProfileExpectedVersion(t *testing.T) {
