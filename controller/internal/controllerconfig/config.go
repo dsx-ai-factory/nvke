@@ -114,11 +114,12 @@ type CredentialMonitoringConfig struct {
 // config.Config.NodeAgentExternalMTLSEnabled, which shares its NODE_AGENT_
 // prefix. Port is left out: the chart has never set it.
 type NodeAgentConfig struct {
-	SpireAttestationMethod string        `json:"spireAttestationMethod"`
-	DSXImds                DSXImdsConfig `json:"dsxImds"`
-	TLSJWT                 TLSJWTConfig  `json:"tlsJWT"`
-	ExternalMTLSEnabled    bool          `json:"externalMTLSEnabled"`
-	UpdateMethod           string        `json:"updateMethod"`
+	SpireAttestationMethod string         `json:"spireAttestationMethod"`
+	DSXImds                DSXImdsConfig  `json:"dsxImds"`
+	TLSJWT                 TLSJWTConfig   `json:"tlsJWT"`
+	KubeVirt               KubeVirtConfig `json:"kubeVirt"`
+	ExternalMTLSEnabled    bool           `json:"externalMTLSEnabled"`
+	UpdateMethod           string         `json:"updateMethod"`
 }
 
 // DSXImdsConfig mirrors config.DSXImdsConfig.
@@ -138,6 +139,12 @@ type TLSJWTConfig struct {
 	DSXIdentityExchangeURL string   `json:"dsxIdentityExchangeURL"`
 	SubjectTenant          string   `json:"subjectTenant"`
 	SubjectService         string   `json:"subjectService"`
+}
+
+// KubeVirtConfig mirrors config.KubeVirtConfig.
+type KubeVirtConfig struct {
+	SPIFFEIDClassName string `json:"spiffeIDClassName"`
+	AddressPool       string `json:"addressPool"`
 }
 
 // OIDCConfig carries the management-plane shared provider and the fleet-wide

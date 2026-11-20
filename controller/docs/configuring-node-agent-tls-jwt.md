@@ -75,3 +75,49 @@ DSX Identity exchanges that canonical source identity into
 The configured `subjectTrustDomain` must equal that exchanged trust domain.
 SPIFFE-only nodes that do not use DSX Identity exchange retain the legacy
 `/host/<node UUID>` local identity.
+
+## Nodes in virtual machines
+
+CAPI nodes whose machine template is a CAPK `KubevirtMachineTemplate` run as
+KubeVirt VMs. A VM has no SPIRE agent, so its node agent gets its token from
+the DSX metadata service (`--dsx-identity-metadata-url`). VM nodes need TLS/JWT
+with external mTLS.
+
+For each VM node, the controller creates two objects in the cluster the VMs
+run in, and deletes them with the machine:
+
+- A `LoadBalancer` Service in front of the VM, because its pod address is not
+  reachable from the controller. The controller dials the agent there.
+  `nodeAgent.kubeVirt.addressPool` sets the MetalLB pool.
+- A ClusterSPIFFEID registering
+  `spiffe://<local-trust-domain>/tenant/<subjectTenant>/service/<subjectService>/vm/<node UUID>`
+  for the VM's pod. `nodeAgent.kubeVirt.spiffeIDClassName` must match the
+  SPIRE controller manager serving the metadata sidecar.
+
+`capi.rbac.kubeVirt: true` grants the controller these permissions in the
+management cluster. When the `KubevirtCluster` uses `infraClusterSecretRef`,
+the identity in that kubeconfig needs them instead.
+
+The VM template must request the sidecar and use `bridge` binding (the sidecar
+does not work with `masquerade`):
+
+```yaml
+spec:
+  template:
+    spec:
+      virtualMachineTemplate:
+        spec:
+          template:
+            metadata:
+              annotations:
+                spiffe.nvidia.com/inject-dsx-imds: "true"
+            spec:
+              domain:
+                devices:
+                  interfaces:
+                    - name: default
+                      bridge: {}
+              networks:
+                - name: default
+                  pod: {}
+```

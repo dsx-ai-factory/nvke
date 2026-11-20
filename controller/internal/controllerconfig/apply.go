@@ -121,6 +121,8 @@ func (c *Config) ApplyTo(cfg *config.Config) {
 	cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL = c.NodeAgent.TLSJWT.DSXIdentityExchangeURL
 	cfg.NodeAgent.TLSJWT.SubjectTenant = c.NodeAgent.TLSJWT.SubjectTenant
 	cfg.NodeAgent.TLSJWT.SubjectService = c.NodeAgent.TLSJWT.SubjectService
+	cfg.NodeAgent.KubeVirt.SPIFFEIDClassName = c.NodeAgent.KubeVirt.SPIFFEIDClassName
+	cfg.NodeAgent.KubeVirt.AddressPool = c.NodeAgent.KubeVirt.AddressPool
 	cfg.NodeAgentExternalMTLSEnabled = c.NodeAgent.ExternalMTLSEnabled
 
 	shared := c.OIDC.ManagementOIDCAuth

@@ -124,7 +124,7 @@ func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, f
 	if node.IP == "" {
 		return nil, nil, ErrNoAddress
 	}
-	endpoint := net.JoinHostPort(node.IP, t.cfg.NodeAgent.Port)
+	endpoint := net.JoinHostPort(node.AgentDialHost(), t.cfg.NodeAgent.Port)
 
 	var closeFuncs []func() error
 	cleanup := func() {

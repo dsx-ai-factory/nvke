@@ -77,6 +77,52 @@ rules:
       - provisionedmachinetemplates.infrastructure.cluster.x-k8s.io
     verbs:
       - get
+  {{- if .Values.capi.rbac.kubeVirt }}
+  - apiGroups:
+      - infrastructure.cluster.x-k8s.io
+    resources:
+      - kubevirtclusters
+      - kubevirtmachines
+      - kubevirtmachinetemplates
+    verbs:
+      - create
+      - delete
+      - get
+      - list
+      - patch
+      - update
+      - watch
+  - apiGroups:
+      - apiextensions.k8s.io
+    resources:
+      - customresourcedefinitions
+    resourceNames:
+      - kubevirtclusters.infrastructure.cluster.x-k8s.io
+      - kubevirtmachines.infrastructure.cluster.x-k8s.io
+      - kubevirtmachinetemplates.infrastructure.cluster.x-k8s.io
+    verbs:
+      - get
+  # For VMs in the management cluster: the controller creates a Service and a
+  # ClusterSPIFFEID per VM node.
+  - apiGroups:
+      - ""
+    resources:
+      - services
+    verbs:
+      - create
+      - delete
+      - get
+      - patch
+  - apiGroups:
+      - spire.spiffe.io
+    resources:
+      - clusterspiffeids
+    verbs:
+      - create
+      - delete
+      - get
+      - patch
+  {{- end }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

@@ -146,6 +146,11 @@ nodeAgent:
     # -- DSX Identity token-exchange endpoint injected into node-agent bootstrap
     # arguments when TLS/JWT is enabled.
     dsxIdentityExchangeURL: ""
+  kubeVirt:
+    # -- className of the SPIRE controller manager that issues DSX identities to VMs.
+    spiffeIDClassName: ""
+    # -- MetalLB address pool for VM node agent Services. Must be reachable from the controller.
+    addressPool: ""
   externalMTLS:
     # -- Pin an externally managed client certificate transport for newly
     # created nodes instead of the controller SPIRE X509-SVID. Keep the Secret
@@ -442,6 +447,9 @@ capi:
     # launchlayermachinetemplates). Only applies when `create` is true.
     # Keep it true while CAPLL's CRDs are installed.
     launchLayer: true
+    # -- Grant RBAC for CAPK's CRDs and the per-VM Services and ClusterSPIFFEIDs.
+    # Only applies when `create` is true.
+    kubeVirt: false
 
 kubeadm:
   # -- OCI registry kubeadm uses for control-plane component images.
