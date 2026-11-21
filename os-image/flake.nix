@@ -162,6 +162,7 @@
               flock
               gnused
               jq
+              lsof
               openssh
             ];
             text = ''

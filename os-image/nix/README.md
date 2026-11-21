@@ -52,7 +52,8 @@ sudo launchctl kickstart -k system/org.nixos.nix-daemon
 
 `nix store info --json` then reports `"trusted":true`. On nix-darwin, set
 `nix.settings.trusted-users` instead. The build checks this before it starts
-anything and never changes it for you.
+anything and never changes it for you. A Mac that already has a Linux builder
+configured skips this step; see "Existing builders" below.
 
 ### macOS: the temporary Linux builder
 
@@ -70,14 +71,19 @@ is installed as a service and no system configuration changes.
 - **Network:** its SSH listens on `127.0.0.1` only, port 31024 for arm64 and
   31025 for amd64; set `NKE_BOOTSTRAP_PORT` to change it. The amd64 builder
   runs under emulation on Apple silicon and is much slower.
-- **Host key:** the guest's host key is nixpkgs' public test key. It identifies
-  the guest type but does not authenticate the VM against a local process
-  squatting its port, the same trade-off as upstream `darwin.linux-builder`.
+- **Host key:** the guest's host key is nixpkgs' public test key, so SSH alone
+  cannot tell the VM from another local process on its port, and the Nix
+  daemon imports whatever outputs that port returns. The build therefore
+  refuses a port that is already in use, and builds only once the port is
+  held by the QEMU process it started.
 - **State:** the client key, `known_hosts` and the console log live in
   `bootstrap/` under the builder state directory, by default
   `~/.cache/nke/builders/<arch>/bootstrap`. The builder's disk is created for
-  each run and deleted when it exits. One run at a time can use that state;
-  a second fails with "already in use".
+  each run and deleted when it exits, or by the next run after a hard stop.
+  One run at a time can use that state; a second fails with "already in use".
+- **Existing builders:** if Nix already has a builder for the guest system,
+  such as nix-darwin's `nix.linux-builder` or a machine in `/etc/nix/machines`,
+  the build uses it and starts nothing, and your user need not be trusted.
 
 Linux hosts keep their existing behavior. A Linux host whose CPU differs from
 the target still needs a matching Linux builder, see Nix's

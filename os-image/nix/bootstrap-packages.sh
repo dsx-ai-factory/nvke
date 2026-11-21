@@ -52,6 +52,26 @@ state=$(cd "$state" && pwd -P)
 # Held across the plan too, so concurrent runs cannot race on the same state.
 exec 8>"$state/build.lock"
 flock -n 8 || { echo "Bootstrap state is already in use: $state" >&2; exit 1; }
+# A run that was hard-stopped left its scratch space, disk included. Any live
+# user of it would hold the lock, so whatever is left now is stale.
+rm -rf -- "$state"/runtime.*
+
+# A builder the user already configured for the guest system, such as
+# nix-darwin's linux-builder, needs neither the trust check nor a temporary VM.
+configured_builder_for() {
+  local spec line
+  local -a fields
+  spec=$(nix config show builders 2>/dev/null) || return 1
+  if [[ "$spec" == @* ]]; then
+    spec=$(cat -- "${spec#@}" 2>/dev/null) || return 1
+  fi
+  while IFS= read -r line; do
+    read -r -a fields <<<"${line%%#*}"
+    ((${#fields[@]} >= 2)) || continue
+    [[ ",${fields[1]}," == *",$1,"* ]] && return 0
+  done < <(tr ';' '\n' <<<"$spec")
+  return 1
+}
 
 bootstrap=0
 if [[ "$host_system" != "$guest_system" ]]; then
@@ -65,7 +85,13 @@ if [[ "$host_system" != "$guest_system" ]]; then
   if ((${#missing[@]})); then
     nix derivation show "${missing[@]}" >"$plan"
     needs_linux=$(jq -r --arg system "$guest_system" '.derivations | any(.[]; .system == $system)' "$plan")
-    if [[ "$needs_linux" == true ]]; then bootstrap=1; fi
+    if [[ "$needs_linux" == true ]]; then
+      if configured_builder_for "$guest_system"; then
+        echo "Using the configured $guest_system builder to prepare the package VM" >&2
+      else
+        bootstrap=1
+      fi
+    fi
   fi
 fi
 
@@ -87,6 +113,14 @@ if [[ "$bootstrap" == 1 ]]; then
   port=${NKE_BOOTSTRAP_PORT:-$default_port}
   # Rewritten every run from the pinned key, so a fresh disk cannot meet a stale entry.
   printf '[127.0.0.1]:%s %s\n' "$port" "$bootstrap_host_key" >"$state/known_hosts"
+  # The guest's host key is nixpkgs' public test key, so SSH alone cannot tell
+  # the VM from another local process on this port, and the daemon imports the
+  # outputs of whatever serves it. Only the QEMU started below may serve builds.
+  listener() { lsof -nP -t -iTCP@127.0.0.1:"$port" -sTCP:LISTEN 2>/dev/null || true; }
+  if [[ -n "$(listener)" ]]; then
+    echo "Something is already listening on 127.0.0.1:$port; set NKE_BOOTSTRAP_PORT to a free port." >&2
+    exit 1
+  fi
   ssh=(ssh -F /dev/null -i "$key" -p "$port" -o IdentityAgent=none
     -o IdentitiesOnly=yes -o BatchMode=yes -o ConnectTimeout=2
     -o StrictHostKeyChecking=yes -o "UserKnownHostsFile=$state/known_hosts" builder@127.0.0.1)
@@ -118,6 +152,10 @@ if [[ "$bootstrap" == 1 ]]; then
     fi
     sleep 1
   done
+  if [[ "$(listener)" != "$vm_pid" ]]; then
+    echo "127.0.0.1:$port is served by a process that is not the bootstrap VM; refusing to build there." >&2
+    exit 1
+  fi
   ready=1
   key_uri=$(jq -rn --arg key "$key" '$key | @uri')
   host_key=$(printf '%s\n' "$bootstrap_host_key" | base64 -w0)

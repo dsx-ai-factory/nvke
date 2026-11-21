@@ -62,6 +62,8 @@ if '--dry-run' in args:
         print('this derivation will be built:\\n  /nix/store/missing.drv', file=sys.stderr)
 elif args[:2] == ['derivation', 'show']:
     print(json.dumps({'derivations': {'missing.drv': {'system': os.environ.get('MISSING_SYSTEM', 'aarch64-linux')}}}))
+elif args[:3] == ['config', 'show', 'builders']:
+    print(os.environ.get('BUILDERS', ''))
 elif args[:2] == ['store', 'info']:
     print(json.dumps({'trusted': not bool(os.environ.get('UNTRUSTED'))}))
 elif args[0] == 'build':
@@ -81,6 +83,18 @@ if sys.argv[-1] == 'poweroff':
     with open(os.environ['TEST_EVENTS'], 'a') as f: f.write(json.dumps(['poweroff']) + '\\n')
 else:
     sys.exit(0 if (root / 'started').exists() and not os.environ.get('BOOT_FAIL') else 1)
+''')
+        # Who listens on the bootstrap port: nobody before launch, then the VM.
+        # SQUAT_* puts another process there before or after the launch.
+        self.script("lsof", '''#!/usr/bin/env python3
+import os
+from pathlib import Path
+root = Path(os.environ['TEST_ROOT'])
+started = (root / 'started').exists()
+if os.environ.get('SQUAT_BEFORE') or (started and os.environ.get('SQUAT_AFTER')):
+    print(4242)
+elif started:
+    print((root / 'pid').read_text())
 ''')
         for package in ("bootstrap", "runner"):
             (self.root / package / "bin").mkdir(parents=True)
@@ -250,6 +264,61 @@ with open(os.environ['TEST_EVENTS'], 'a') as f: f.write(json.dumps(['packages', 
                 self.assertNotEqual(disk.parent, state)
                 self.assertFalse(disk.exists(), disk)
                 self.assertFalse(disk.parent.exists(), disk.parent)
+
+    def test_configured_builder_for_the_guest_skips_bootstrap(self):
+        # nix-darwin's linux-builder, say: it works for untrusted users too, so
+        # neither the trust check nor a temporary VM may get in its way.
+        machines = self.root / "machines"
+        machines.write_text("# nix-darwin\n\nssh-ng://builder@linux-builder x86_64-linux,aarch64-linux"
+                            " /etc/nix/builder_ed25519 4 1 kvm,benchmark,big-parallel - KEY\n")
+        for builders in ("ssh-ng://builder@linux-builder aarch64-linux /etc/nix/builder_ed25519 4 - - - KEY",
+                         "ssh://other x86_64-linux ; ssh-ng://b aarch64-linux",
+                         f"@{machines}"):
+            with self.subTest(builders=builders):
+                self.events.unlink(missing_ok=True)
+                result, events = self.run_build(BUILDERS=builders, UNTRUSTED="1")
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn(['started'], events)
+                self.assertFalse(any(e[:3] == ['nix', 'store', 'info'] for e in events))
+                build = next(e for e in events if e[:2] == ['nix', 'build'] and '--dry-run' not in e
+                             and '/nix/store/package-runner.drv^out' in e)
+                self.assertNotIn('--builders', build)
+                self.assertEqual(events[-1][0], 'packages')
+
+    def test_builder_for_another_system_still_bootstraps(self):
+        for builders in ("ssh://other x86_64-linux - 4", f"@{self.root / 'absent'}"):
+            with self.subTest(builders=builders):
+                for marker in ('started', 'stop'):
+                    (self.root / marker).unlink(missing_ok=True)
+                self.events.unlink(missing_ok=True)
+                result, events = self.run_build(BUILDERS=builders)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertIn(['started'], events)
+
+    def test_port_already_listening_fails_before_launch(self):
+        result, events = self.run_build(SQUAT_BEFORE="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("already listening", result.stderr)
+        self.assertNotIn(['started'], events)
+
+    def test_listener_other_than_the_vm_stops_before_building(self):
+        # The guest's host key is public, so SSH alone cannot tell the VM from
+        # another local process on the port; that process must get no build.
+        result, events = self.run_build(SQUAT_AFTER="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("not the bootstrap VM", result.stderr)
+        self.assertFalse(any(e[:2] == ['nix', 'build'] and '--builders' in e for e in events))
+        self.assertNotIn(['poweroff'], events)
+        self.assertTrue((self.root / 'terminated').exists(), result.stderr)
+        self.assertFalse(any(e[0] == 'packages' for e in events))
+
+    def test_stale_runtime_from_a_hard_stop_is_removed(self):
+        stale = Path(self.env["NKE_BUILDER_STATE_DIR"]) / "bootstrap" / "runtime.STALE123"
+        stale.mkdir(parents=True)
+        (stale / "root.qcow2").write_text("half-written")
+        result, _ = self.run_build(CACHED="1")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertFalse(stale.exists())
 
     def test_concurrent_run_fails_fast(self):
         state = Path(self.env["NKE_BUILDER_STATE_DIR"]) / "bootstrap"
