@@ -21,6 +21,16 @@ curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install | sh -s -- --da
 Open a new terminal and check `nix --version`. If your system already manages Nix
 through NixOS or nix-darwin, use that installation.
 
+On macOS the installer hooks Nix into `/etc/zshrc` and `/etc/bashrc`, but bash
+reads `/etc/bashrc` only as a login shell. If `nix` is missing in bash, add the
+hook to `~/.bashrc`:
+
+```bash
+if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+  . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+fi
+```
+
 Add this line to `~/.config/nix/nix.conf` (create the directory/file if needed),
 or enable the equivalent setting in your existing NixOS/nix-darwin configuration:
 
@@ -28,14 +38,52 @@ or enable the equivalent setting in your existing NixOS/nix-darwin configuration
 experimental-features = nix-command flakes
 ```
 
-**On macOS or a different CPU architecture, one more setup step is required:**
-Nix needs access to a Linux builder matching the target architecture to prepare
-the VM, unless all its build outputs are available in a binary cache. A fresh
-Nix installation alone does not configure that builder. See Nix's
-[remote builder setup](https://nix.dev/manual/nix/stable/advanced-topics/distributed-builds).
-On a nix-darwin Mac, `nix.linux-builder` is one way to get a matching
-aarch64-linux builder without a separate machine. QEMU's software emulation
-applies when running the prepared VM.
+### macOS: trust your user once
+
+The package VM is a Linux system, so a Mac needs a Linux builder to prepare it.
+The build starts a temporary one for you (below), but Nix accepts a builder
+chosen on the command line only from a **trusted user**. Trust your account
+once, then restart the Nix daemon:
+
+```bash
+echo "trusted-users = root $USER" | sudo tee -a /etc/nix/nix.conf
+sudo launchctl kickstart -k system/org.nixos.nix-daemon
+```
+
+`nix store info --json` then reports `"trusted":true`. On nix-darwin, set
+`nix.settings.trusted-users` instead. The build checks this before it starts
+anything and never changes it for you.
+
+### macOS: the temporary Linux builder
+
+`make -C os-image/packer check-deps` and `build-packages-<arch>` first check
+the local store and the binary caches. If the package VM still needs Linux
+builds, they start nixpkgs' stock `darwin.linux-builder` from the pinned
+nixpkgs, prepare the package VM through it, and shut it down before any
+package is built. Later runs skip it until the VM's definition changes. Nothing
+is installed as a service and no system configuration changes.
+
+- **First run** downloads the builder's guest from the public Nix cache, about
+  720 MiB for arm64. It cannot be built locally, since no Linux builder exists
+  yet, so a nixpkgs pin whose `darwin.linux-builder` is uncached cannot
+  bootstrap.
+- **Network:** its SSH listens on `127.0.0.1` only, port 31024 for arm64 and
+  31025 for amd64; set `NKE_BOOTSTRAP_PORT` to change it. The amd64 builder
+  runs under emulation on Apple silicon and is much slower.
+- **Host key:** the guest's host key is nixpkgs' public test key. It identifies
+  the guest type but does not authenticate the VM against a local process
+  squatting its port, the same trade-off as upstream `darwin.linux-builder`.
+- **State:** the client key, `known_hosts` and the console log live in
+  `bootstrap/` under the builder state directory, by default
+  `~/.cache/nke/builders/<arch>/bootstrap`. The builder's disk is created for
+  each run and deleted when it exits. One run at a time can use that state;
+  a second fails with "already in use".
+
+Linux hosts keep their existing behavior. A Linux host whose CPU differs from
+the target still needs a matching Linux builder, see Nix's
+[remote builder setup](https://nix.dev/manual/nix/stable/advanced-topics/distributed-builds),
+or cached guest outputs. QEMU's software emulation applies when running the
+prepared VM.
 
 ## Build packages
 
