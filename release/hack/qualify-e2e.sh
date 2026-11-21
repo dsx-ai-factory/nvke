@@ -121,8 +121,12 @@ require_inputs() {
 
 # What the suite writes in its package directory, and the ones of them that
 # are text and so can carry a credential in an error message.
+# qualify-e2e-artifacts is the suite's -e2e.artifacts-dir: kube-bench results
+# from a run that installs the GPU runtime. It is collected locally, not
+# uploaded; the scan's summary is in qualify-e2e.log.
 artifacts=(qualify-e2e.log qualify-e2e.junit.xml qualify-e2e.report.json
-  nvkectl-diagnostics.tar.gz tenant-diagnostics.json site-cluster-state.txt kaps-bench-results.tar.gz)
+  nvkectl-diagnostics.tar.gz tenant-diagnostics.json site-cluster-state.txt kaps-bench-results.tar.gz
+  qualify-e2e-artifacts)
 scrubbed=(qualify-e2e.log qualify-e2e.junit.xml qualify-e2e.report.json tenant-diagnostics.json site-cluster-state.txt)
 
 # One entry per stream of every combination. A stream's parameters are what
@@ -715,8 +719,9 @@ log_to() {
 step_run() {
   cd "${e2e}"
   # A run that was interrupted, or the suite run by hand, leaves its outputs
-  # here, and the artifacts step would collect them as this run's.
-  rm -f "${artifacts[@]}" site-bundle*
+  # here, and the artifacts step would collect them as this run's. -r because
+  # qualify-e2e-artifacts is a directory, which -f alone fails on.
+  rm -rf "${artifacts[@]}" site-bundle*
   # GitHub masks a secret as it is stored, so a withheld URL's host, named
   # alone in an error, would reach the job log, which this public
   # repository publishes. withhold covers the artifacts.
@@ -810,6 +815,7 @@ step_run() {
     -e2e.site-stage="${SITE_STAGE}" \
     -e2e.versions="${versions}" \
     -e2e.capabilities="${CAPABILITIES}" \
+    -e2e.artifacts-dir=qualify-e2e-artifacts \
     ${keep[@]+"${keep[@]}"} ${workers[@]+"${workers[@]}"} ${gpu_runtime[@]+"${gpu_runtime[@]}"} ${kaps_bench[@]+"${kaps_bench[@]}"} 2>&1 | log_to qualify-e2e.log
 }
 

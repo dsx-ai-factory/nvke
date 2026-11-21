@@ -11,6 +11,8 @@ It runs in four CI lanes:
 
 None of these lanes is part of the merge gate.
 
+A qualification run that installs the GPU runtime with AICR (`-e2e.tenant-gpu-runtime`, `qualify local --tenant-gpu-runtime`) also scans its tenant, right after AICR's deployment checks, without judging it: `reportCISBenchmark` puts the summary in the spec's report entry and the log, and the results go under `qualify-e2e-artifacts/kube-bench/`, which `qualify local` moves into its run directory. The findings there belong to the components AICR installs, so they do not fail the run.
+
 ## What a scan does
 
 1. Runs the pinned image (`Image`) in `default` with `kube-bench --benchmark cis-1.12 run --json`:

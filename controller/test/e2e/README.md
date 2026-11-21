@@ -985,8 +985,10 @@ installs: such a run fails before a machine is taken.
 checks 36 and 37 run there too. Before the tenant checks, two specs labeled
 `gpu` and `gpu-runtime` install the runtime with [AICR](https://github.com/NVIDIA/aicr)
 and then run AICR's deployment checks against it. The checks' results go in the
-spec's report entry. The tenant checks then expect every worker to advertise
-`nvidia.com/gpu`. The recipe is AICR's NVKE Ubuntu training recipe for the
+spec's report entry. A third spec, labeled `cis-benchmark` as well, then scans
+the tenant with kube-bench and reports the findings without failing; see
+[`internal/kubebench/README.md`](internal/kubebench/README.md). The tenant
+checks then expect every worker to advertise `nvidia.com/gpu`. The recipe is AICR's NVKE Ubuntu training recipe for the
 run's `gpu` capability ([setup guide](https://github.com/NVIDIA/aicr/blob/main/docs/integrator/nvke-gb200-setup.md)),
 without its InfiniBand fabric: [`aicr/`](aicr/) holds the overlay, passed with
 `--data`, that turns off `network-operator`, `sriov-ib-networks` and

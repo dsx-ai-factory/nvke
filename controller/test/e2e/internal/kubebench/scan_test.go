@@ -357,7 +357,47 @@ func TestCheck(t *testing.T) {
 
 	out, err := Check(t.Context(), scanner, ClusterTenant, outDir)
 	require.NoError(t, err)
+	assert.Equal(t, fixtureOutcome(t), out)
 
+	for _, name := range []string{"results.json", "summary.txt"} {
+		_, err := os.Stat(filepath.Join(outDir, name))
+		assert.NoError(t, err, name)
+	}
+}
+
+// TestCheckKeepsTheOutcomeWhenTheArtifactsCannotBeWritten checks that a scan
+// that ran returns its outcome with an ErrArtifacts error, so a caller can
+// still report the findings.
+func TestCheckKeepsTheOutcomeWhenTheArtifactsCannotBeWritten(t *testing.T) {
+	t.Parallel()
+
+	cs := scanCluster(t, succeeded(), testNode("cp-a", true), testNode("w-1", false))
+	scanner := testScanner(t, cs)
+	file := filepath.Join(t.TempDir(), "file")
+	require.NoError(t, os.WriteFile(file, nil, 0o600))
+
+	out, err := Check(t.Context(), scanner, ClusterTenant, filepath.Join(file, "kube-bench"))
+	require.ErrorIs(t, err, ErrArtifacts)
+	assert.Equal(t, fixtureOutcome(t), out)
+}
+
+// TestCheckScanFailureIsNotAnArtifactsError checks that a scan that did not run
+// is not mistaken for one whose artifacts could not be written.
+func TestCheckScanFailureIsNotAnArtifactsError(t *testing.T) {
+	t.Parallel()
+
+	cs := scanCluster(t, succeeded(), testNode("w-1", false))
+	scanner := testScanner(t, cs)
+
+	out, err := Check(t.Context(), scanner, ClusterTenant, t.TempDir())
+	require.Error(t, err)
+	require.NotErrorIs(t, err, ErrArtifacts)
+	assert.Equal(t, Outcome{}, out)
+}
+
+// fixtureOutcome is the outcome of scanning cp-a and w-1 with the fixture reports.
+func fixtureOutcome(t *testing.T) Outcome {
+	t.Helper()
 	reg, err := DefaultRegister()
 	require.NoError(t, err)
 	controlPlane, err := ParseLog([]byte(fixtureLine(t, "report_control_plane.json")))
@@ -367,14 +407,8 @@ func TestCheck(t *testing.T) {
 	policies, err := ParseLog([]byte(fixtureLine(t, "report_policies.json")))
 	require.NoError(t, err)
 	controlPlane.Controls = append(controlPlane.Controls, policies.Controls...)
-	want := Evaluate(ClusterTenant, []NodeReport{
+	return Evaluate(ClusterTenant, []NodeReport{
 		{Node: "cp-a", Role: RoleControlPlane, Report: controlPlane},
 		{Node: "w-1", Role: RoleWorker, Report: worker},
 	}, reg)
-	assert.Equal(t, want, out)
-
-	for _, name := range []string{"results.json", "summary.txt"} {
-		_, err := os.Stat(filepath.Join(outDir, name))
-		assert.NoError(t, err, name)
-	}
 }

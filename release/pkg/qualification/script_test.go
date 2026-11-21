@@ -741,6 +741,33 @@ func TestArtifactsCollectKapsBenchResults(t *testing.T) {
 	}
 }
 
+// TestArtifactsCollectTheArtifactsDirectory checks that the artifacts step lists
+// the suite's artifacts directory, and that a run removes one an earlier run
+// left rather than stopping on it.
+func TestArtifactsCollectTheArtifactsDirectory(t *testing.T) {
+	copied := copiedScript(t)
+	dir := filepath.Join(filepath.Dir(copied), "..", "..", "controller", "test", "e2e", "qualify-e2e-artifacts")
+	for _, sh := range shells(t) {
+		if err := os.MkdirAll(filepath.Join(dir, "kube-bench"), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "kube-bench", "summary.txt"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		out, err := exec.CommandContext(t.Context(), sh, copied, "artifacts").CombinedOutput()
+		if err != nil || !strings.Contains(string(out), "/controller/test/e2e/qualify-e2e-artifacts\n") {
+			t.Errorf("%s artifacts: err = %v, output = %q, want qualify-e2e-artifacts listed", sh, err, out)
+		}
+
+		if out, err := dryRun(t, sh, copied, "", "", "false"); err != nil {
+			t.Fatalf("%s run: %v\n%s", sh, err, out)
+		}
+		if _, err := os.Stat(dir); !os.IsNotExist(err) {
+			t.Errorf("%s run: stale qualify-e2e-artifacts is still there: %v", sh, err)
+		}
+	}
+}
+
 // TestRunRefusesASuiteTimeoutThatIsNotANumber checks that a suite timeout that
 // is not a number of minutes stops the run step.
 func TestRunRefusesASuiteTimeoutThatIsNotANumber(t *testing.T) {
