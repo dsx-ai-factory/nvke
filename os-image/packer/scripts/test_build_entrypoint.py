@@ -187,6 +187,20 @@ sys.exit(1 if sys.argv[1] == "build" else 0)
         self.assertEqual(json.loads(Path(self.env["PACKER_ARGS"]).read_text()),
                          ["build", "--no-link", f"{self.packer_dir.parent}#builder-arm64"])
 
+    def test_check_deps_on_macos_goes_through_the_bootstrap(self):
+        # Realizing the guest runner directly fails on a Mac with no Linux
+        # builder; the package app can start a temporary one first.
+        self.script("uname", '#!/bin/sh\ncase "$1" in -m) echo arm64;; -s) echo Darwin;; esac\n')
+        self.script("nix", '''#!/usr/bin/env python3
+import json, os, sys
+from pathlib import Path
+Path(os.environ['PACKER_ARGS']).write_text(json.dumps(sys.argv[1:]))
+''')
+        result = self.make("check-deps", "NKE_PACKAGE_BUILDER=nix")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual(json.loads(Path(self.env["PACKER_ARGS"]).read_text()),
+                         ["run", f"{self.packer_dir.parent}#build-packages-arm64", "--", "--check"])
+
     def test_unknown_package_builder_fails_before_packer(self):
         result = self.make("check-deps", "NKE_PACKAGE_BUILDER=invalid")
         self.assertNotEqual(result.returncode, 0)
