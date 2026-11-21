@@ -59,9 +59,15 @@ echo "package builder: $mode ($arch${target_series:+, target ubuntu $target_seri
 if [[ "${1:-}" == --check ]]; then
   if [[ "$mode" == nix ]]; then
     # Realize the guest runner now: without a matching Linux builder or a cache
-    # hit this fails here rather than part-way through an image bake.
+    # hit this fails here rather than part-way through an image bake. On macOS
+    # the package app owns that step, since it can start a temporary Linux
+    # builder; realizing the runner directly would fail without one.
     echo "realizing the builder VM runner; this may download the guest closure"
-    nix build --no-link "$repo_root/os-image#builder-$arch"
+    if [[ "$(uname -s)" == Darwin ]]; then
+      nix run "$repo_root/os-image#build-packages-$arch" -- --check
+    else
+      nix build --no-link "$repo_root/os-image#builder-$arch"
+    fi
   fi
   exit 0
 fi

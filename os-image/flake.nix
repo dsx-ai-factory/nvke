@@ -78,7 +78,7 @@
               -machine ${machine},accel="$accel" -cpu "$cpu" "$@"
           '';
         };
-      mkPackageApp =
+      mkPackageRunner =
         hostSystem: arch:
         let
           pkgs = import nixpkgs { system = hostSystem; };
@@ -115,6 +115,67 @@
           ''
           + builtins.readFile ./nix/build-packages.sh;
         };
+      # nixpkgs' stock darwin.linux-builder, changed only on the host side: no
+      # built-in port forward, so bootstrap-packages.sh binds SSH to 127.0.0.1.
+      mkBootstrap =
+        hostSystem: arch:
+        let
+          hostPkgs = import nixpkgs { system = hostSystem; };
+          # Preserve the upstream guest exactly so a fresh host can substitute it.
+          stockPkgs = import nixpkgs { system = "aarch64-darwin"; };
+          stock =
+            if arch == "arm64" then stockPkgs.darwin.linux-builder else stockPkgs.darwin.linux-builder-x86_64;
+          runtime = stock.override {
+            modules = [
+              (
+                { lib, ... }:
+                {
+                  nixpkgs.hostPlatform = guests.${arch};
+                  virtualisation.host.pkgs = lib.mkForce hostPkgs;
+                  virtualisation.forwardPorts = lib.mkForce [ ];
+                }
+              )
+            ];
+          };
+        in
+        assert
+          stock.nixosConfig.system.build.toplevel.drvPath
+          == runtime.nixosConfig.system.build.toplevel.drvPath;
+        runtime.nixosConfig.system.build.vm;
+      # On macOS the package app first makes sure the runner can be realized,
+      # starting a temporary Linux builder when its guest is not cached.
+      mkPackageApp =
+        hostSystem: arch:
+        let
+          pkgs = import nixpkgs { system = hostSystem; };
+          runner = mkPackageRunner hostSystem arch;
+          bootstrap = mkBootstrap hostSystem arch;
+        in
+        if !pkgs.stdenv.hostPlatform.isDarwin then
+          runner
+        else
+          pkgs.writeShellApplication {
+            name = "build-packages-${arch}";
+            runtimeInputs = with pkgs; [
+              nix
+              coreutils
+              flock
+              gnused
+              jq
+              lsof
+              openssh
+            ];
+            text = ''
+              arch=${arch}
+              host_system=${hostSystem}
+              guest_system=${guests.${arch}}
+              runner_drv=${builtins.unsafeDiscardOutputDependency runner.drvPath}
+              bootstrap_drv=${builtins.unsafeDiscardOutputDependency bootstrap.drvPath}
+              bootstrap_program=${bootstrap.meta.mainProgram}
+              bootstrap_host_key=${nixpkgs.lib.escapeShellArg (nixpkgs.lib.removeSuffix "\n" (builtins.readFile "${nixpkgs}/nixos/modules/profiles/keys/ssh_host_ed25519_key.pub"))}
+            ''
+            + builtins.readFile ./nix/bootstrap-packages.sh;
+          };
     in
     {
       packages = nixpkgs.lib.genAttrs hostSystems (
