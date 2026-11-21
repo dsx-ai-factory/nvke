@@ -121,7 +121,7 @@ class TriageRunTest(unittest.TestCase):
         )
         r = self.run_script("1")
         self.assertEqual(r.returncode, 0, r.stderr)
-        self.assertIn("Diagnosis only: nothing was re-run, posted or deleted.", r.stdout)
+        self.assertIn("This table is a diagnosis: producing it re-ran, posted and deleted nothing.", r.stdout)
         self.assertIn("| forge-gb200-amd64 | 1 | Run the e2e suite | forge-capacity | wait-then-rerun | `need 2, unusedUsable=1` |", r.stdout)
 
     def test_every_attempt_is_listed(self):
