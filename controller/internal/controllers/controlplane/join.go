@@ -189,7 +189,7 @@ func (r *reconciler) reconcileControlPlaneJoins(ctx context.Context, cluster db.
 // status is joinStatusExhausted.
 func (r *reconciler) joinWorkflowStatus(ctx context.Context, node db.Node) (joinStatus, time.Time, error) {
 	workflowID := constants.JoinNodeWorkflowPrefix + node.ID.String()
-	desc, err := r.controllerTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
+	desc, err := r.controllerTemporalClient.DescribeWorkflow(ctx, workflowID, "")
 	if err != nil {
 		if isWorkflowNotFoundError(err) {
 			return joinStatusNotStarted, time.Time{}, nil
@@ -197,7 +197,7 @@ func (r *reconciler) joinWorkflowStatus(ctx context.Context, node db.Node) (join
 		return joinStatusNotStarted, time.Time{}, fmt.Errorf("describing join workflow for node %s: %w", node.ID, err)
 	}
 
-	info := desc.GetWorkflowExecutionInfo()
+	info := desc.RawResponse.GetWorkflowExecutionInfo()
 	if info.GetCloseTime() == nil {
 		if node.Conditions.Joined.Status == db.ConditionStatusTrue {
 			return joinStatusPostJoin, time.Time{}, nil

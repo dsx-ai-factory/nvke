@@ -16,6 +16,7 @@ import (
 	"go.temporal.io/api/serviceerror"
 	workflowpb "go.temporal.io/api/workflow/v1"
 	"go.temporal.io/api/workflowservice/v1"
+	tc "go.temporal.io/sdk/client"
 	temporalmocks "go.temporal.io/sdk/mocks"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -81,7 +82,11 @@ func TestReconcileK8sUpgrade_UpdatesKubeadmConfigMapWhileUpgrading(t *testing.T)
 
 			temporalClient := &temporalmocks.Client{}
 			resp, err := tt.describe()
-			temporalClient.On("DescribeWorkflowExecution", mock.Anything, workflowID, "").Return(resp, err).Once()
+			var desc *tc.WorkflowExecutionDescription
+			if resp != nil {
+				desc = &tc.WorkflowExecutionDescription{RawResponse: resp}
+			}
+			temporalClient.On("DescribeWorkflow", mock.Anything, workflowID, "").Return(desc, err).Once()
 			var workflowRun *temporalmocks.WorkflowRun
 			if tt.wantStart {
 				workflowRun = &temporalmocks.WorkflowRun{}
