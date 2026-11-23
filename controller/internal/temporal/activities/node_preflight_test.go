@@ -7,17 +7,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
-	"log/slog"
 	"testing"
 
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	temporallog "go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
@@ -28,9 +23,6 @@ import (
 
 func TestNodePreflight(t *testing.T) {
 	ctx := context.Background()
-	versionErr := fmt.Errorf("failed to get agent version: %w", status.Error(codes.Unavailable, "dial refused"))
-	unexpectedVersionErr := errors.New("unexpected version probe failure")
-	logger := temporallog.NewStructuredLogger(slog.New(slog.DiscardHandler))
 
 	tests := []struct {
 		name                     string
@@ -38,23 +30,63 @@ func TestNodePreflight(t *testing.T) {
 		capiInfraCluster         json.RawMessage
 		capiInfraMachineTemplate json.RawMessage
 		agentVersion             string
-		agentVersionErr          error
+		probedAgentVersion       string
+		probeErr                 error
+		healthChecksDisabled     bool
 		preflightErr             error
 		preflightStatus          string
 		preflightErrorMessage    string
 		wantErr                  string
-		wantErrorIs              error
 		wantBenignError          bool
 		wantOrdinaryError        bool
 		wantPreflightCalls       int
+		wantVersionCalls         int
 		assertPreflightRequest   func(t *testing.T, req *nvkeproto.ExecuteNodePreflightRequest)
 	}{
 		{
-			name:                     "old agent skips strict preflight after agent version probe",
+			name: "health checks disabled discovers missing worker version", siteID: uuid.New(),
+			healthChecksDisabled: true, probedAgentVersion: "0.1.7", wantVersionCalls: 1, wantPreflightCalls: 1,
+		},
+		{
+			name: "blank stored version discovers current agent", siteID: uuid.New(), agentVersion: "  ",
+			probedAgentVersion: "0.1.24", wantVersionCalls: 1, wantPreflightCalls: 1,
+		},
+		{
+			name: "discovered legacy version still waits for bootstrap", siteID: uuid.New(),
+			probedAgentVersion: "0.1.22", wantVersionCalls: 1, wantPreflightCalls: 1,
+			preflightStatus: "notready", wantErr: "notready", wantBenignError: true,
+		},
+		{
+			name: "empty probe version remains pending", siteID: uuid.New(), wantVersionCalls: 1,
+			wantErr: "version is not populated", wantBenignError: true,
+		},
+		{
+			name: "blank probe version remains pending", siteID: uuid.New(), probedAgentVersion: "  ", wantVersionCalls: 1,
+			wantErr: "version is not populated", wantBenignError: true,
+		},
+		{
+			name: "version probe failure retries without preflight", siteID: uuid.New(), wantVersionCalls: 1,
+			probeErr: errors.New("version probe failed"), wantErr: "version probe failed", wantOrdinaryError: true,
+		},
+		{
+			name: "version probe preserves cancellation", siteID: uuid.New(), wantVersionCalls: 1,
+			probeErr: context.Canceled, wantErr: context.Canceled.Error(), wantOrdinaryError: true,
+		},
+		{
+			name: "version probe preserves deadline", siteID: uuid.New(), wantVersionCalls: 1,
+			probeErr: context.DeadlineExceeded, wantErr: context.DeadlineExceeded.Error(), wantOrdinaryError: true,
+		},
+		{name: "malformed version still checks", siteID: uuid.New(), agentVersion: "unknown", wantPreflightCalls: 1},
+		{
+			name:                     "old agent still requires bootstrap completion",
 			siteID:                   uuid.New(),
 			capiInfraCluster:         json.RawMessage(`{}`),
 			capiInfraMachineTemplate: json.RawMessage(`{}`),
 			agentVersion:             "0.1.22",
+			wantPreflightCalls:       1,
+			preflightStatus:          "notready",
+			wantErr:                  "notready",
+			wantBenignError:          true,
 		},
 		{
 			name:                     "Forge node with current agent checks cloud-init status",
@@ -85,21 +117,6 @@ func TestNodePreflight(t *testing.T) {
 				assert.Equal(t, "cluster-api-bootstrap-success", checks[0].GetName())
 				assert.Equal(t, capdBootstrapSuccessPath, checks[0].GetFileExists().GetPath())
 			},
-		},
-		{
-			name:            "agent version probe failure reports node agent not ready",
-			siteID:          uuid.New(),
-			agentVersionErr: versionErr,
-			wantErr:         "node agent is not ready",
-			wantBenignError: true,
-		},
-		{
-			name:              "unexpected agent version probe failure remains an ordinary error",
-			siteID:            uuid.New(),
-			agentVersionErr:   unexpectedVersionErr,
-			wantErr:           unexpectedVersionErr.Error(),
-			wantErrorIs:       unexpectedVersionErr,
-			wantOrdinaryError: true,
 		},
 		{
 			name:                  "preflight not ready is an expected retry",
@@ -135,13 +152,17 @@ func TestNodePreflight(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			activity, node := setupNodePreflightRequestTest(t, ctx, tt.siteID, tt.capiInfraCluster, tt.capiInfraMachineTemplate)
+			activity.cfg.NodeHealthCheckDisabled = tt.healthChecksDisabled
+			node.AgentVersion = tt.agentVersion
+			_, updateErr := activity.db.UpdateNode(ctx, &node)
+			require.NoError(t, updateErr)
 			preflightStatus := tt.preflightStatus
 			if preflightStatus == "" {
 				preflightStatus = nodePreflightStatusReady
 			}
 			nodeAgent := &agenttest.FakeClient{
-				AgentVersion:    tt.agentVersion,
-				AgentVersionErr: tt.agentVersionErr,
+				AgentVersion:    tt.probedAgentVersion,
+				AgentVersionErr: tt.probeErr,
 				PreflightErr:    tt.preflightErr,
 				PreflightResp: &nvkeproto.ExecuteNodePreflightResponse{
 					Status:       preflightStatus,
@@ -150,14 +171,25 @@ func TestNodePreflight(t *testing.T) {
 			}
 			activity.nodeAgentClient = nodeAgent
 
-			err := activity.nodePreflight(ctx, node.ID, logger)
+			err := activity.nodePreflight(ctx, node.ID)
+			assert.Equal(t, tt.wantVersionCalls, nodeAgent.AgentVersionCalls)
 			assert.Equal(t, tt.wantPreflightCalls, nodeAgent.PreflightCalls)
+			if nodeAgent.PreflightCalls > 0 {
+				version := tt.agentVersion
+				if tt.wantVersionCalls > 0 {
+					version = tt.probedAgentVersion
+				}
+				assert.Equal(t, version, nodeAgent.LastPreflightNode.AgentVersion)
+			}
+			storedNode, getErr := activity.db.GetNode(ctx, node.ID)
+			require.NoError(t, getErr)
+			assert.Equal(t, tt.agentVersion, storedNode.AgentVersion)
+			if tt.probeErr != nil {
+				require.ErrorIs(t, err, tt.probeErr)
+			}
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.Contains(t, err.Error(), tt.wantErr)
-				if tt.wantErrorIs != nil {
-					require.ErrorIs(t, err, tt.wantErrorIs)
-				}
 				if tt.wantBenignError {
 					var applicationErr *temporal.ApplicationError
 					require.ErrorAs(t, err, &applicationErr)
@@ -181,53 +213,29 @@ func TestNodePreflight(t *testing.T) {
 	}
 }
 
-func TestNodePreflightPreservesCanceledVersionProbe(t *testing.T) {
-	ctx := context.Background()
-	logger := temporallog.NewStructuredLogger(slog.New(slog.DiscardHandler))
+func TestUnit_NodePreflightVersionBecomesAvailable(t *testing.T) {
+	ctx := t.Context()
 	activity, node := setupNodePreflightRequestTest(t, ctx, uuid.New(), nil, nil)
-
-	probeCtx, cancel := context.WithCancel(ctx)
-	activity.nodeAgentClient = &cancelingVersionProbeClient{
-		FakeClient: &agenttest.FakeClient{},
-		cancel:     cancel,
+	activity.cfg.NodeHealthCheckDisabled = true
+	nodeAgent := &agenttest.FakeClient{
+		PreflightResp: &nvkeproto.ExecuteNodePreflightResponse{Status: "ready"},
 	}
+	activity.nodeAgentClient = nodeAgent
+	err := activity.nodePreflight(ctx, node.ID)
+	var pending *temporal.ApplicationError
+	require.ErrorAs(t, err, &pending)
+	require.Equal(t, temporal.ApplicationErrorCategoryBenign, pending.Category())
+	require.False(t, pending.NonRetryable())
+	require.Zero(t, nodeAgent.PreflightCalls)
 
-	err := activity.nodePreflight(probeCtx, node.ID, logger)
-	require.ErrorIs(t, err, context.Canceled)
-
-	var applicationErr *temporal.ApplicationError
-	assert.NotErrorAs(t, err, &applicationErr)
-}
-
-type cancelingVersionProbeClient struct {
-	*agenttest.FakeClient
-	cancel context.CancelFunc
-}
-
-func (c *cancelingVersionProbeClient) GetAgentVersion(context.Context, db.Node) (string, error) {
-	c.cancel()
-	return "", context.Canceled
-}
-
-func TestNodeAgentVersionAtLeast(t *testing.T) {
-	tests := []struct {
-		name    string
-		version string
-		want    bool
-	}{
-		{name: "minimum release", version: "v0.1.26", want: true},
-		{name: "git describe after minimum", version: "v0.1.26-2-g1f5274f-dirty", want: true},
-		{name: "dirty minimum tag", version: "v0.1.26-dirty", want: true},
-		{name: "git describe after older release", version: "v0.1.25-9-g1f5274f", want: false},
-		{name: "older release", version: "0.1.25", want: false},
-		{name: "minimum prerelease", version: "v0.1.26-rc.1", want: false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, nodeAgentVersionAtLeast(tt.version, "0.1.26", false))
-		})
-	}
+	nodeAgent.AgentVersion = "0.1.7"
+	require.NoError(t, activity.nodePreflight(ctx, node.ID))
+	require.Equal(t, 1, nodeAgent.PreflightCalls)
+	require.Equal(t, "0.1.7", nodeAgent.LastPreflightNode.AgentVersion)
+	require.Equal(t, 2, nodeAgent.AgentVersionCalls)
+	storedNode, err := activity.db.GetNode(ctx, node.ID)
+	require.NoError(t, err)
+	require.Empty(t, storedNode.AgentVersion)
 }
 
 func setupNodePreflightRequestTest(
