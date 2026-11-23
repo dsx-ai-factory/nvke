@@ -132,8 +132,12 @@ func apiError(code int, status string, body []byte) error {
 		message = e.Message
 	}
 	if hint := refusalHint(code, message); hint != "" {
-		// The API's messages end in a full stop; the hint continues the sentence.
-		message = strings.TrimSuffix(message, ".") + ": " + hint
+		if message == "" {
+			message = hint
+		} else {
+			// The API's messages end in a full stop; the hint continues the sentence.
+			message = strings.TrimSuffix(message, ".") + ": " + hint
+		}
 	}
 	return &StatusError{StatusCode: code, err: fmt.Errorf("%s: %s", status, message)}
 }

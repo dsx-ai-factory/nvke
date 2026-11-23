@@ -40,6 +40,19 @@ func TestControllerRefusalsSayWhatToDo(t *testing.T) {
 				"(see docs/operate/api-authentication.md)",
 		},
 		{
+			name:   "a 401 with an empty body is just the hint",
+			status: http.StatusUnauthorized,
+			body:   "",
+			wantList: "listing clusters: 401 Unauthorized: " +
+				"the NVKE API did not accept nvkectl's credential; check the management cluster kubeconfig " +
+				"('nvkectl config set-site --kubeconfig <path>') and log in again if it uses OIDC " +
+				"(see docs/operate/api-authentication.md)",
+			wantDelete: "deleting cluster: 401 Unauthorized: " +
+				"the NVKE API did not accept nvkectl's credential; check the management cluster kubeconfig " +
+				"('nvkectl config set-site --kubeconfig <path>') and log in again if it uses OIDC " +
+				"(see docs/operate/api-authentication.md)",
+		},
+		{
 			name:   "authentication does not admit the identity",
 			status: http.StatusForbidden,
 			body:   `{"message":"Not admitted: the authenticated identity matches no admission rule."}` + "\n",
