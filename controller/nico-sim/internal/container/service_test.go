@@ -107,3 +107,38 @@ esac
 		t.Fatal("instance creation waited for the bootstrap gate")
 	}
 }
+
+// A node container must use containerd's default snapshotter on its /var volume.
+// Under fuse-overlayfs, containerd reports an image filesystem path that does not
+// exist, so the kubelet's /stats/summary, image GC and eviction fail (#2136).
+func TestUnit_CreateInstanceUsesDefaultSnapshotter(t *testing.T) {
+	dir := t.TempDir()
+	createArgs := filepath.Join(dir, "create-args")
+	docker := filepath.Join(dir, "docker")
+	inspect := `[{"Config":{"Labels":{"nvidia.com/nico-containers.instance-id":"instance-0001","nvidia.com/nico-containers.site-id":"site"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"kind":{"IPAddress":"192.0.2.10"}}}}]`
+	fakeDocker := fmt.Sprintf(`#!/bin/sh
+case "$1" in
+  create) printf '%%s\n' "$@" > '%s'; printf 'container' ;;
+  inspect) printf '%%s' '%s' ;;
+  exec) cat >/dev/null ;;
+esac
+`, createArgs, inspect)
+	require.NoError(t, os.WriteFile(docker, []byte(fakeDocker), 0o755))
+	service := &Service{
+		cfg:    Config{DockerBinary: docker, NodeNetwork: "kind", NodeImage: "node-image", SiteID: "site"},
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	req := nicosdk.InstanceCreateRequest{}
+	req.SetName("node")
+
+	_, err := service.createInstance(context.Background(), "instance-0001", req)
+	require.NoError(t, err)
+
+	recorded, err := os.ReadFile(createArgs)
+	require.NoError(t, err)
+	args := strings.Split(strings.TrimSpace(string(recorded)), "\n")
+	require.NotContains(t, string(recorded), "KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER",
+		"the node must use containerd's default snapshotter, not an override")
+	require.Contains(t, strings.Join(args, " "), "--volume /var ",
+		"containerd's default snapshotter needs /var on a volume rather than the overlayfs rootfs")
+}
