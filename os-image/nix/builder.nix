@@ -6,22 +6,6 @@
   lib,
   ...
 }:
-let
-  # Use the target ABI, rather than the builder's Nix-store loader and libc.
-  ubuntuCC = pkgs.writeShellScriptBin "nke-ubuntu-cc" ''
-    exec ${pkgs.zig_0_15}/bin/zig cc \
-      -target ${pkgs.stdenv.hostPlatform.parsed.cpu.name}-linux-gnu.2.39 "$@"
-  '';
-  checkUbuntuElf = pkgs.writeShellApplication {
-    name = "check-ubuntu-elf";
-    runtimeInputs = with pkgs; [
-      binutils
-      gnugrep
-      gnused
-    ];
-    text = builtins.readFile ./check-ubuntu-elf.sh;
-  };
-in
 {
   imports = [
     "${modulesPath}/profiles/minimal.nix"
@@ -88,20 +72,6 @@ in
   # Upstream Dockerfiles use short names (FROM golang:...). Resolve them as Docker
   # does; with one search registry, podman uses it without prompting.
   virtualisation.containers.registries.settings.unqualified-search-registries = [ "docker.io" ];
-  # build-guest.sh points CC at this wrapper, which Go honors for cgo builds.
-  environment.systemPackages = with pkgs; [
-    ubuntuCC
-    checkUbuntuElf
-    binutils
-    cacert
-    dpkg
-    file
-    git
-    gnumake
-    gnupg
-    go_1_26
-    jq
-    openssh
-    rsync
-  ];
+  # The same tools as the flake's package-build devShell.
+  environment.systemPackages = import ./build-tools.nix { inherit pkgs; };
 }

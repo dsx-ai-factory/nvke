@@ -117,6 +117,20 @@
         };
     in
     {
+      # The package build's tools, for working on it on a Linux host. The
+      # package-builder VM installs the same list.
+      devShells = nixpkgs.lib.genAttrs (builtins.attrValues guests) (
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in
+        {
+          package-build = pkgs.mkShellNoCC {
+            name = "nke-package-build";
+            packages = import ./nix/build-tools.nix { inherit pkgs; };
+          };
+        }
+      );
       packages = nixpkgs.lib.genAttrs hostSystems (
         hostSystem:
         (nixpkgs.lib.mapAttrs' (
