@@ -7,6 +7,10 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"strings"
+
+	"github.com/blang/semver/v4"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -83,6 +87,46 @@ func NewClient(
 // other node-agent caller share one authenticated dial path.
 func NewClientWithTransport(transport *Transport) *NodeAgentClient {
 	return &NodeAgentClient{transport: transport}
+}
+
+func VersionAtLeast(version, minVersion string, defaultOnParseError bool) bool {
+	current, err := semver.ParseTolerant(normalizeNodeAgentVersion(version))
+	if err != nil {
+		return defaultOnParseError
+	}
+	minimum, err := semver.ParseTolerant(minVersion)
+	if err != nil {
+		return defaultOnParseError
+	}
+	return current.GTE(minimum)
+}
+
+func normalizeNodeAgentVersion(version string) string {
+	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
+	parts := strings.Split(version, "-")
+	if len(parts) == 2 && parts[1] == "dirty" {
+		return parts[0]
+	}
+	if len(parts) >= 3 {
+		if _, err := strconv.Atoi(parts[1]); err == nil &&
+			strings.HasPrefix(parts[2], "g") &&
+			isHexString(strings.TrimPrefix(parts[2], "g")) {
+			return parts[0]
+		}
+	}
+	return version
+}
+
+func isHexString(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, char := range value {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+			return false
+		}
+	}
+	return true
 }
 
 func (c *NodeAgentClient) getGRPCConnection(ctx context.Context, node db.Node) (*grpc.ClientConn, func(), error) {
@@ -449,7 +493,7 @@ func (c *NodeAgentClient) ExecuteNodePreflight(ctx context.Context, node db.Node
 	}
 	defer cleanup()
 
-	resp, err := nvkeproto.NewNodeAgentClient(conn).ExecuteNodePreflight(ctx, req)
+	resp, err := executeNodePreflight(ctx, nvkeproto.NewNodeAgentClient(conn), node.AgentVersion, req)
 	if err != nil {
 		return nil, fmt.Errorf("failed to execute node preflight on node %s: %w", node.Name, err)
 	}
