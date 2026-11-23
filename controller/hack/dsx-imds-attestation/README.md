@@ -6,13 +6,8 @@ that builds the real SPIRE plugins from a local
 [NVIDIA Workload Identity](https://github.com/dsx-ai-factory/nvidia-workload-identity)
 checkout.
 
-Use the public `dsx-ai-factory/nvidia-workload-identity` repository at `v1.15.0`
-(the agent source used by NVKR), then set its local checkout path in
-`tilt_config.json`. The paired-server fixture is for development; delivery of
-the WLI server plugin and real amd64/arm64 attestation acceptance remain
-separate follow-ups. Packaging the agent does not establish interoperability.
-
-For an existing local checkout, enable the provider and configure its path:
+Clone the public source, then enable the provider and set its local checkout
+path in `tilt_config.json`:
 
 ```json
 {

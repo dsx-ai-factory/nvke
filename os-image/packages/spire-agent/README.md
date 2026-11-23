@@ -75,11 +75,9 @@ release archives. It needs Python 3, Bash, curl, tar, awk, and GNU coreutils.
 
 ## Optional DSX IMDS agent
 
-Revision 5 restores optional IMDS packaging. IMDS and non-IMDS packages share
-version `-5`, so a publisher distributing both variants must set a distinct
-`DEB_REVISION` for each to let APT distinguish them. Supply all three inputs
-together, replacing the quoted digest placeholder with the authenticated
-expected digest before running the command:
+To include IMDS, supply a local executable, its authenticated expected SHA-256,
+and its architecture (matching `ARCH`). Replace the quoted digest placeholder
+before running:
 
 ```bash
 make debs OUT_DIR=/absolute/output ARCH=arm64 \
@@ -88,36 +86,9 @@ make debs OUT_DIR=/absolute/output ARCH=arm64 \
   IMDS_AGENT_ARCH=arm64
 ```
 
-The expected digest must come from the authenticated producer material record.
-`IMDS_AGENT_ARCH` must match `ARCH`; the binary itself must be an ELF64 executable
-for that architecture. The bundler snapshots the local file, checks its digest
-and ELF header, then stages it at mode 0755. It never downloads an IMDS binary.
-The IMDS input is not part of `make lock`, which pins only upstream release
-archives. Omit all three inputs to build without IMDS, including after a build
-that supplied it. Incomplete inputs, missing files, wrong digests, and wrong
-architectures fail before packaging.
-
-External builders such as [NVKR](https://github.com/dsx-ai-factory/nvkr/issues/579)
-use the same Make inputs. For a directly staged bundle, `packaging/build-deb.sh`
-requires the executable's expected digest in
-`dsx-imds-node-attestor-agent.sha256` alongside the executable and rechecks both
-digest and ELF architecture before invoking nfpm. Keep the staged bundle
-immutable through packaging. No server plugin or OCI image is built here.
-
-On install and upgrade from revision 4, postinst rewrites `spire-agent.env`
-and adds `DSX_IMDS_PLUGIN_CHECKSUM` only when the executable is installed.
-The service keeps its `EnvironmentFile` and `-expandEnv` behavior. CAPI and
-LaunchLayer already render the `dsx_imds` configuration with that checksum.
-Selecting it without an executable produces an explicit startup failure;
-it never falls back to TPM or join-token. Installing the binary alone does
-not select it: TPM remains the default, and first-boot join-token behavior
-is unchanged. A compatible server plugin and real two-architecture attestation
-acceptance are separate follow-ups.
-
-`make test` covers local bundles and maintainer scripts. For package archive
-checks with the pinned nfpm, run `make test-packages`. These tests inspect both
-architectures' packages with and without IMDS; they do not execute target
-binaries or attest against a server.
+Omit all three inputs to build without IMDS. TPM remains the default, and
+join-token behavior is unchanged. Publishers distributing both package
+variants must use distinct `DEB_REVISION` values.
 
 ## Bumping the versions
 
