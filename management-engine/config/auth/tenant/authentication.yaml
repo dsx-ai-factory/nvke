@@ -1,0 +1,14 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: auth.nvke.nvidia.com/v1alpha1
+kind: AuthenticationConfiguration
+audiences: [nke.nvidia.com]
+issuers:
+  - name: issuer
+    issuer: https://tenant-issuer.example.com
+    jwks:
+      uri: https://tenant-issuer.example.com/keys
+    algorithms: [RS256]
+    admit:
+      groups: [viewers, editors, admins]

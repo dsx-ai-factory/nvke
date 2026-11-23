@@ -1,0 +1,23 @@
+[
+  {
+    "uid": {
+      "type": "NVKE::Role",
+      "id": "catalog-reader"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "NVKE::Role",
+      "id": "catalog-admin"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NVKE::Role",
+        "id": "catalog-reader"
+      }
+    ]
+  }
+]

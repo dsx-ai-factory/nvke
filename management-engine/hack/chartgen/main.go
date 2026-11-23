@@ -30,6 +30,7 @@ func main() {
 	}
 }
 
+// generate assembles the chart from canonical sources and updates it or checks for drift.
 func generate(binary string, check bool) (err error) {
 	binary, err = filepath.Abs(binary)
 	if err != nil {
@@ -61,6 +62,7 @@ func generate(binary string, check bool) (err error) {
 		{"hack/chart/templates", "templates"},
 		{"config/crd/bases", "files/crds"},
 		{"config/admission/policies", "files/admission"},
+		{"config/auth", "files/auth"},
 		{"config/dev/tenant-api-rbac.yaml", "files/api/tenant-api-rbac.yaml"},
 		{"config/dev/operator-api-rbac.yaml", "files/api/operator-api-rbac.yaml"},
 		{"config/rbac/role.yaml", "files/roles/role.yaml"},

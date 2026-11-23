@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,8 +18,105 @@ import (
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/yaml"
 
+	"github.com/dsx-ai-factory/nvke/auth/authn"
+	"github.com/dsx-ai-factory/nvke/auth/authz"
+	"github.com/dsx-ai-factory/nvke/auth/authz/localbundle"
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
 )
+
+// TestDefaultRolePolicies checks default permissions and issuer mappings without an HTTP server.
+func TestDefaultRolePolicies(t *testing.T) {
+	tenantReads := strings.Fields(`getCluster listClusters getControlPlaneClass listControlPlaneClasses
+		getClusterReleaseChannel listClusterReleaseChannels getNodeProfile listNodeProfiles`)
+	tenantWrites := strings.Fields(`createCluster updateCluster deleteCluster`)
+	operatorReads := strings.Fields(`getClusterRelease listClusterReleases getMachineImage listMachineImages
+		getControlPlaneClass listControlPlaneClasses getClusterReleaseChannel listClusterReleaseChannels
+		getNodeProfile listNodeProfiles`)
+	operatorWrites := strings.Fields(`createClusterRelease updateClusterRelease deleteClusterRelease
+		createMachineImage updateMachineImage deleteMachineImage createControlPlaneClass updateControlPlaneClass
+		deleteControlPlaneClass createClusterReleaseChannel updateClusterReleaseChannel deleteClusterReleaseChannel
+		createNodeProfile updateNodeProfile deleteNodeProfile`)
+	bundles := map[string]*localbundle.LocalBundle{}
+	for _, surface := range []struct {
+		name          string
+		reads, writes []string
+	}{
+		{"tenant", tenantReads, tenantWrites},
+		{"operator", operatorReads, operatorWrites},
+	} {
+		bundle, err := localbundle.New(localbundle.Options{
+			Dir: filepath.Join("../../config/auth", surface.name), Issuers: []string{"issuer"},
+			Actions: append(surface.reads, surface.writes...), ResourceTypes: []string{"Collection", "Cluster"},
+		})
+		require.NoError(t, err)
+		bundles[surface.name] = bundle
+	}
+	for _, tc := range []struct {
+		name, surface, group string
+		actions              []string
+		want                 authz.Outcome
+	}{
+		{"viewer reads", "tenant", "viewers", tenantReads, authz.OutcomeAllow},
+		{"viewer cannot write", "tenant", "viewers", tenantWrites, authz.OutcomeDeny},
+		{"editor inherits reads", "tenant", "editors", tenantReads, authz.OutcomeAllow},
+		{"editor writes", "tenant", "editors", tenantWrites, authz.OutcomeAllow},
+		{"admin inherits reads", "tenant", "admins", tenantReads, authz.OutcomeAllow},
+		{"admin inherits writes", "tenant", "admins", tenantWrites, authz.OutcomeAllow},
+		{"unmapped tenant", "tenant", "unmapped", []string{"getCluster"}, authz.OutcomeDeny},
+		{"catalog reader reads", "operator", "catalog-readers", operatorReads, authz.OutcomeAllow},
+		{"catalog reader cannot write", "operator", "catalog-readers", operatorWrites, authz.OutcomeDeny},
+		{"catalog admin inherits reads", "operator", "catalog-admins", operatorReads, authz.OutcomeAllow},
+		{"catalog admin writes", "operator", "catalog-admins", operatorWrites, authz.OutcomeAllow},
+		{"unmapped operator", "operator", "unmapped", []string{"getMachineImage"}, authz.OutcomeDeny},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			caller := authz.Caller{Tenant: "org-a"}
+			if tc.surface == "operator" {
+				caller = authz.Caller{Tenant: "operator-org", Operator: true}
+			}
+			for _, action := range tc.actions {
+				decision, err := bundles[tc.surface].Authorize(t.Context(), authz.Query{
+					Principal: authn.Principal{IssuerName: "issuer", Subject: "alice", Claims: map[string]any{
+						"organization": caller.Tenant, "groups": []any{tc.group},
+					}},
+					Action:   action,
+					Resource: authz.Resource{Type: "Collection", ID: "catalog", Scope: authz.ScopeGlobal},
+				})
+				require.NoError(t, err)
+				require.Equal(t, tc.want, decision.Outcome, action)
+				require.Equal(t, caller, decision.Caller, action)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		name, issuer, group string
+		tenant              any
+		owner               string
+		want                authz.Outcome
+	}{
+		{"own cluster", "issuer", "viewers", "org-a", "org-a", authz.OutcomeAllow},
+		{"other tenant", "issuer", "admins", "org-a", "org-b", authz.OutcomeNotFound},
+		{"missing tenant", "issuer", "viewers", nil, "org-a", authz.OutcomeNoTenant},
+		{"multiple tenants", "issuer", "viewers", []any{"org-a", "org-b"}, "org-a", authz.OutcomeNoTenant},
+		{"malformed tenant", "issuer", "viewers", "bad\nvalue", "org-a", authz.OutcomeNoTenant},
+		{"operator impostor", "issuer", "admins", "operator-org", "org-a", authz.OutcomeDeny},
+		{"unconfigured issuer", "unknown", "admins", "org-a", "org-a", authz.OutcomeNoTenant},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			decision, err := bundles["tenant"].Authorize(t.Context(), authz.Query{
+				Principal: authn.Principal{IssuerName: tc.issuer, Subject: "alice", Claims: map[string]any{
+					"organization": tc.tenant, "groups": []any{tc.group},
+				}},
+				Action: "getCluster",
+				Resource: authz.Resource{
+					Type: "Cluster", ID: "example", Scope: authz.ScopeObject, Tenant: tc.owner,
+				},
+			})
+			require.NoError(t, err)
+			require.Equal(t, tc.want, decision.Outcome)
+		})
+	}
+}
 
 func TestSurfaces(t *testing.T) {
 	responses := map[string]any{}
