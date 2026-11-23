@@ -22,7 +22,7 @@
 # should give the same image digest. `make validate-image-oci` and
 # `validate-image-push` pass the args and flags; "Building the image yourself"
 # in README.md lists them.
-ARG GOLANG_IMAGE=docker.io/golang:1.27.4@sha256:fe517acaa580cc7915457080f850c37e618b3c1e750f98b58fc6429b605147a1
+ARG GOLANG_IMAGE=docker.io/golang:1.27.4@sha256:205c7636d74e0ffbe3d007162df7d74f859f5a8c8322dfb9f907977686c126cf
 ARG ALPINE_IMAGE=docker.io/alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6
 
 # On the build platform, cross-compiling, so a multi-arch build needs no
