@@ -58,8 +58,7 @@ notices-check` verifies it is up to date.
 | `github.com/go-openapi/swag/yamlutils` | Apache-2.0 | `github.com/go-openapi/swag/yamlutils@v0.29.2` | https://github.com/go-openapi/swag/blob/yamlutils/v0.29.2/yamlutils/LICENSE |
 | `github.com/gobuffalo/flect` | MIT | `github.com/gobuffalo/flect@v1.0.3` | https://github.com/gobuffalo/flect/blob/v1.0.3/LICENSE |
 | `github.com/gobwas/httphead` | MIT | `github.com/gobwas/httphead@v0.1.0` | https://github.com/gobwas/httphead/blob/v0.1.0/LICENSE |
-| `github.com/gobwas/pool` | MIT | `github.com/gobwas/pool@v0.2.1` | https://github.com/gobwas/pool/blob/v0.2.1/LICENSE |
-| `github.com/gobwas/ws` | MIT | `github.com/gobwas/ws@v1.4.0` | https://github.com/gobwas/ws/blob/v1.4.0/LICENSE |
+| `github.com/gobwas/ws` | MIT | `github.com/gobwas/ws@v1.5.0` | https://github.com/gobwas/ws/blob/v1.5.0/LICENSE |
 | `github.com/gogo/protobuf` | BSD-3-Clause | `github.com/gogo/protobuf@v1.3.2` | https://github.com/gogo/protobuf/blob/v1.3.2/LICENSE |
 | `github.com/golang-jwt/jwt/v5` | MIT | `github.com/golang-jwt/jwt/v5@v5.3.1` | https://github.com/golang-jwt/jwt/blob/v5.3.1/LICENSE |
 | `github.com/golang/mock` | Apache-2.0 | `github.com/golang/mock@v1.7.0-rc.1` | https://github.com/golang/mock/blob/v1.7.0-rc.1/LICENSE |
@@ -4961,40 +4960,9 @@ SOFTWARE.
 
 ```
 
-### github.com/gobwas/pool
-
-_MIT — github.com/gobwas/pool@v0.2.1_
-
-#### LICENSE
-
-```text
-The MIT License (MIT)
-
-Copyright (c) 2017-2019 Sergey Kamardin <gobwas@gmail.com>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-```
-
 ### github.com/gobwas/ws
 
-_MIT — github.com/gobwas/ws@v1.4.0_
+_MIT — github.com/gobwas/ws@v1.5.0_
 
 #### LICENSE
 
