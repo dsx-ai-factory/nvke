@@ -295,6 +295,9 @@ func NewServerImpl(
 	clusterService.nodeAgentClient = o.nodeAgentClient
 	clusterService.allowControlPlaneWithoutVIP = cfg.AllowControlPlaneWithoutVIP
 	clusterService.releaseReader = k8sReader
+	clusterService.k8sClient = k8sReader
+	clusterService.managementNamespace = cfg.ManagementNamespaceOrDefault()
+	clusterService.adoptionEnabled = cfg.ClusterAdoptionEnabled
 	nodes.PinAgentProfile(&clusterService.nodeAgentProfile, cfg)
 	nodes.PinAgentProfile(&nodePoolService.nodeAgentProfile, cfg)
 

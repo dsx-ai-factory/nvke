@@ -687,12 +687,49 @@ def main():
         )
         return 1
 
+    # Adopt reads the cluster the controller runs on with the controller's own
+    # service account, and only while clusterAdoptionEnabled serves it.
+    for enabled in (True, False):
+        adoption = subprocess.run(
+            [*base_command, "--set", f"clusterAdoptionEnabled={str(enabled).lower()}"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if adoption.returncode != 0:
+            sys.stderr.write(adoption.stderr)
+            return adoption.returncode
+        objects = {
+            (document["kind"], document["metadata"].get("namespace", "")): document
+            for document in yaml.safe_load_all(adoption.stdout)
+            if document and document["metadata"]["name"].endswith("-adoption")
+        }
+        if not enabled:
+            if objects:
+                print(f"ERROR: adoption RBAC must not render when clusterAdoptionEnabled=false: {sorted(objects)}", file=sys.stderr)
+                return 1
+            continue
+        cluster_role = objects.get(("ClusterRole", ""))
+        role = objects.get(("Role", "kube-system"))
+        if not cluster_role or not granted(cluster_role["rules"], "", "nodes", "list"):
+            print("ERROR: the adoption ClusterRole must grant list on nodes", file=sys.stderr)
+            return 1
+        if not role or not granted(role["rules"], "", "configmaps", "get", "kubeadm-config"):
+            print("ERROR: the kube-system adoption Role must grant get on the kubeadm-config ConfigMap", file=sys.stderr)
+            return 1
+        for kind, namespace in (("ClusterRoleBinding", ""), ("RoleBinding", "kube-system")):
+            binding = objects.get((kind, namespace))
+            if not binding or [s.get("kind") for s in binding.get("subjects") or []] != ["ServiceAccount"]:
+                print(f"ERROR: the adoption {kind} must bind the controller's ServiceAccount", file=sys.stderr)
+                return 1
+
     print(f"{tenant_rbac_name} ClusterRole grants all {len(required)} required permissions")
     print("bootstrap tenant RBAC follows controllers.bootstrap.enabled")
     print("nvke:capi-cluster-admin uses all configured CAPI controller subjects")
     print("token exchange requires explicit subjects for every CAPI controller")
     print("nvke:capll-manager follows launchLayer and, with token exchange, spiffe.capllManagerSubject")
     print(f"{tenant_rbac_name} bindings take spiffe.controllerSubject over spiffe.cweSubject, render the same for either, and need one with token exchange")
+    print("adoption RBAC follows clusterAdoptionEnabled and stays read-only")
     return 0
 
 

@@ -96,7 +96,7 @@ func TestRenewalFencesControlPlaneNodeDelete(t *testing.T) {
 				tx := &testutil.MockTx{}
 				store := &testutil.MockDB{MockTx: tx}
 				store.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
-				tx.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
+				tx.On("GetNode", mock.Anything, node.ID).Return(node, nil).Twice() // the handler's adopted check, then the delete guard
 				tx.On("GetClusterForUpdate", mock.Anything, cluster.ID).Return(cluster, nil).Once()
 				tx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil).Once()
 				if !controlPlane {

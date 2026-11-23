@@ -73,6 +73,9 @@ func (s *nodeService) GetNode(ctx context.Context, req api.GetNodeRequestObject)
 	return api.GetNode200JSONResponse(apiNode), nil
 }
 
+// errAdoptedControlPlaneNode refuses deleting a node of an adopted control plane.
+var errAdoptedControlPlaneNode = errors.New("cannot delete a node of an adopted control plane: its operator manages it outside NVKE")
+
 func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestObject) (api.DeleteNodeResponseObject, error) {
 	var machineHealthIssue *workflows.MachineHealthIssue
 	if req.Body != nil && req.Body.MachineHealthIssue != nil {
@@ -91,6 +94,13 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 	}
 
 	err := s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
+		// Teardown would drain an adopted control-plane node, remove its etcd
+		// member and kubeadm reset it; its operator manages it outside NVKE. The
+		// marker is set when adopt records the node and never changes. A failed
+		// read falls through to DeleteWithTx, which reports it.
+		if node, err := tx.GetNode(ctx, req.NodeID); err == nil && node.IsAdopted() {
+			return errAdoptedControlPlaneNode
+		}
 		return nodes.DeleteWithTx(ctx, tx, req.NodeID,
 			nodes.WithReason("API"),
 			nodes.WithAllowCPNode(true),
@@ -110,7 +120,7 @@ func (s *nodeService) DeleteNode(ctx context.Context, req api.DeleteNodeRequestO
 		if errors.As(err, &quorumFloor) {
 			return api.DeleteNode400JSONResponse{Message: quorumFloor.Error()}, nil
 		}
-		if errors.Is(err, db.ErrControlPlaneMutationBlocked) {
+		if errors.Is(err, db.ErrControlPlaneMutationBlocked) || errors.Is(err, errAdoptedControlPlaneNode) {
 			return api.DeleteNode409JSONResponse{Message: err.Error()}, nil
 		}
 		if errors.Is(err, nodes.ErrLastJoinedControlPlaneNode) {
@@ -168,6 +178,10 @@ func apiNodeFromDB(dbNode *db.Node) api.Node {
 		dbNode.Conditions.ControlPlanePreferredReplacement.Status != db.ConditionStatusUnknown {
 		cond := apiConditionFromDB(dbNode.Conditions.ControlPlanePreferredReplacement)
 		nodeConditions.ControlPlanePreferredReplacement = &cond
+	}
+	if dbNode.Conditions.Adopted.Status == db.ConditionStatusTrue {
+		cond := apiConditionFromDB(dbNode.Conditions.Adopted)
+		nodeConditions.Adopted = &cond
 	}
 
 	return api.Node{

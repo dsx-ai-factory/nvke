@@ -736,6 +736,12 @@ profiles:
 # node can interrupt API access. Quorum and deletion protections still apply.
 allowControlPlaneWithoutVIP: false
 
+# -- Serve `POST /api/clusters/adopt`, which records the cluster this controller runs on
+# as a cluster NVKE manages. On, the chart also lets the controller's service account
+# list Nodes and get `kube-system/kubeadm-config`, which adopt reads. Off, the endpoint
+# answers 404.
+clusterAdoptionEnabled: false
+
 controllerConfig:
   # -- Name of the ConfigMap that carries the controller's settings file, and
   # that the Deployment mounts and Reloader watches. An install that predates

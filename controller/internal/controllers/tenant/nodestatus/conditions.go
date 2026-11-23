@@ -16,9 +16,13 @@ func applyKubernetesNodeHealth(controllerNode *db.Node, kubeNode *corev1.Node) {
 	controllerNode.Conditions.KubernetesReady = fromKubeCondition(controllerNode.Conditions.KubernetesReady, kubeNode, string(corev1.NodeReady))
 	controllerNode.Conditions.KubernetesUnschedulable = kubernetesUnschedulableCondition(controllerNode.Conditions.KubernetesUnschedulable, kubeNode)
 
-	needsRecycle := fromKubeConditionKey(controllerNode.Conditions.MarkedForRecycling, kubeNode, keys.NeedsRecycle)
-	if needsRecycle.Status == db.ConditionStatusTrue {
-		controllerNode.Conditions.MarkedForRecycling = needsRecycle
+	// The operator repairs an adopted control-plane node, so NVKE never marks one
+	// for recycling and control-plane remediation never replaces it.
+	if !controllerNode.IsAdopted() {
+		needsRecycle := fromKubeConditionKey(controllerNode.Conditions.MarkedForRecycling, kubeNode, keys.NeedsRecycle)
+		if needsRecycle.Status == db.ConditionStatusTrue {
+			controllerNode.Conditions.MarkedForRecycling = needsRecycle
+		}
 	}
 	needsRepair := fromKubeConditionKey(controllerNode.Conditions.MarkedForRepair, kubeNode, keys.NeedsRepair)
 	if needsRepair.Status == db.ConditionStatusTrue {

@@ -16,6 +16,12 @@ const (
 	BearerAuthScopes = "bearerAuth.Scopes"
 )
 
+// Defines values for AdoptClusterRequestCniPlugin.
+const (
+	AdoptClusterRequestCniPluginCalico        AdoptClusterRequestCniPlugin = "calico"
+	AdoptClusterRequestCniPluginOvnKubernetes AdoptClusterRequestCniPlugin = "ovn-kubernetes"
+)
+
 // Defines values for CertificateRenewalStatusState.
 const (
 	CertificateRenewalStatusStateAccepted  CertificateRenewalStatusState = "accepted"
@@ -139,6 +145,36 @@ const (
 	UpdateInProgressTypeOidcEnable         UpdateInProgressType = "oidc_enable"
 	UpdateInProgressTypeSpireServerUpdate  UpdateInProgressType = "spire_server_update"
 )
+
+// AdoptClusterRequest What NVKE does not read from the cluster it adopts. The control-plane
+// nodes, the Kubernetes version and the pod and service CIDRs come from the
+// cluster. In `nico`, `siteID` and `vpcID` are required: NVKE creates worker
+// machines in that NICo site and VPC, and workers there must reach the
+// cluster's API server. `orgID` is optional; NVKE only records it, returns it
+// and labels its cluster metrics with it.
+type AdoptClusterRequest struct {
+	// CniPlugin The CNI the cluster runs. Defaults to ovn-kubernetes. Workers install its
+	// packages, and on ovn-kubernetes NVKE configures Open vSwitch and the OVN
+	// zone label on them.
+	CniPlugin AdoptClusterRequestCniPlugin `json:"cniPlugin,omitempty"`
+
+	// CniVersion The version of the CNI the cluster runs, as X.Y.Z. Defaults as for `createCluster`.
+	CniVersion *string `json:"cniVersion,omitempty"`
+
+	// EtcdEncrypted Whether the cluster encrypts Secrets in etcd.
+	EtcdEncrypted bool `json:"etcdEncrypted"`
+
+	// Name Cluster name. Lowercase DNS label, unique per management plane. Worker node names are derived from it.
+	Name string `json:"name"`
+
+	// Nico NICo identifiers for the cluster. Fixed at creation.
+	Nico NicoClusterProvider `json:"nico"`
+}
+
+// AdoptClusterRequestCniPlugin The CNI the cluster runs. Defaults to ovn-kubernetes. Workers install its
+// packages, and on ovn-kubernetes NVKE configures Open vSwitch and the OVN
+// zone label on them.
+type AdoptClusterRequestCniPlugin string
 
 // CertificateRenewalStatus The recorded lifecycle state and outcome of a certificate-renewal cycle.
 type CertificateRenewalStatus struct {
@@ -1333,6 +1369,9 @@ type NodeAgentUpgradeStatusPhase string
 // provisioning, readyToJoin, joined and provisioned; deletion moves through
 // deleteRequested (control-plane nodes) and deleting.
 type NodeConditions struct {
+	// Adopted Control-plane nodes of an adopted cluster only. True for a node that ran before NVKE adopted the cluster. Its operator manages it outside NVKE, which never upgrades, replaces or deletes it.
+	Adopted *Condition `json:"adopted,omitempty"`
+
 	// ControlPlanePreferredReplacement Control-plane nodes only. True while the node is a control-plane rebalance surge — a more-preferred replacement brought up to shed a less-preferred member.
 	ControlPlanePreferredReplacement *Condition `json:"controlPlanePreferredReplacement,omitempty"`
 
@@ -1874,6 +1913,9 @@ type ListNodesParams struct {
 
 // CreateClusterJSONRequestBody defines body for CreateCluster for application/json ContentType.
 type CreateClusterJSONRequestBody = CreateClusterRequest
+
+// AdoptClusterJSONRequestBody defines body for AdoptCluster for application/json ContentType.
+type AdoptClusterJSONRequestBody = AdoptClusterRequest
 
 // UpdateClusterJSONRequestBody defines body for UpdateCluster for application/json ContentType.
 type UpdateClusterJSONRequestBody = UpdateClusterRequest

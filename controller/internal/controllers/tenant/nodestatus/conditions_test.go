@@ -105,3 +105,15 @@ func TestFromKubeConditionKeyReportsMissingConditionUnderTheCurrentKey(t *testin
 	require.Contains(t, got.Message, keys.NeedsRecycle.String())
 	require.NotContains(t, got.Message, keys.NeedsRecycle.Legacy())
 }
+
+// An adopted control-plane node is repaired by its operator, so a recycle
+// request on it never becomes MarkedForRecycling, while repair still syncs.
+func TestApplyKubernetesNodeHealthNeverMarksAnAdoptedNodeForRecycling(t *testing.T) {
+	node := &db.Node{ControlPlane: true, Conditions: db.NodeConditions{Adopted: db.NewCondition(true, "Adopted")}}
+	applyKubernetesNodeHealth(node, nodeWithConditions(
+		recycleCondition(keys.NeedsRecycle.String(), corev1.ConditionTrue, "recycle me"),
+		recycleCondition(keys.NeedsRepair.String(), corev1.ConditionTrue, "repair me"),
+	))
+	require.NotEqual(t, db.ConditionStatusTrue, node.Conditions.MarkedForRecycling.Status)
+	require.Equal(t, db.ConditionStatusTrue, node.Conditions.MarkedForRepair.Status)
+}

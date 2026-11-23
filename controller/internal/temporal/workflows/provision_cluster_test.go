@@ -43,6 +43,29 @@ func TestProvisionClusterMarksProvisioningFalseWhenTheWorkflowFails(t *testing.T
 	env.AssertExpectations(t)
 }
 
+// TestProvisionClusterAdoptedSkipsControlPlaneBuild pins that an adopted
+// cluster gets its scaffold and add-ons but no node wait, kube-vip or kubeadm
+// init: only the activities mocked here may run.
+func TestProvisionClusterAdoptedSkipsControlPlaneBuild(t *testing.T) {
+	clusterID := uuid.New()
+	testSuite := &testsuite.WorkflowTestSuite{}
+	env := testSuite.NewTestWorkflowEnvironment()
+	a := &activities.Activities{}
+
+	env.OnActivity(a.ApplyCAPIClusterResources, mock.Anything, mock.Anything).Return(nil).Once()
+	env.OnActivity(a.InstallKubeLocalDNS, mock.Anything, mock.Anything).Return(nil).Once()
+	env.OnActivity(a.LabelSystemNamespacesForPSA, mock.Anything, mock.Anything).Return(nil).Once()
+	env.OnActivity(a.UpdateClusterConditions, mock.Anything, mock.MatchedBy(func(u activities.ClusterConditionsUpdate) bool {
+		return u.ClusterID == clusterID && u.Conditions.Provisioned != nil && u.Conditions.Provisioned.Status == db.ConditionStatusTrue
+	})).Return(nil).Once()
+
+	env.ExecuteWorkflow(ProvisionCluster, ProvisionClusterInput{ClusterID: clusterID, Adopted: true})
+
+	require.True(t, env.IsWorkflowCompleted())
+	require.NoError(t, env.GetWorkflowError())
+	env.AssertExpectations(t)
+}
+
 func TestInstallKubeLocalDNSSchedulesInProcessActivity(t *testing.T) {
 	clusterID := uuid.New()
 	testSuite := &testsuite.WorkflowTestSuite{}
