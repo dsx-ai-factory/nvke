@@ -44,6 +44,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controlplane"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/controlplanenodescheduler"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/dbreconcile/dbwrapper"
+	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/kubeletcsr"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/machineannotations"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/nodeagentreadiness"
 	"github.com/dsx-ai-factory/nvke/controller/internal/controllers/nodepool"
@@ -442,7 +443,7 @@ func main() {
 					},
 				},
 			},
-			Cache: clustercache.CacheOptions{Indexes: bootstrap.KubeletClientCSRCacheIndexes()},
+			Cache: clustercache.CacheOptions{Indexes: kubeletcsr.ClientCSRCacheIndexes()},
 			ClusterFilter: func(cluster *clusterv1.Cluster) bool {
 				return capi.IsNVKEManagedCluster(cluster, cfg.ManagedByLabelValue)
 			},
@@ -477,7 +478,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		kubeletClientCSRController := bootstrap.NewKubeletClientCSRController(
+		kubeletClientCSRController := kubeletcsr.NewClientCSRController(
 			k8sControllerManager.GetClient(),
 			clusterCache,
 			logger.With("logger", "kubelet-client-csr-controller"),
