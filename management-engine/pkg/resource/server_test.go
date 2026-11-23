@@ -36,14 +36,14 @@ func TestSurfaceLimitsAcrossRoutes(t *testing.T) {
 	client, err := New[widget, internalWidget](fixtureConfig(nil), widgetInfo(OpCreate))
 	require.NoError(t, err)
 	for _, path := range []string{"/widgets", "/other-widgets"} {
-		Register(mux, path, client, client, nil, OpCreate)
+		require.NoError(t, Register(mux, path, client, client, nil, CamelCase, OpCreate))
 	}
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]string{"openapi": "3.1.0"})
 	})
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
-		WriteError(w, problem(http.StatusNotFound, "notFound", "The route was not found."))
+		WriteError(w, problem(http.StatusNotFound, "notFound", "The route was not found."), CamelCase)
 	})
 	var deadline time.Time
 	handler := WithLimits(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -112,7 +112,7 @@ func TestReadDeadlineFailure(t *testing.T) {
 			require.Equal(t, http.StatusInternalServerError, response.Code)
 			var problem Error
 			require.NoError(t, json.Unmarshal(response.Body.Bytes(), &problem))
-			require.Equal(t, "deadlineFailed", problem.Code)
+			require.Equal(t, "deadline_failed", problem.Code)
 		})
 	}
 }
@@ -122,7 +122,7 @@ func TestUnknownOperation(t *testing.T) {
 	require.Equal(t, http.StatusInternalServerError, response.Code)
 	var problem Error
 	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &problem))
-	require.Equal(t, "internalError", problem.Code)
+	require.Equal(t, "internal_error", problem.Code)
 }
 
 func requestHTTP(
@@ -155,7 +155,7 @@ func TestHTTPWriteBoundary(t *testing.T) {
 	})), widgetInfo(OpCreate))
 	require.NoError(t, err)
 	mux := http.NewServeMux()
-	Register(mux, "/widgets", client, client, nil, OpCreate)
+	require.NoError(t, Register(mux, "/widgets", client, client, nil, CamelCase, OpCreate))
 	handler := WithLimits(mux, ServerOptions{})
 	for _, body := range []string{
 		`{"metadata":{"name":"x","namespace":"other"},"spec":{"value":"x"}}`,
@@ -186,7 +186,7 @@ func TestSlowBodyDeadlineAndKeepalive(t *testing.T) {
 	mux := http.NewServeMux()
 	client, err := New[widget, internalWidget](fixtureConfig(nil), widgetInfo(OpCreate))
 	require.NoError(t, err)
-	Register(mux, "/widgets", client, client, nil, OpCreate)
+	require.NoError(t, Register(mux, "/widgets", client, client, nil, CamelCase, OpCreate))
 	server := httptest.NewServer(WithLimits(mux, ServerOptions{RequestTimeout: 50 * time.Millisecond}))
 	defer server.Close()
 	// A separate test deadline prevents a broken server-side deadline from hanging this raw TCP probe.

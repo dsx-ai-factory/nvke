@@ -9,12 +9,12 @@
       name: img-ubuntu
     spec:
       architecture: amd64
-      buildDate: "2026-11-01"
+      build_date: "2026-11-01"
       nico:
-        ipxeScript: |
+        ipxe_script: |
           #!ipxe
           exit
-      operatingSystem:
+      operating_system:
         family: ubuntu
         version: "24.04"
 - method: POST
@@ -29,7 +29,7 @@
         hidden: true
       releases:
         "1.35":
-        - minimumUpgradeAge: 0s
+        - minimum_upgrade_age: 0s
           name: cr-active
 - method: POST
   path: /v1/cluster-release-channels
@@ -43,10 +43,10 @@
         deprecated: true
       releases:
         "1.35":
-        - minimumUpgradeAge: 0s
+        - minimum_upgrade_age: 0s
           name: cr-active
         "1.35.2":
-        - minimumUpgradeAge: 0s
+        - minimum_upgrade_age: 0s
           name: cr-active
 - method: POST
   path: /v1/cluster-release-channels
@@ -58,9 +58,9 @@
     spec:
       releases:
         "1.35":
-        - minimumUpgradeAge: 0s
+        - minimum_upgrade_age: 0s
           name: cr-deprecated
-        - minimumUpgradeAge: 0s
+        - minimum_upgrade_age: 0s
           name: cr-hidden
 - method: POST
   path: /v1/control-plane-classes
@@ -70,17 +70,17 @@
     metadata:
       name: hidden-class
     spec:
-      controlPlane:
-        instanceTypePreferences:
+      control_plane:
+        instance_type_preferences:
         - standard
         replicas: 3
-        systemReservedMemory: "0"
+        system_reserved_memory: "0"
       lifecycle:
         hidden: true
       rollout:
         strategy:
-          rollingUpdate:
-            maxSurge: 1
+          rolling_update:
+            max_surge: 1
           type: RollingUpdate
 - method: POST
   path: /v1/control-plane-classes
@@ -90,18 +90,18 @@
     metadata:
       name: deprecated-class
     spec:
-      controlPlane:
-        instanceTypePreferences:
+      control_plane:
+        instance_type_preferences:
         - standard
         replicas: 3
-        systemReservedMemory: "0"
+        system_reserved_memory: "0"
       lifecycle:
         deprecated: true
-        supportedUntil: "2027-06-30T00:00:00Z"
+        supported_until: "2027-06-30T00:00:00Z"
       rollout:
         strategy:
-          rollingUpdate:
-            maxSurge: 1
+          rolling_update:
+            max_surge: 1
           type: RollingUpdate
 - method: POST
   path: /v1/node-profiles
@@ -113,10 +113,10 @@
     spec:
       lifecycle:
         hidden: true
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
+      machine_init:
+        user_data_template: |
           #cloud-config
           {}
       profile: ubuntu-gpu

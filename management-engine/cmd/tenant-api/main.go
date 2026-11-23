@@ -30,7 +30,6 @@ func main() {
 			return nil
 		})
 	cfg := resource.ClientConfig{
-		Surface: "tenant",
 		// Remove the PoC namespace flag and resolve the authenticated caller's namespace once auth is wired.
 		Namespace: func(context.Context) (string, error) {
 			return namespace, nil

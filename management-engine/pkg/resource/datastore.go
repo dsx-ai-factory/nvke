@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"slices"
 	"strings"
-	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -21,11 +20,6 @@ import (
 	"k8s.io/client-go/rest"
 
 	"github.com/dsx-ai-factory/nvke/management-engine/pkg/projection"
-)
-
-const (
-	requestTimeout  = 30 * time.Second
-	maxPageKeyBytes = 16384
 )
 
 // resourceServer enforces projected intent, trusted namespace scope and resourceVersion preconditions.
@@ -66,7 +60,7 @@ func newDatastore(cfg ClientConfig, info ResourceInfo) (*datastore, error) {
 		info.FieldManager = "nvke-resource"
 	}
 	cfg.Datastore = rest.CopyConfig(cfg.Datastore)
-	cfg.Datastore.Timeout = requestTimeout
+	cfg.Datastore.Timeout = MaxRequestTimeout
 	httpClient, err := rest.HTTPClientFor(cfg.Datastore)
 	if err != nil {
 		return nil, fmt.Errorf("creating datastore HTTP client: %w", err)
@@ -214,7 +208,7 @@ func (c *resourceServer[E, I]) apply(
 
 // Create atomically creates only. Duplicate and racing attempts cannot replace a resource.
 func (c *resourceServer[E, I]) Create(ctx context.Context, in E) (E, error) {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, MaxRequestTimeout)
 	defer cancel()
 	var zero E
 	obj, err := c.intent(ctx, OpCreate, in)
@@ -242,7 +236,7 @@ func (c *resourceServer[E, I]) Create(ctx context.Context, in E) (E, error) {
 
 // Get projects one resource and returns its resourceVersion.
 func (c *resourceServer[E, I]) Get(ctx context.Context, name string) (E, error) {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, MaxRequestTimeout)
 	defer cancel()
 	var zero E
 	if err := validName(name); err != nil {
@@ -262,7 +256,7 @@ func (c *resourceServer[E, I]) Get(ctx context.Context, name string) (E, error) 
 // List returns one datastore snapshot page with a default size of 100 and a maximum of 500.
 // Kubernetes owns continuation validity and expiry. Request scope always comes from the host.
 func (c *resourceServer[E, I]) List(ctx context.Context, opts ListOptions) (List[E], error) {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, MaxRequestTimeout)
 	defer cancel()
 	page := List[E]{Items: []E{}}
 	if _, err := listSelector(&opts, nil); err != nil {
@@ -317,7 +311,7 @@ func expectedVersion(version string) error {
 // Adopting other writers' spec fields is outside the PoC.
 // The fetched UID prevents apply from recreating an object deleted after the read.
 func (c *resourceServer[E, I]) Update(ctx context.Context, name string, in E) (E, error) {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, MaxRequestTimeout)
 	defer cancel()
 	var zero E
 	if err := validName(name); err != nil {
@@ -368,7 +362,7 @@ func (c *resourceServer[E, I]) Update(ctx context.Context, name string, in E) (E
 // Delete requests deletion at the caller's resourceVersion without rereading or retrying.
 // Success acknowledges the delete request. It does not wait for finalizers or dependent resources to disappear.
 func (c *resourceServer[E, I]) Delete(ctx context.Context, name string, opts DeleteOptions) error {
-	ctx, cancel := context.WithTimeout(ctx, requestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, MaxRequestTimeout)
 	defer cancel()
 	if err := validName(name); err != nil {
 		return err

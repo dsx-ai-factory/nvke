@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"strings"
 )
 
 const generatedHeader = `// SPDX-License-Identifier: Apache-2.0
@@ -17,13 +18,23 @@ func emitCatalog(m model) []byte {
 	var out bytes.Buffer
 	out.WriteString(generatedHeader)
 	out.WriteString("\npackage v1\n")
+	out.WriteString("\nimport (\n\"reflect\"\n")
 	if m.CatalogUsesTime {
-		out.WriteString("\nimport metav1 \"k8s.io/apimachinery/pkg/apis/meta/v1\"\n")
+		out.WriteString("\nmetav1 \"k8s.io/apimachinery/pkg/apis/meta/v1\"\n")
 	}
+	out.WriteString(")\n")
 	for _, declaration := range m.CatalogTypes {
 		fmt.Fprintf(&out, "\n// %s contains only explicitly included source fields.\n"+
 			"// +kubebuilder:object:generate=false\ntype %s %s\n", declaration.Name, declaration.Name, declaration.Body)
 	}
+	out.WriteString("\n// CatalogSchemaSources maps projections to their source types for OpenAPI generation.\n")
+	out.WriteString("func CatalogSchemaSources() map[reflect.Type]reflect.Type {\n")
+	out.WriteString("return map[reflect.Type]reflect.Type{\n")
+	for _, declaration := range m.CatalogTypes {
+		fmt.Fprintf(&out, "reflect.TypeFor[%s](): reflect.TypeFor[%s](),\n",
+			declaration.Name, strings.TrimPrefix(declaration.Name, "Catalog"))
+	}
+	out.WriteString("}\n}\n")
 	return out.Bytes()
 }
 

@@ -24,10 +24,15 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
+	strictjson "sigs.k8s.io/json"
 )
 
 // widgetCRD supplies real admission, defaults and SSA ownership without a provider dependency.
 func widgetCRD(status bool) *extv1.CustomResourceDefinition {
+	pool := extv1.JSONSchemaProps{Type: "object", Properties: map[string]extv1.JSONSchemaProps{
+		"poolName": {Type: "string"},
+		"nodeIDs":  {Type: "array", Items: &extv1.JSONSchemaPropsOrArray{Schema: &extv1.JSONSchemaProps{Type: "string"}}},
+	}}
 	crd := &extv1.CustomResourceDefinition{Name: "widgets.example.test", Spec: extv1.CustomResourceDefinitionSpec{
 		Group: "example.test", Scope: extv1.NamespaceScoped,
 		Names: extv1.CustomResourceDefinitionNames{
@@ -41,8 +46,14 @@ func widgetCRD(status bool) *extv1.CustomResourceDefinition {
 					"spec": {Type: "object", Required: []string{"value"}, Properties: map[string]extv1.JSONSchemaProps{
 						"value": {Type: "string", MinLength: new(int64(1))}, "note": {Type: "string"},
 						"count": {Type: "integer", Format: "int64"}, "enabled": {Type: "boolean"},
-						"items":  {Type: "array", Items: &extv1.JSONSchemaPropsOrArray{Schema: &extv1.JSONSchemaProps{Type: "string"}}},
-						"hidden": {Type: "string", Default: &extv1.JSON{Raw: []byte(`"private-default"`)}},
+						"items":       {Type: "array", Items: &extv1.JSONSchemaPropsOrArray{Schema: &extv1.JSONSchemaProps{Type: "string"}}},
+						"hidden":      {Type: "string", Default: &extv1.JSON{Raw: []byte(`"private-default"`)}},
+						"displayName": {Type: "string", Nullable: true},
+						"vpcID":       {Type: "string", MinLength: new(int64(1))},
+						"nodeCount":   {Type: "integer", Format: "int64"},
+						"nodeIDs":     {Type: "array", Items: &extv1.JSONSchemaPropsOrArray{Schema: &extv1.JSONSchemaProps{Type: "string"}}},
+						"nodePools":   {Type: "array", Items: &extv1.JSONSchemaPropsOrArray{Schema: &pool}},
+						"namedPools":  {Type: "object", AdditionalProperties: &extv1.JSONSchemaPropsOrBool{Allows: true, Schema: &pool}},
 					}},
 					"status": {Type: "object", Properties: map[string]extv1.JSONSchemaProps{
 						"counter": {Type: "integer", Format: "int64"},
@@ -57,6 +68,79 @@ func widgetCRD(status bool) *extv1.CustomResourceDefinition {
 		}
 	}
 	return crd
+}
+
+func TestHTTPNamingPersistence(t *testing.T) {
+	f := setup(t, true)
+	ctx := f.as("org-a")
+	for _, tc := range []struct {
+		name                                            string
+		naming                                          Naming
+		create, update, invalid, alternate              string
+		countField, invalidCode, invalidPath, staleCode string
+	}{
+		{
+			name: "snake", naming: SnakeCase,
+			create: `{"metadata":{"name":"snake"},"spec":{"value":"public","note":"owned","display_name":"old","vpc_id":"vpc",` +
+				`"node_count":9007199254740993,"node_ids":["nodeA"],"node_pools":[{"pool_name":"poolA","node_ids":["nodeB"]}],` +
+				`"named_pools":{"camelKey":{"pool_name":"poolC"}}}}`,
+			update: `{"metadata":{"name":"snake"},"spec":{"value":"updated","display_name":null,"node_count":0,` +
+				`"count":0,"enabled":false,"items":[],"node_ids":[],"node_pools":[]}}`,
+			invalid:    `{"metadata":{"name":"snake"},"spec":{"value":"updated","vpc_id":""}}`,
+			alternate:  `{"metadata":{"name":"snake"},"spec":{"value":"updated","vpcID":"alternate"}}`,
+			countField: "node_count", invalidCode: "invalid_resource", invalidPath: "/spec/vpc_id", staleCode: "precondition_failed",
+		},
+		{
+			name: "camel", naming: CamelCase,
+			create: `{"metadata":{"name":"camel"},"spec":{"value":"public","note":"owned","displayName":"old","vpcID":"vpc",` +
+				`"nodeCount":9007199254740993,"nodeIDs":["nodeA"],"nodePools":[{"poolName":"poolA","nodeIDs":["nodeB"]}],` +
+				`"namedPools":{"camelKey":{"poolName":"poolC"}}}}`,
+			update: `{"metadata":{"name":"camel"},"spec":{"value":"updated","displayName":null,"nodeCount":0,` +
+				`"count":0,"enabled":false,"items":[],"nodeIDs":[],"nodePools":[]}}`,
+			invalid:    `{"metadata":{"name":"camel"},"spec":{"value":"updated","vpcID":""}}`,
+			alternate:  `{"metadata":{"name":"camel"},"spec":{"value":"updated","vpc_id":"alternate"}}`,
+			countField: "nodeCount", invalidCode: "invalidResource", invalidPath: "/spec/vpcID", staleCode: "preconditionFailed",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mux := http.NewServeMux()
+			client := f.client(t)
+			require.NoError(t, Register(mux, "/widgets", client, client, nil, tc.naming, OpCreate, OpGet, OpUpdate))
+			handler := WithLimits(mux, ServerOptions{Naming: tc.naming})
+			created := requestHTTP(handler, ctx, "POST", "/widgets", tc.create, "")
+			require.Equal(t, http.StatusCreated, created.Code, created.Body.String())
+			var response map[string]any
+			require.NoError(t, strictjson.UnmarshalCaseSensitivePreserveInts(created.Body.Bytes(), &response))
+			require.Equal(t, int64(1<<53+1), response["spec"].(map[string]any)[tc.countField])
+			stored := f.stored(t, tc.name)
+			require.Equal(t, map[string]any{
+				"value": "public", "hidden": "private-default", "note": "owned", "displayName": "old", "vpcID": "vpc",
+				"nodeCount": int64(1<<53 + 1), "nodeIDs": []any{"nodeA"},
+				"nodePools":  []any{map[string]any{"poolName": "poolA", "nodeIDs": []any{"nodeB"}}},
+				"namedPools": map[string]any{"camelKey": map[string]any{"poolName": "poolC"}},
+			}, stored.Object["spec"])
+			updated := requestHTTP(handler, ctx, "PUT", "/widgets/"+tc.name, tc.update, created.Header().Get("ETag"))
+			require.Equal(t, http.StatusOK, updated.Code, updated.Body.String())
+			require.Equal(t, map[string]any{
+				"value": "updated", "hidden": "private-default", "displayName": nil, "nodeCount": int64(0),
+				"count": int64(0), "enabled": false, "items": []any{}, "nodeIDs": []any{}, "nodePools": []any{},
+			}, f.stored(t, tc.name).Object["spec"])
+			stale := requestHTTP(handler, ctx, "PUT", "/widgets/"+tc.name, tc.update, created.Header().Get("ETag"))
+			require.Equal(t, http.StatusPreconditionFailed, stale.Code, stale.Body.String())
+			require.Contains(t, stale.Body.String(), tc.staleCode)
+			invalid := requestHTTP(handler, ctx, "PUT", "/widgets/"+tc.name, tc.invalid, updated.Header().Get("ETag"))
+			require.Equal(t, http.StatusUnprocessableEntity, invalid.Code, invalid.Body.String())
+			var problem Error
+			require.NoError(t, json.Unmarshal(invalid.Body.Bytes(), &problem))
+			require.Equal(t, tc.invalidCode, problem.Code)
+			require.Equal(t, tc.invalidPath, problem.Errors[0].Field)
+			for _, body := range []string{tc.alternate, `{"spec":{"value":"first","value":"second"}}`} {
+				rejected := requestHTTP(handler, ctx, "PUT", "/widgets/"+tc.name, body, updated.Header().Get("ETag"))
+				require.Equal(t, http.StatusBadRequest, rejected.Code, rejected.Body.String())
+			}
+			require.Equal(t, updated.Header().Get("ETag"), strconv.Quote(f.stored(t, tc.name).GetResourceVersion()))
+		})
+	}
 }
 
 type (
@@ -198,7 +282,7 @@ func TestPresenceAndOmission(t *testing.T) {
 	_, err = client.Get(WithOptions(ctx, opts), "optional")
 	require.NoError(t, err)
 	mux := http.NewServeMux()
-	Register(mux, "/widgets", client, client, nil, OpUpdate)
+	require.NoError(t, Register(mux, "/widgets", client, client, nil, CamelCase, OpUpdate))
 	response := requestHTTP(WithLimits(mux, ServerOptions{}), ctx, "PUT", "/widgets/optional",
 		`{"metadata":{"name":"optional"},"spec":{"value":"public","count":0,"enabled":false,"items":[]}}`,
 		strconv.Quote(opts.ETag))
@@ -318,7 +402,7 @@ func TestHTTPAdmissionAndPreconditions(t *testing.T) {
 	f := setup(t, true)
 	mux := http.NewServeMux()
 	server := f.client(t)
-	Register(mux, "/widgets", server, server, nil, OpCreate, OpGet, OpList, OpUpdate, OpDelete)
+	require.NoError(t, Register(mux, "/widgets", server, server, nil, CamelCase, OpCreate, OpGet, OpList, OpUpdate, OpDelete))
 	handler := WithLimits(mux, ServerOptions{})
 	ctx := f.as("org-a")
 	for _, tc := range []struct {

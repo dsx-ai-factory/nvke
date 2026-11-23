@@ -14,7 +14,7 @@ import (
 var version = "dev"
 
 func main() {
-	if err := publicapi.Run(version, publicapi.Operator(), resource.ClientConfig{Surface: "operator"}); err != nil {
+	if err := publicapi.Run(version, publicapi.Operator(), resource.ClientConfig{}); err != nil {
 		slog.Error("operator API stopped", "error", err)
 		os.Exit(1)
 	}

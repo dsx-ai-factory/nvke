@@ -25,7 +25,7 @@ import (
 )
 
 var _ = fixture.DescribeCaseSet(func() fixture.CaseSet {
-	set := publicAPICaseSet("Operator admission", "admission-", "operator", Operator,
+	set := publicAPICaseSet("Operator admission", "admission-", Operator(),
 		func() []client.ObjectList { return []client.ObjectList{&v1.NodeProfileList{}} })
 	set.Setup = installAdmissionPolicies
 	return set

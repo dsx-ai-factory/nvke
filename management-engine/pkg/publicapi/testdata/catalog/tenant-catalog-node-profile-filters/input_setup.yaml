@@ -9,12 +9,12 @@
       name: img-ubuntu
     spec:
       architecture: amd64
-      buildDate: "2026-11-01"
+      build_date: "2026-11-01"
       nico:
-        ipxeScript: |
+        ipxe_script: |
           #!ipxe
           exit
-      operatingSystem:
+      operating_system:
         family: ubuntu
         version: "24.04"
 - method: POST
@@ -27,10 +27,10 @@
     spec:
       lifecycle:
         hidden: true
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
+      machine_init:
+        user_data_template: |
           #cloud-config
           {}
       profile: ubuntu-gpu
@@ -43,10 +43,10 @@
     metadata:
       name: np-b-other
     spec:
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
+      machine_init:
+        user_data_template: |
           #cloud-config
           {}
       profile: other
@@ -61,10 +61,10 @@
     spec:
       lifecycle:
         deprecated: true
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
+      machine_init:
+        user_data_template: |
           #cloud-config
           {}
       profile: ubuntu-gpu
@@ -77,10 +77,10 @@
     metadata:
       name: np-d-current
     spec:
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
+      machine_init:
+        user_data_template: |
           #cloud-config
           {}
       profile: ubuntu-gpu
