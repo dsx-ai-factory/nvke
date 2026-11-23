@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/dsx-ai-factory/nvke/cli/internal/auth"
@@ -112,13 +113,55 @@ type StatusError struct {
 
 func (e *StatusError) Error() string { return e.err.Error() }
 
-// apiError extracts a human-readable message from a non-2xx response body.
-// The controller API returns {"message": "..."} for all error responses (GenericError).
-// Falls back to the raw body if the body isn't a GenericError.
-func apiError(status string, body []byte) error {
+// Messages the controller's authentication and authorization middleware put in
+// the {"message": ...} body of a 403.
+const (
+	notAdmittedPrefix   = "Not admitted"
+	notAuthorizedPrefix = "Not authorized"
+)
+
+// apiError returns a *StatusError for an answer with status code and status
+// line status. Its text is the status line and the body's message, or the raw
+// body when it is not the API's {"message": ...} shape. A 401, or a 403 from
+// the API's authentication or authorization, also says what the caller can do
+// about it.
+func apiError(code int, status string, body []byte) error {
+	message := strings.TrimSpace(string(body))
 	var e api.GenericError
 	if json.Unmarshal(body, &e) == nil && e.Message != "" {
-		return fmt.Errorf("%s: %s", status, e.Message)
+		message = e.Message
 	}
-	return fmt.Errorf("%s: %s", status, body)
+	if hint := refusalHint(code, message); hint != "" {
+		if message == "" {
+			message = hint
+		} else {
+			// The API's messages end in a full stop; the hint continues the sentence.
+			message = strings.TrimSuffix(message, ".") + ": " + hint
+		}
+	}
+	return &StatusError{StatusCode: code, err: fmt.Errorf("%s: %s", status, message)}
+}
+
+// refusalHint returns the action that fixes a refusal from the API's
+// authentication or authorization, or "" for any other answer. A 403 is matched
+// by its message, because a proxy in front of the API can also answer 403.
+func refusalHint(code int, message string) string {
+	switch {
+	case code == http.StatusUnauthorized:
+		return "the NVKE API did not accept nvkectl's credential; check the management cluster kubeconfig " +
+			"('nvkectl config set-site --kubeconfig <path>') and log in again if it uses OIDC " +
+			"(see docs/operate/api-authentication.md)"
+	case code != http.StatusForbidden:
+		return ""
+	case strings.HasPrefix(message, notAdmittedPrefix):
+		return "the NVKE API authenticated this identity but admits no such caller; " +
+			"ask an NVKE administrator to admit it (see docs/operate/api-authentication.md)"
+	case strings.HasPrefix(message, notAuthorizedPrefix):
+		return "no role granted to this identity allows this operation; " +
+			"ask an NVKE administrator to grant one (see docs/operate/api-authorization.md). " +
+			"If nvkectl sent no credential, check the management cluster kubeconfig " +
+			"('nvkectl config set-site --kubeconfig <path>')"
+	default:
+		return ""
+	}
 }

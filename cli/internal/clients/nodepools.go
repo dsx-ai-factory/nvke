@@ -21,7 +21,7 @@ func (c *ControllerClient) ListNodePools(ctx context.Context, params *api.ListNo
 		return nil, fmt.Errorf("listing node pools: %w", err)
 	}
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("listing node pools: %w", apiError(resp.Status(), resp.Body))
+		return nil, fmt.Errorf("listing node pools: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("listing node pools: empty response body")
@@ -42,10 +42,10 @@ func (c *ControllerClient) CreateNodePool(
 	}
 	// 409 is reserved for a parent cluster that is being deleted.
 	if resp.StatusCode() == 409 {
-		return nil, fmt.Errorf("creating node pool: cluster is being deleted: %w", apiError(resp.Status(), resp.Body))
+		return nil, fmt.Errorf("creating node pool: cluster is being deleted: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	if resp.StatusCode() != 201 {
-		return nil, fmt.Errorf("creating node pool: %w", apiError(resp.Status(), resp.Body))
+		return nil, fmt.Errorf("creating node pool: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	if resp.JSON201 == nil {
 		return nil, fmt.Errorf("creating node pool: empty response body")
@@ -68,7 +68,7 @@ func (c *ControllerClient) PatchNodePool(
 		return nil, fmt.Errorf("patching node pool: %w", err)
 	}
 	if resp.StatusCode() != 200 {
-		return nil, fmt.Errorf("patching node pool: %w", apiError(resp.Status(), resp.Body))
+		return nil, fmt.Errorf("patching node pool: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	if resp.JSON200 == nil {
 		return nil, fmt.Errorf("patching node pool: empty response body")
@@ -85,7 +85,7 @@ func (c *ControllerClient) DeleteNodePool(ctx context.Context, id openapi_types.
 		return fmt.Errorf("deleting node pool: %w", err)
 	}
 	if resp.StatusCode() != 202 {
-		return fmt.Errorf("deleting node pool: %w", apiError(resp.Status(), resp.Body))
+		return fmt.Errorf("deleting node pool: %w", apiError(resp.StatusCode(), resp.Status(), resp.Body))
 	}
 	return nil
 }
