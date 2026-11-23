@@ -105,40 +105,33 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		return nil
 	}
 
-	failureDomains, err := r.readFailureDomains(ctx, cluster)
-	if errors.Is(err, errInfrastructureNotProvisioned) {
-		return r.reconcileWithoutFailureDomains(ctx, cluster, controlPlane, err)
-	}
-	if err != nil {
-		return fmt.Errorf("discovering control-plane failure domains: %w", err)
-	}
-	controlPlane.failureDomains = failureDomains
-	failureDomains.eligible = placeableDomains(failureDomains.eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
-	allocator := newControlPlaneDomainAllocator(controlPlane.nodes, failureDomains)
-	if unplaced := nodesWithoutKnownDomain(controlPlane.nodes, failureDomains); len(unplaced) > 0 {
-		r.logger.Warn("Control-plane nodes have no known failure domain and are not counted toward the spread",
-			"clusterID", cluster.ID, "clusterName", cluster.Name, "nodes", unplaced)
-	}
+	// Only the steps that choose a failure domain wait for discovery: scale-up,
+	// stuck-pending replacement, rollout, rebalance and scale-down. Remediation,
+	// the Kubernetes upgrade, joins and recorded deletes do not read placement, so
+	// a discovery failure must not hold them up.
+	allocator, placementKnown := r.discoverPlacement(ctx, cluster, controlPlane)
 
-	// Host creation only. A pending or in-flight delete must not stall it: the
-	// replacement host is exactly what lets the control plane shrink safely.
-	if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider()); err != nil {
-		return fmt.Errorf("reconciling control plane scale-up: %w", err)
-	}
+	if placementKnown {
+		// Host creation only. A pending or in-flight delete must not stall it: the
+		// replacement host is exactly what lets the control plane shrink safely.
+		if err := r.reconcileControlPlaneScaleUp(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider()); err != nil {
+			return fmt.Errorf("reconciling control plane scale-up: %w", err)
+		}
 
-	// Records delete intent only; the teardown is started at the bottom of a later
-	// pass. When remediation records a delete, end this pass: controlPlane still
-	// holds the pre-remediation snapshot, so the rollout and scale-down steps below
-	// would not see the new intent and could queue a second delete without
-	// accounting for it. The node write re-enqueues the cluster, and the next
-	// reconcile reads a fresh snapshot where the delete is in flight -- rollout and
-	// scale-down then defer to it and reconcileRequestedDeletes promotes it.
-	replaced, err := r.reconcileStuckPendingNodes(ctx, cluster, controlPlane, provider.MachineMaterialization())
-	if err != nil {
-		return fmt.Errorf("reconciling stuck pending control plane nodes: %w", err)
-	}
-	if replaced {
-		return nil
+		// Records delete intent only; the teardown is started at the bottom of a later
+		// pass. When remediation records a delete, end this pass: controlPlane still
+		// holds the pre-remediation snapshot, so the rollout and scale-down steps below
+		// would not see the new intent and could queue a second delete without
+		// accounting for it. The node write re-enqueues the cluster, and the next
+		// reconcile reads a fresh snapshot where the delete is in flight -- rollout and
+		// scale-down then defer to it and reconcileRequestedDeletes promotes it.
+		replaced, err := r.reconcileStuckPendingNodes(ctx, cluster, controlPlane, provider.MachineMaterialization())
+		if err != nil {
+			return fmt.Errorf("reconciling stuck pending control plane nodes: %w", err)
+		}
+		if replaced {
+			return nil
+		}
 	}
 
 	remediated, err := r.remediateMachines(ctx, cluster, controlPlane)
@@ -160,18 +153,20 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		// Rollout records delete intent and reconcileRequestedDeletes (below) starts
 		// the teardown, so a rollout teardown serializes in the same loop as user
 		// deletes, remediation and scale-down.
-		rolloutRecorded, err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider())
-		if err != nil {
-			return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
-		}
-		if rolloutRecorded {
-			// Same reason as the remediation return above: controlPlane still holds
-			// the pre-rollout snapshot, so the rebalance step below (whose abandon
-			// path starts a teardown directly) and scale-down could act without
-			// seeing the just-recorded delete. End the pass; the node write
-			// re-enqueues the cluster and the next reconcile reads a fresh snapshot
-			// where the delete is in flight and every step defers to it.
-			return nil
+		if placementKnown {
+			rolloutRecorded, err := r.reconcileNodesNeedingRollout(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider())
+			if err != nil {
+				return fmt.Errorf("reconciling control plane nodes needing rollout: %w", err)
+			}
+			if rolloutRecorded {
+				// Same reason as the remediation return above: controlPlane still holds
+				// the pre-rollout snapshot, so the rebalance step below (whose abandon
+				// path starts a teardown directly) and scale-down could act without
+				// seeing the just-recorded delete. End the pass; the node write
+				// re-enqueues the cluster and the next reconcile reads a fresh snapshot
+				// where the delete is in flight and every step defers to it.
+				return nil
+			}
 		}
 
 		// Grow before shrink: join a ready host if one is waiting, and leave any
@@ -188,24 +183,30 @@ func (r *reconciler) reconcile(ctx context.Context, cluster db.Cluster) error {
 		// at a time), grow-before-shrink, then shed the old node itself once the
 		// surge joins. Lowest priority: it yields to the upgrade and rollout steps
 		// above by abandoning an in-flight surge.
-		rebalanceActed, err := r.reconcileControlPlaneRebalance(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider())
-		if err != nil {
-			return fmt.Errorf("reconciling control plane rebalance: %w", err)
-		}
-		// A rebalance that grew, shed or abandoned owns this pass: it already made
-		// its one grow-before-shrink change, so return before scale-down (or any
-		// later membership step) can act on the same slots off the pre-rebalance
-		// snapshot. A recorded shed is promoted to a teardown on the next reconcile,
-		// which the fresh snapshot and one-at-a-time promotion drain normally.
-		if rebalanceActed {
-			return nil
+		if placementKnown {
+			rebalanceActed, err := r.reconcileControlPlaneRebalance(ctx, cluster, controlPlane, allocator, provider.NewNodeProvider())
+			if err != nil {
+				return fmt.Errorf("reconciling control plane rebalance: %w", err)
+			}
+			// A rebalance that grew, shed or abandoned owns this pass: it already made
+			// its one grow-before-shrink change, so return before scale-down (or any
+			// later membership step) can act on the same slots off the pre-rebalance
+			// snapshot. A recorded shed is promoted to a teardown on the next reconcile,
+			// which the fresh snapshot and one-at-a-time promotion drain normally.
+			if rebalanceActed {
+				return nil
+			}
 		}
 	}
 
 	// Last, and records intent only: scale-up, remediation and rollout grow
 	// first, so the control plane never shrinks while it owes a replacement.
-	if err := r.reconcileControlPlaneScaleDown(ctx, cluster, controlPlane); err != nil {
-		return fmt.Errorf("reconciling control plane scale-down: %w", err)
+	// Scale-down picks its victim to keep the spread, so without a placement view
+	// it waits: shrinking can always happen on a later pass.
+	if placementKnown {
+		if err := r.reconcileControlPlaneScaleDown(ctx, cluster, controlPlane); err != nil {
+			return fmt.Errorf("reconciling control plane scale-down: %w", err)
+		}
 	}
 
 	// Promote the oldest accepted delete into a teardown, one at a time.
@@ -222,26 +223,31 @@ const (
 	failureDomainRetryInterval = 30 * time.Second
 )
 
-// reconcileWithoutFailureDomains runs the steps that place no node -- remediation
-// and promotion of recorded deletes -- while the CAPI cluster has not published its
-// failure domains, so a dead node can still be removed. It returns nil and requeues rather than erroring
-// because an error rolls back the reconcile's transaction, undoing those writes.
-func (r *reconciler) reconcileWithoutFailureDomains(ctx context.Context, cluster db.Cluster, cp *controlPlane, discoveryErr error) error {
-	r.logger.Warn("Control-plane failure-domain discovery failed; running only remediation and recorded deletes",
-		"clusterID", cluster.ID, "clusterName", cluster.Name, "err", discoveryErr)
-	r.requeueAfter(failureDomainRetryInterval)
-
-	remediated, err := r.remediateMachines(ctx, cluster, cp)
+// discoverPlacement reads the cluster's failure domains into cp and returns an
+// allocator seeded with the current spread. It reports false when discovery
+// failed, for any reason: the cluster's infrastructure not being provisioned yet,
+// a missing Kubernetes client, or a failed read of the CAPI Cluster or Machines.
+//
+// The failure is logged and the cluster requeued rather than returned, because
+// returning an error rolls back the reconcile's transaction and would undo the
+// remediation, join and delete writes the rest of the pass makes without placement.
+func (r *reconciler) discoverPlacement(ctx context.Context, cluster db.Cluster, cp *controlPlane) (domainAllocator, bool) {
+	failureDomains, err := r.readFailureDomains(ctx, cluster)
 	if err != nil {
-		return err
+		r.logger.Warn("Control-plane failure-domain discovery failed; deferring the steps that place or shed nodes",
+			"clusterID", cluster.ID, "clusterName", cluster.Name,
+			"infrastructureNotProvisioned", errors.Is(err, errInfrastructureNotProvisioned), "err", err)
+		r.requeueAfter(failureDomainRetryInterval)
+		return domainAllocator{}, false
 	}
-	if remediated {
-		return nil
+
+	cp.failureDomains = failureDomains
+	failureDomains.eligible = placeableDomains(failureDomains.eligible, cluster.Conditions.UnplaceableFailureDomains, time.Now())
+	if unplaced := nodesWithoutKnownDomain(cp.nodes, failureDomains); len(unplaced) > 0 {
+		r.logger.Warn("Control-plane nodes have no known failure domain and are not counted toward the spread",
+			"clusterID", cluster.ID, "clusterName", cluster.Name, "nodes", unplaced)
 	}
-	if _, err := r.reconcileRequestedDeletes(ctx, cluster, cp); err != nil {
-		return fmt.Errorf("reconciling requested control plane deletes: %w", err)
-	}
-	return nil
+	return newControlPlaneDomainAllocator(cp.nodes, failureDomains), true
 }
 
 // reconcileControlPlaneRolloutRequiredCondition refreshes each
