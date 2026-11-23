@@ -25,15 +25,15 @@ not the only allowed one.
 | Node attestor | Whichever the instance can use, chosen on first boot: join-token (`NodeAttestor "join_token"`) when cloud-init supplied `SPIRE_JOIN_TOKEN`, TPM (`NodeAttestor "tpm"`, via `/usr/local/lib/spire-agent/tpm_attestor_agent`) otherwise. A site cluster attests its nodes by TPM and mints no join token, so an image that could only do join-token could not join one. This is separate from the FDE variant's use of TPM to seal the disk-encryption key. |
 | TPM identity tool | `/usr/local/bin/get_tpm_pubhash` for the image architecture. |
 | Calico manifests | An `nvke-cni-calico-manifests` Debian package is installed. |
-| Open vSwitch | NVIDIA's DOCA build, `doca-openvswitch-switch`, in kernel mode, installed at bake time from debs pinned by [`packages/doca-ovs/`](packages/doca-ovs/). It replaces Ubuntu's `openvswitch-switch` and keeps its units. DOCA's `ovs-exporter.service`, an unauthenticated metrics endpoint on TCP 6103, is **masked**. |
-| etcd data directory | `/var/lib/etcd` exists at mode `0700`, owned by a system `etcd` user and group created at bake time. kubeadm reuses the directory rather than creating its own `root:root` one, which is what CIS 1.1.12 checks. etcd itself still runs as root from `registry.k8s.io/etcd` as a static pod, so this changes what the node reports, not what etcd can do. |
-| `multipathd` | **Masked** — both `multipathd.service` and its socket. Ubuntu Server's installer leaves multipathd enabled, and with no blacklist it claims Longhorn's iSCSI-exported volumes (they present as `IET,VIRTUAL-DISK`) through device-mapper: `mkfs` then fails with `is apparently in use by the system; will not make a filesystem here` and newly provisioned volumes never format. No NVKE node boots from a multipath-backed disk, so nothing depends on it. Matches `node-images`' `packages` role, which disables the same unit. |
-| Background apt | **Masked** — `apt-daily.timer`, `apt-daily-upgrade.timer`, their services and `unattended-upgrades.service`. Ubuntu runs them a few minutes after first boot; the package job restarts journald, networkd and udevd, and a `systemctl daemon-reload` from kubeadm's kubelet-start phase in that window fails, so the kubelet never starts and the node's init or join is lost. Nodes take updates through a new image, never in place. |
+| Open vSwitch | NVIDIA's DOCA build, `doca-openvswitch-switch`, in kernel mode, installed at bake time from debs pinned by [`packages/doca-ovs/`](packages/doca-ovs/). It replaces Ubuntu's `openvswitch-switch` and keeps its units. DOCA's `ovs-exporter.service`, an unauthenticated metrics endpoint on TCP 6103, is **masked**, by a link the `nvke-node-sysconfig` package owns. |
+| etcd data directory | `/var/lib/etcd` exists at mode `0700`, owned by a system `etcd` user and group. The `nvke-node-sysconfig` package declares both (`sysusers.d` and `tmpfiles.d`), creates them at install, and `systemd-tmpfiles` corrects the directory's owner and mode again at every boot, without touching what is inside; the package never removes either. kubeadm reuses the directory rather than creating its own `root:root` one, which is what CIS 1.1.12 checks. etcd itself still runs as root from `registry.k8s.io/etcd` as a static pod, so this changes what the node reports, not what etcd can do. |
+| `multipathd` | **Masked** — both `multipathd.service` and its socket, by links the `nvke-node-sysconfig` package owns. Ubuntu Server's installer leaves multipathd enabled, and with no blacklist it claims Longhorn's iSCSI-exported volumes (they present as `IET,VIRTUAL-DISK`) through device-mapper: `mkfs` then fails with `is apparently in use by the system; will not make a filesystem here` and newly provisioned volumes never format. No NVKE node boots from a multipath-backed disk, so nothing depends on it. Matches `node-images`' `packages` role, which disables the same unit. |
+| Background apt | **Masked**, by links the `nvke-node-sysconfig` package owns — `apt-daily.timer`, `apt-daily-upgrade.timer`, their services and `unattended-upgrades.service`. Ubuntu runs them a few minutes after first boot; the package job restarts journald, networkd and udevd, and a `systemctl daemon-reload` from kubeadm's kubelet-start phase in that window fails, so the kubelet never starts and the node's init or join is lost. Nodes take updates through a new image, never in place. |
 | erofs and dm-verity | 26.04 only. `erofs-utils` is installed, `/etc/modules-load.d/nvke-kata.conf` loads the `erofs` and `dm-verity` modules at boot, and the ext4 root filesystem has the `verity` feature. Kata Containers' erofs snapshotter needs all three: containerd converts image layers to erofs with dm-verity metadata, needs `mkfs.erofs` 1.8.2 or later (24.04 ships 1.7), and refuses to load its CRI plugin unless fs-verity works on `/var/lib/containerd`. It also needs containerd 2.2 or later, so Kubernetes 1.35 or later from `nvke-kubeadm-distro`. |
 | Unit ordering | `nvke-spire-configure.service` before `spire-agent.service` before `nvke-agent.service`. `nvke-agent` waits for the workload API socket before exec. |
 | First-boot renderer | `/usr/lib/nvke/spire-configure.sh`, driven by `nvke-spire-configure.service`. Renders `/etc/spire-agent/agent.conf` from instance identity. Does nothing unless `/etc/nke/spire.env` exists. |
 | Plugin checksum | `/etc/spire-agent/spire-agent.env` holds `TPM_PLUGIN_CHECKSUM`, written by the .deb's postinst from the plugin it installed. `spire-agent.service` runs with `-expandEnv`, so an `agent.conf` that cloud-init wrote with the literal `${TPM_PLUGIN_CHECKSUM}` resolves against this image's own plugin. The two config paths are exclusive: a profile supplies `agent.conf` and no `/etc/nke/spire.env`, or it supplies `/etc/nke/spire.env` and the renderer writes `agent.conf`. |
-| Conntrack limits | `conntrack-tune.service` **enabled** (`WantedBy=sysinit.target`), ordered after `systemd-modules-load.service` and before `systemd-sysctl.service`. At every boot `/usr/lib/nvke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf`, raising `net.netfilter.nf_conntrack_max` and `nf_conntrack_buckets` to `min(max(RAM_MiB × 64, 1024), 600000)` wherever that is above the kernel's value, and `systemd-sysctl` applies it. `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` sets `nf_conntrack_tcp_timeout_time_wait` to 60s. `/etc/modules-load.d/nf_conntrack.conf` loads `nf_conntrack` at boot. See [Conntrack limits](#conntrack-limits). |
+| Conntrack limits | `conntrack-tune.service` **enabled** (`WantedBy=sysinit.target`), ordered after `systemd-modules-load.service` and before `systemd-sysctl.service`. At every boot `/usr/lib/nvke/configure-conntrack.sh` writes `/run/sysctl.d/50-nvke-conntrack.conf`, raising `net.netfilter.nf_conntrack_max` and `nf_conntrack_buckets` to `min(max(RAM_MiB × 64, 1024), 600000)` wherever that is above the kernel's value, and `systemd-sysctl` applies it. `/usr/lib/sysctl.d/50-nvke-conntrack-timeouts.conf` sets `nf_conntrack_tcp_timeout_time_wait` to 60s. `/usr/lib/modules-load.d/50-nvke-conntrack.conf` loads `nf_conntrack` at boot. The `nvke-node-sysconfig` package owns the unit, the script and both files. See [Conntrack limits](#conntrack-limits). |
 
 ### Conntrack limits
 
@@ -47,7 +47,7 @@ How the values are applied:
 - `conntrack-tune.service` runs early in boot, after
   `systemd-modules-load.service` has loaded `nf_conntrack` and before
   `systemd-sysctl.service`. It computes the target from the booting node's
-  `MemTotal` and writes `/run/sysctl.d/10-nke-conntrack.conf` with only the
+  `MemTotal` and writes `/run/sysctl.d/50-nvke-conntrack.conf` with only the
   keys the target raises. When the kernel is already at or above the target,
   it writes no file, so it never lowers the kernel's value.
 - `systemd-sysctl.service` applies that file along with every other
@@ -56,7 +56,7 @@ How the values are applied:
 - The file lives in `/run`, which is emptied at every boot and is never part
   of the image. The value therefore always comes from the RAM of the node that
   is booting, never from the VM that built the image.
-- `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` sets TIME_WAIT to 60s, the
+- `/usr/lib/sysctl.d/50-nvke-conntrack-timeouts.conf` sets TIME_WAIT to 60s, the
   TIME_WAIT Linux keeps for its own closed TCP sockets. The cost is that a FIN
   retransmitted after 60s with no packets no longer matches its connection,
   so it is not NATed; the file's comment explains when that happens. The UDP
@@ -187,7 +187,7 @@ server, not this image.
 | Agent env | `/etc/default/nvke-agent` (`AGENT_ARGS`) |
 | SPIRE config | `/etc/spire-agent/agent.conf` (rendered, not a baked secret) |
 | SPIRE data | `/var/lib/spire-agent` |
-| Conntrack tuning | `/usr/lib/nvke/configure-conntrack.sh` writes `/run/sysctl.d/10-nke-conntrack.conf` (logs to `journalctl -u conntrack-tune`); TIME_WAIT in `/etc/sysctl.d/10-nke-conntrack-timeouts.conf` |
+| Conntrack tuning | `/usr/lib/nvke/configure-conntrack.sh` writes `/run/sysctl.d/50-nvke-conntrack.conf` (logs to `journalctl -u conntrack-tune`); TIME_WAIT in `/usr/lib/sysctl.d/50-nvke-conntrack-timeouts.conf` |
 
 ## Out of scope for this image
 

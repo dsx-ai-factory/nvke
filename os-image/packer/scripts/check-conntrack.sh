@@ -16,8 +16,8 @@
 set -euo pipefail
 
 NF=/proc/sys/net/netfilter
-DROPIN=/run/sysctl.d/10-nke-conntrack.conf
-TIMEOUTS=/etc/sysctl.d/10-nke-conntrack-timeouts.conf
+DROPIN=/run/sysctl.d/50-nvke-conntrack.conf
+TIMEOUTS=/usr/lib/sysctl.d/50-nvke-conntrack-timeouts.conf
 
 fail() {
   echo "check-conntrack: FAIL: $*" >&2
