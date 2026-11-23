@@ -6,7 +6,7 @@ set -euo pipefail
 # OCI_BIN: the guest runs podman (builder.nix), which cni-ovn's image build needs.
 export SOURCE_ROOT="$REPO_ROOT" NKE_BUILD_IN_PLACE=1 CC=/run/current-system/sw/bin/nke-ubuntu-cc \
   OCI_BIN=podman
-for package in kubeadm-distro cni-calico cni-ovn spire-agent doca-ovs; do
+for package in kubeadm-distro cni-calico cni-ovn spire-agent doca-ovs nvke-node-identity; do
   cache=/root/.cache/nke-packages/$package
   for directory in bin dist; do
     mkdir -p "$cache/$directory"

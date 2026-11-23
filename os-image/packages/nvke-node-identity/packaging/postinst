@@ -1,0 +1,39 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Retire the drop-in provision.sh used to install, then tell systemd.
+#
+# provision.sh wrote the same ordering to
+# /etc/systemd/system/nvke-agent.service.d/10-spire.conf. Left in place beside
+# the packaged 50-nvke-identity.conf it would add every line a second time: the
+# socket wait would run twice and the attestation marker would be touched twice.
+# It is removed only while it is the exact bytes provision.sh wrote, checked by
+# hash; an edited copy is the operator's and stays, with a message.
+#
+# Nothing here restarts nvke-agent. A running agent keeps the ordering it started
+# with, and the packaged drop-in says the same thing the old one did.
+set -e
+
+old_dir=/etc/systemd/system/nvke-agent.service.d
+old="${old_dir}/10-spire.conf"
+# sha256 of that file as provision.sh installed it.
+old_sha=ca162afb5ddfe490e8b64e463addadfa2bf749ac3a6ff082345649acc3c79b3f
+
+case "$1" in
+configure)
+  if [ -e "${old}" ]; then
+    if [ "$(sha256sum "${old}" | cut -d' ' -f1)" = "${old_sha}" ]; then
+      rm -f "${old}"
+      rmdir "${old_dir}" 2>/dev/null || true
+    else
+      echo "nvke-node-identity: ${old} was edited, so it is left in place." >&2
+      echo "  The package now ships the same ordering as 50-nvke-identity.conf, so every line applies twice;" >&2
+      echo "  remove ${old} unless it holds changes you still need." >&2
+    fi
+  fi
+  if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  ;;
+esac

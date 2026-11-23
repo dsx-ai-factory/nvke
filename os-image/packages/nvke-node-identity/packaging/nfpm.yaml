@@ -1,0 +1,48 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# nfpm package spec for nvke-node-identity. build-deb.sh exports the
+# environment this file expands: DEB_VERSION.
+#
+# The files are read straight out of ../../../files/, where the image's own
+# copies have always lived -- the .deb takes ownership of them rather than
+# forking a second copy.
+#
+# Both land in a vendor directory (/usr/lib, /lib), never /etc, so nothing here
+# is a conffile. systemd merges drop-ins from /lib/systemd/system with those in
+# /etc/systemd/system, and a same-named file in /etc replaces the packaged one,
+# so an operator can still override it.
+#
+# The package has no Depends on nvke-agent or spire-agent. The drop-in names
+# both units and is inert if either is missing, and a hard dependency would
+# make the image's install order and an agent update a question for dpkg.
+
+name: "nvke-node-identity"
+arch: "all"
+platform: "linux"
+version: "${DEB_VERSION}"
+version_schema: none
+section: admin
+priority: optional
+maintainer: "NVKE <nke-dev@exchange.nvidia.com>"
+# Fixed rather than the build time, so two builds of the same input produce a
+# byte-identical .deb.
+mtime: "2026-01-01T00:00:00Z"
+description: |
+  Identity wiring for an NVKE node
+  How nvke-agent waits for the node's SPIRE identity: a drop-in that orders
+  nvke-agent.service after spire-agent.service, and the script that waits for
+  the SPIFFE workload API socket before the agent starts. Kept apart from the
+  nvke-agent package so an agent upgrade does not touch the image's ordering.
+
+scripts:
+  postinstall: "postinst"
+  postremove: "postrm"
+
+contents:
+  - src: "../../../files/wait-spiffe-socket.sh"
+    dst: "/usr/lib/nvke/wait-spiffe-socket.sh"
+    file_info: { mode: 0755 }
+  - src: "../../../files/50-nvke-agent-identity.conf"
+    dst: "/lib/systemd/system/nvke-agent.service.d/50-nvke-identity.conf"
+    file_info: { mode: 0644 }

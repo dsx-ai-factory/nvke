@@ -85,7 +85,8 @@ repository's `bin/`, and `make version-check` runs it with `--version`.
   at bake time (`make -C agent deb-<arch>` in `fetch-artifacts.sh`) and installed
   by dpkg with `NKE_AGENT_SKIP_START=1`. No prebuilt artifact is pulled. Its
   version is the checkout's `git describe --match 'v*'`. Keep the image's
-  SPIRE ordering in `files/nvke-agent-spire.conf`, separate from package-owned units.
+  SPIRE ordering in `files/50-nvke-agent-identity.conf`, shipped by the
+  `nvke-node-identity` package and separate from `nvke-agent`'s own units.
 - Checker is a SPIFFE **client**. Do not embed a SPIRE server in the binary.
 - New files need the Apache-2.0 SPDX header (`make license`). Cloud-init
   user-data cannot: `#cloud-config` must be line 1, so examples live in

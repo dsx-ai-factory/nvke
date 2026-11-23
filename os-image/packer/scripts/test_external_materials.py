@@ -61,10 +61,10 @@ class ComposeImageInputsTest(unittest.TestCase):
             ("ovn", "ovn.deb"),
             ("spire-agent", "spire-agent_1.0_all.deb"),
             ("doca-ovs", "doca-openvswitch-switch_1.0_all.deb"),
+            ("nvke-node-identity", "nvke-node-identity_1.0_all.deb"),
         ):
             write_package_archive(self.materials / binding, name)
-        for name in ("nvke-agent-spire.conf", "wait-spiffe-socket.sh",
-                     "conntrack-tune.service", "configure-conntrack.sh",
+        for name in ("conntrack-tune.service", "configure-conntrack.sh",
                      "10-nke-conntrack-timeouts.conf", "99-disable-network-config.cfg",
                      "00-dhcp-all.yaml"):
             shutil.copyfile(SCRIPTS.parent.parent / "files" / name, self.source_files / name)
@@ -125,9 +125,8 @@ class ComposeImageInputsTest(unittest.TestCase):
                 "debs/ovn.deb",
                 "debs/spire-agent_1.0_all.deb",
                 "debs/doca-openvswitch-switch_1.0_all.deb",
-                "nvke-agent-spire.conf",
+                "debs/nvke-node-identity_1.0_all.deb",
                 "nvke-agent.deb",
-                "wait-spiffe-socket.sh",
                 "conntrack-tune.service",
                 "configure-conntrack.sh",
                 "10-nke-conntrack-timeouts.conf",
@@ -142,8 +141,6 @@ class ComposeImageInputsTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         with tarfile.open(output) as archive:
             for name, mode in (
-                ("nvke-agent-spire.conf", 0o644),
-                ("wait-spiffe-socket.sh", 0o755),
                 ("conntrack-tune.service", 0o644),
                 ("configure-conntrack.sh", 0o755),
                 ("10-nke-conntrack-timeouts.conf", 0o644),
@@ -180,10 +177,12 @@ class ComposeImageInputsTest(unittest.TestCase):
         require_real_tools(self, "dpkg-deb", "dpkg-scanpackages")
         (self.tools / "dpkg-scanpackages").unlink()
         (self.tools / "dpkg-deb").unlink()
-        for number, binding in enumerate(("agent", "calico", "kubeadm-distro", "ovn", "spire-agent", "doca-ovs")):
+        for number, binding in enumerate(
+                ("agent", "calico", "kubeadm-distro", "ovn", "spire-agent", "doca-ovs", "nvke-node-identity")):
             name = "fixture-shared" if number in (1, 2) else {
                 "spire-agent": "spire-agent",
                 "doca-ovs": "doca-openvswitch-switch",
+                "nvke-node-identity": "nvke-node-identity",
             }.get(binding, f"fixture-{binding}")
             package = self.root / f"package-{number}"
             control = package / "DEBIAN"
@@ -295,7 +294,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                             patch.object(module.subprocess, "run") as index:
                         with self.assertRaisesRegex(SystemExit, expected):
                             module.main()
-                        self.assertEqual(install.call_count, 8 if copies_agent else 0)
+                        self.assertEqual(install.call_count, 6 if copies_agent else 0)
                         index.assert_not_called()
                     if existing:
                         self.assertEqual(output.read_bytes(), b"prior output")
@@ -523,9 +522,21 @@ class ComposeImageInputsTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("exactly one doca-openvswitch-switch_*.deb", result.stderr)
 
+    def test_nvke_node_identity_cardinality(self):
+        for filenames in (("other.deb",), ("nvke-node-identity_1_all.deb", "nvke-node-identity_2_all.deb")):
+            with self.subTest(filenames=filenames):
+                with tarfile.open(self.materials / "nvke-node-identity", "w") as archive:
+                    for name in filenames:
+                        member = tarfile.TarInfo(name)
+                        member.size = 1
+                        archive.addfile(member, io.BytesIO(b"x"))
+                result = self.run_compose(self.root / "identity.tar")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("exactly one nvke-node-identity_*.deb", result.stderr)
+
     def test_missing_files_and_unsafe_outputs(self):
-        for relative in ("materials/ovn", "materials/agent", "source-files/nvke-agent-spire.conf",
-                         "source-files/wait-spiffe-socket.sh", "source-files/conntrack-tune.service",
+        for relative in ("materials/ovn", "materials/agent", "materials/nvke-node-identity",
+                         "source-files/conntrack-tune.service",
                          "source-files/configure-conntrack.sh", "source-files/10-nke-conntrack-timeouts.conf",
                          "source-files/99-disable-network-config.cfg", "source-files/00-dhcp-all.yaml"):
             with self.subTest(relative=relative):

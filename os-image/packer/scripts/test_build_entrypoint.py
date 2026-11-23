@@ -228,8 +228,6 @@ class GuestUpdaterTest(unittest.TestCase):
                 for name in (
                     "00-dhcp-all.yaml",
                     "99-disable-network-config.cfg",
-                    "nvke-agent-spire.conf",
-                    "wait-spiffe-socket.sh",
                     "conntrack-tune.service",
                     "configure-conntrack.sh",
                     "10-nke-conntrack-timeouts.conf",
@@ -265,17 +263,22 @@ class GuestUpdaterTest(unittest.TestCase):
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 calls = log.read_text().splitlines()
-                self.assertEqual(len(calls), 6, calls)
+                self.assertEqual(len(calls), 7, calls)
                 self.assertIn(f"-C {repo}/agent deb-arm64", calls[0])
                 self.assertIn(f"-C {repo}/os-image/packages/doca-ovs debs", calls[5])
                 self.assertIn("UBUNTU_SERIES=26.04", calls[5])
+                self.assertIn(f"-C {repo}/os-image/packages/nvke-node-identity debs", calls[6])
+                self.assertIn(f"OUT_DIR={artifacts}/debs", calls[6])
                 # The guest has podman, not docker; cni-ovn builds its image with it.
                 ovn = [call for call in calls if "/os-image/packages/cni-ovn debs" in call]
                 self.assertEqual(len(ovn), 1, calls)
                 self.assertIn("OCI_BIN=podman", ovn[0])
                 self.assertTrue((artifacts / "00-dhcp-all.yaml").is_file())
                 self.assertTrue((artifacts / "99-disable-network-config.cfg").is_file())
-                self.assertTrue((artifacts / "nvke-agent-spire.conf").is_file())
+                # The identity ordering travels inside the nvke-node-identity
+                # deb, so neither file is staged loose.
+                for name in ("nvke-agent-spire.conf", "50-nvke-agent-identity.conf", "wait-spiffe-socket.sh"):
+                    self.assertFalse((artifacts / name).exists(), name)
                 # provision.sh installs these from the artifacts directory, so
                 # each must arrive byte-for-byte, with the mode it is installed with.
                 for name, mode in (("conntrack-tune.service", 0o644),

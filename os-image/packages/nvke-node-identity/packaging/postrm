@@ -1,0 +1,15 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# dpkg has removed the drop-in; make systemd forget it. Nothing is restarted: a
+# running nvke-agent keeps the ordering it started with until its next start.
+set -e
+
+case "$1" in
+remove | purge)
+  if [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  ;;
+esac
