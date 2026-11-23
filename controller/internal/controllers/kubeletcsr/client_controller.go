@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-package bootstrap
+package kubeletcsr
 
 import (
 	"context"
@@ -42,28 +42,28 @@ const (
 	kubeletClientCSRUsernameField = "csr.kubeletClientUsername"
 )
 
-// KubeletClientCSRController approves initial kubelet client CSRs for Machines that opt in during bootstrap.
-type KubeletClientCSRController struct {
+// ClientCSRController approves initial kubelet client CSRs for Machines that opt in during bootstrap.
+type ClientCSRController struct {
 	k8sClient    client.Client
 	clusterCache clustercache.ClusterCache
 	controller   controller.Controller
 	logger       *slog.Logger
 }
 
-func NewKubeletClientCSRController(k8sClient client.Client, clusterCache clustercache.ClusterCache, logger *slog.Logger) *KubeletClientCSRController {
+func NewClientCSRController(k8sClient client.Client, clusterCache clustercache.ClusterCache, logger *slog.Logger) *ClientCSRController {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &KubeletClientCSRController{
+	return &ClientCSRController{
 		k8sClient:    k8sClient,
 		clusterCache: clusterCache,
 		logger:       logger,
 	}
 }
 
-func (c *KubeletClientCSRController) SetupWithManager(mgr ctrl.Manager) error {
+func (c *ClientCSRController) SetupWithManager(mgr ctrl.Manager) error {
 	// This controller uses two caches. Index Machines here, in the management cluster cache.
-	// Index tenant CSRs separately, in each tenant cluster cache, via KubeletClientCSRCacheIndexes.
+	// Index tenant CSRs separately, in each tenant cluster cache, via ClientCSRCacheIndexes.
 	if err := indexKubeletClientCSRMachines(context.Background(), mgr.GetCache()); err != nil {
 		return err
 	}
@@ -168,9 +168,9 @@ func extractMachineKubeletNodeName(obj client.Object) []string {
 	return []string{name}
 }
 
-// KubeletClientCSRCacheIndexes are added to each tenant cluster cache as it connects.
+// ClientCSRCacheIndexes are added to each tenant cluster cache as it connects.
 // The username index lets a reconcile list one identity's CSRs without listing the tenant.
-func KubeletClientCSRCacheIndexes() []clustercache.CacheOptionsIndex {
+func ClientCSRCacheIndexes() []clustercache.CacheOptionsIndex {
 	return []clustercache.CacheOptionsIndex{
 		{
 			Object:       &certificatesv1.CertificateSigningRequest{},
@@ -204,7 +204,7 @@ func expectedKubeletNodeName(machine *clusterv1.Machine) string {
 	return machine.Name
 }
 
-func (c *KubeletClientCSRController) clusterToMachineRequests(ctx context.Context, obj client.Object) []reconcile.Request {
+func (c *ClientCSRController) clusterToMachineRequests(ctx context.Context, obj client.Object) []reconcile.Request {
 	cluster, ok := obj.(*clusterv1.Cluster)
 	if !ok {
 		return nil
@@ -236,7 +236,7 @@ func machineRequests(machines []clusterv1.Machine) []reconcile.Request {
 }
 
 //nolint:gocyclo,cyclop // The reconcile order is the behavior. Splitting it hides which outcome wins.
-func (c *KubeletClientCSRController) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
+func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Request) (ctrl.Result, error) {
 	machine := &clusterv1.Machine{}
 	if err := c.k8sClient.Get(ctx, request.NamespacedName, machine); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -410,7 +410,7 @@ func (c *KubeletClientCSRController) Reconcile(ctx context.Context, request ctrl
 	return ctrl.Result{}, fmt.Errorf("kubelet client CSRs for Machine %s matched no decision", request.NamespacedName)
 }
 
-func (c *KubeletClientCSRController) watchKubeletClientCSRs(ctx context.Context, clusterKey client.ObjectKey) error {
+func (c *ClientCSRController) watchKubeletClientCSRs(ctx context.Context, clusterKey client.ObjectKey) error {
 	if err := c.clusterCache.Watch(ctx, clusterKey, clustercache.NewWatcher(clustercache.WatcherOptions{
 		Name:         kubeletClientCSRWatchName,
 		Watcher:      c.controller,
@@ -441,7 +441,7 @@ func ignoreNotConnected(err error) error {
 	return err
 }
 
-func (c *KubeletClientCSRController) requestsForClientCSR(clusterKey client.ObjectKey) handler.MapFunc {
+func (c *ClientCSRController) requestsForClientCSR(clusterKey client.ObjectKey) handler.MapFunc {
 	return func(ctx context.Context, obj client.Object) []reconcile.Request {
 		csr, ok := obj.(*certificatesv1.CertificateSigningRequest)
 		if !ok || !isBootstrapKubeletClientCSR(csr) {
@@ -456,7 +456,7 @@ func (c *KubeletClientCSRController) requestsForClientCSR(clusterKey client.Obje
 	}
 }
 
-func (c *KubeletClientCSRController) machinesByBootstrapIdentity(ctx context.Context, namespace, clusterName, identity string) ([]clusterv1.Machine, error) {
+func (c *ClientCSRController) machinesByBootstrapIdentity(ctx context.Context, namespace, clusterName, identity string) ([]clusterv1.Machine, error) {
 	list := &clusterv1.MachineList{}
 	if err := c.k8sClient.List(ctx, list,
 		client.InNamespace(namespace),
@@ -468,7 +468,7 @@ func (c *KubeletClientCSRController) machinesByBootstrapIdentity(ctx context.Con
 	return list.Items, nil
 }
 
-func (c *KubeletClientCSRController) machinesByKubeletNodeName(ctx context.Context, namespace, clusterName, nodeName string) ([]clusterv1.Machine, error) {
+func (c *ClientCSRController) machinesByKubeletNodeName(ctx context.Context, namespace, clusterName, nodeName string) ([]clusterv1.Machine, error) {
 	list := &clusterv1.MachineList{}
 	if err := c.k8sClient.List(ctx, list,
 		client.InNamespace(namespace),

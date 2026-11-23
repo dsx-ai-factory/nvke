@@ -28,6 +28,7 @@ type FakeClient struct {
 
 	AgentVersion               string
 	AgentVersionErr            error
+	AgentVersionCalls          int
 	KubeadmFilesUnsupported    bool
 	KubeadmFilesSupportErr     error
 	KubeadmFilesSupportCalls   []uuid.UUID
@@ -38,10 +39,11 @@ type FakeClient struct {
 	GetNodeBootInfoErr         error
 	GetNodeBootInfoCalls       []uuid.UUID
 
-	PreflightResp    *nvkeproto.ExecuteNodePreflightResponse
-	PreflightErr     error
-	PreflightCalls   int
-	LastPreflightReq *nvkeproto.ExecuteNodePreflightRequest
+	PreflightResp     *nvkeproto.ExecuteNodePreflightResponse
+	PreflightErr      error
+	PreflightCalls    int
+	LastPreflightReq  *nvkeproto.ExecuteNodePreflightRequest
+	LastPreflightNode db.Node
 
 	ReconfigureKubeletAPIServerCalls    []uuid.UUID
 	ReconfigureKubeletAPIServerRequests []*nvkeproto.ReconfigureKubeletAPIServerRequest
@@ -115,6 +117,7 @@ func (f *FakeClient) GetKubeconfig(ctx context.Context, node db.Node) (string, e
 }
 
 func (f *FakeClient) GetAgentVersion(context.Context, db.Node) (string, error) {
+	f.AgentVersionCalls++
 	return f.AgentVersion, f.AgentVersionErr
 }
 
@@ -290,7 +293,8 @@ func (f *FakeClient) RemoveEtcdMember(_ context.Context, node db.Node, req *nvke
 	return f.RemoveEtcdMemberResponse, f.RemoveEtcdMemberError
 }
 
-func (f *FakeClient) ExecuteNodePreflight(_ context.Context, _ db.Node, req *nvkeproto.ExecuteNodePreflightRequest) (*nvkeproto.ExecuteNodePreflightResponse, error) {
+func (f *FakeClient) ExecuteNodePreflight(_ context.Context, node db.Node, req *nvkeproto.ExecuteNodePreflightRequest) (*nvkeproto.ExecuteNodePreflightResponse, error) {
+	f.LastPreflightNode = node
 	f.PreflightCalls++
 	f.LastPreflightReq = req
 	return f.PreflightResp, f.PreflightErr

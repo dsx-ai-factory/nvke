@@ -15,6 +15,7 @@ import (
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	nodeutil "github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
@@ -113,7 +114,7 @@ func (a *Activities) ValidateEtcdEncryptionHealth(ctx context.Context, input Val
 		if err != nil {
 			return fmt.Errorf("node agent is not ready on control-plane node %s: %w", node.Name, err)
 		}
-		if !nodeAgentVersionAtLeast(agentVersion, minEtcdEncryptionAgentVersion, false) {
+		if !agent.VersionAtLeast(agentVersion, minEtcdEncryptionAgentVersion, false) {
 			return fmt.Errorf(
 				"node agent version %q on control-plane node %s is older than required version %s",
 				agentVersion,

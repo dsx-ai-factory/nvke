@@ -11,6 +11,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -1663,7 +1664,8 @@ func (s *NodeAgentServer) addScript(script Script) {
 	s.NodeStatus.Scripts = append(s.NodeStatus.Scripts, script)
 }
 
-// logScriptExecution writes call info and result to ScriptExecutionLogger when set. output is truncated for size.
+// logScriptExecution writes call info and result to ScriptExecutionLogger when set, with
+// credentials redacted. output is truncated for size.
 func (s *NodeAgentServer) logScriptExecution(
 	ctx context.Context,
 	event, requestID string,
@@ -1675,6 +1677,9 @@ func (s *NodeAgentServer) logScriptExecution(
 	if s.ScriptExecutionLogger == nil {
 		return
 	}
+	credentials := s.heldCredentials()
+	credentials.AddArgs(req.GetArgs())
+	output = credentials.Saved(output)
 	if len(output) > maxScriptLogOutputBytes {
 		output = output[:maxScriptLogOutputBytes] + "...[truncated]"
 	}
@@ -1682,11 +1687,11 @@ func (s *NodeAgentServer) logScriptExecution(
 		slog.String("request_id", requestID),
 		slog.String("script_name", req.GetScriptName()),
 		slog.String("script_path", req.GetScriptPath()),
-		slog.Any("args", req.GetArgs()),
+		slog.Any("args", credentials.Args(req.GetArgs())),
 		slog.Bool("async", req.GetAsync()),
 		slog.String("status", status),
 		slog.Int64("exit_code", int64(exitCode)),
-		slog.String("error_message", errMsg),
+		slog.String("error_message", credentials.Saved(errMsg)),
 		slog.String("output", output),
 	}
 	attrs = append(attrs, traceLogAttrs(ctx)...)
@@ -2336,7 +2341,8 @@ func parseDebCollectionText(txt string) []string {
 }
 
 // GetSupportBundle gathers node support artifacts (state, logs, audit) into a tgz and returns it.
-// Callers may specify additional_files (absolute paths) to include in the bundle.
+// It redacts credentials in the state file and logs. Callers may specify additional_files
+// (absolute paths) to include in the bundle; these are copied unchanged.
 func (s *NodeAgentServer) GetSupportBundle(ctx context.Context, req *pb.GetSupportBundleRequest) (*pb.GetSupportBundleResponse, error) {
 	defer logRPCSpan(ctx, "GetSupportBundle")()
 	root := s.RootPath
@@ -2349,8 +2355,12 @@ func (s *NodeAgentServer) GetSupportBundle(ctx context.Context, req *pb.GetSuppo
 
 	// Copy /var/lib/nvke/state.json
 	srcState := filepath.Join(root, StateFile)
-	if err := copyFileIntoBundle(srcState, filepath.Join(tmpDir, "state.json")); err != nil {
-		slog.DebugContext(ctx, "state file not included in support bundle", "path", srcState, "err", err)
+	state, stateErr := os.ReadFile(srcState)
+	credentials := s.supportBundleCredentials(state)
+	if stateErr != nil {
+		slog.DebugContext(ctx, "state file not included in support bundle", "path", srcState, "err", stateErr)
+	} else if err := writeRedactedIntoBundle(bytes.NewReader(state), filepath.Join(tmpDir, "state.json"), credentials); err != nil {
+		slog.ErrorContext(ctx, "failed to write state file to bundle", "err", err)
 	}
 
 	// nvke-agent logs via journalctl
@@ -2358,20 +2368,20 @@ func (s *NodeAgentServer) GetSupportBundle(ctx context.Context, req *pb.GetSuppo
 	if err != nil {
 		slog.DebugContext(ctx, "journalctl nvke-agent failed", "err", err)
 	} else {
-		if wErr := os.WriteFile(filepath.Join(tmpDir, "nvke-agent.journal.log"), out, 0o644); wErr != nil {
+		if wErr := writeRedactedIntoBundle(bytes.NewReader(out), filepath.Join(tmpDir, "nvke-agent.journal.log"), credentials); wErr != nil {
 			slog.ErrorContext(ctx, "failed to write nvke-agent journal to bundle", "err", wErr)
 		}
 	}
 
 	// /var/lib/nvke-agent-audit.log
 	srcAudit := filepath.Join(root, NVKEAuditLog)
-	if err := copyFileIntoBundle(srcAudit, filepath.Join(tmpDir, "nke-audit.log")); err != nil {
+	if err := copyRedactedIntoBundle(srcAudit, filepath.Join(tmpDir, "nke-audit.log"), credentials); err != nil {
 		slog.DebugContext(ctx, "audit log not included in support bundle", "path", srcAudit, "err", err)
 	}
 
 	// /var/log/nvke-execute-scripts.log
 	srcExecuteScripts := filepath.Join(root, NVKEExecuteScriptsLog)
-	if err := copyFileIntoBundle(srcExecuteScripts, filepath.Join(tmpDir, "nvke-execute-scripts.log")); err != nil {
+	if err := copyRedactedIntoBundle(srcExecuteScripts, filepath.Join(tmpDir, "nvke-execute-scripts.log"), credentials); err != nil {
 		slog.DebugContext(ctx, "execute scripts log not included in support bundle", "path", srcExecuteScripts, "err", err)
 	}
 
@@ -2439,6 +2449,58 @@ func (s *NodeAgentServer) isControlPlaneRole() bool {
 		return false
 	}
 	return strings.EqualFold(s.NodeStatus.Role, ControlPlaneRole)
+}
+
+// supportBundleCredentials returns the join credentials the node holds and those in state.
+func (s *NodeAgentServer) supportBundleCredentials(state []byte) *redact.Credentials {
+	credentials := s.heldCredentials()
+	var stored struct {
+		JoinInfo JoinInfo `json:"joinInfo"`
+	}
+	if json.Unmarshal(state, &stored) == nil {
+		addJoinInfo(credentials, stored.JoinInfo)
+	}
+	return credentials
+}
+
+// heldCredentials returns the join credentials the node holds.
+func (s *NodeAgentServer) heldCredentials() *redact.Credentials {
+	credentials := redact.New()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.NodeStatus != nil {
+		addJoinInfo(credentials, s.NodeStatus.JoinInfo)
+	}
+	return credentials
+}
+
+// addJoinInfo adds the credentials in joinInfo's join strings.
+func addJoinInfo(credentials *redact.Credentials, joinInfo JoinInfo) {
+	credentials.AddJoinString(joinInfo.ControlPlaneJoinString)
+	credentials.AddJoinString(joinInfo.WorkerJoinString)
+}
+
+// copyRedactedIntoBundle copies src to dst with credentials redacted.
+func copyRedactedIntoBundle(src, dst string, credentials *redact.Credentials) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return fmt.Errorf("failed to open source file %s: %w", src, err)
+	}
+	defer in.Close()
+	return writeRedactedIntoBundle(in, dst, credentials)
+}
+
+// writeRedactedIntoBundle writes src to dst with credentials redacted.
+func writeRedactedIntoBundle(src io.Reader, dst string, credentials *redact.Credentials) error {
+	out, err := os.Create(dst)
+	if err != nil {
+		return fmt.Errorf("failed to create destination file %s: %w", dst, err)
+	}
+	if err := credentials.CopySaved(out, src); err != nil {
+		out.Close()
+		return fmt.Errorf("failed to write destination file %s: %w", dst, err)
+	}
+	return out.Close()
 }
 
 // copyFileIntoBundle copies a single file from src to dst if it exists. dst parent dir must exist.

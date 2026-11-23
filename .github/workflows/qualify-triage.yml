@@ -5,8 +5,8 @@ name: Qualify triage
 
 # Names why the jobs of a qualification run failed, from release/triage.yaml,
 # prints the result in the run summary, and, for a beta tag, replies with it in
-# the tag's Slack thread. Diagnosis only: it re-runs nothing, deletes nothing and
-# takes no Forge machine.
+# the tag's Slack thread. It can also start the failed jobs again, once (see
+# ONE RE-RUN). It deletes nothing and takes no Forge machine itself.
 #
 # TWO WAYS TO RUN. When a Qualify e2e run on a beta tag finishes with a failure,
 # this runs on its own, but only if the repository variable QUALIFY_TRIAGE_POST
@@ -14,6 +14,16 @@ name: Qualify triage
 # dispatch with a run id triages that run. It prints what it would post and
 # posts only when `post` is set, so a rule can be checked against an old failure
 # with no side effect.
+#
+# ONE RE-RUN. When every failed job of a tag run's first attempt is a failure
+# whose rule says rerun-failed, this starts the run's failed jobs again, once,
+# and says so in the thread. Anything a person should read keeps the whole run
+# from being re-run, and so does a second failure. It acts only if the variable
+# QUALIFY_TRIAGE_RERUN of this environment is "true", which is a different
+# switch from the one for posting, or a dispatch sets `rerun`, and posting is on
+# too, and the run's saved thread can be restored: a re-run is never started
+# without a thread to tell. Without them it prints what it would do. A re-run started with this workflow's token does not
+# start this workflow again, so a second failure is not triaged on its own.
 #
 # THE THREAD. The qualification saves its Slack thread as the run artifact
 # notify-state-<run id>. This downloads it and only ever replies: a run with no
@@ -52,6 +62,11 @@ on:
         type: boolean
         required: false
         default: false
+      rerun:
+        description: Re-run the failed jobs once, if every one is a failure a re-run has fixed before. Off prints what would be done.
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -76,6 +91,10 @@ jobs:
     environment: ci-shared
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # Starting the failed jobs again writes to Actions. Nothing else here does.
+    permissions:
+      contents: read
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -108,6 +127,8 @@ jobs:
           EVENT_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
           INPUT_POST: ${{ inputs.post }}
           VAR_POST: ${{ vars.QUALIFY_TRIAGE_POST }}
+          INPUT_RERUN: ${{ inputs.rerun }}
+          VAR_RERUN: ${{ vars.QUALIFY_TRIAGE_RERUN }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
@@ -135,6 +156,22 @@ jobs:
             if [[ "${EVENT_NAME}" == workflow_dispatch && "${INPUT_POST}" == true ]]; then post=true; fi
           fi
 
+          # The re-run has its own switch: posting says what happened, and
+          # re-running changes it.
+          rerun=false
+          if [[ -n "${tag}" ]]; then
+            if [[ "${EVENT_NAME}" == workflow_run && "${VAR_RERUN}" == true ]]; then rerun=true; fi
+            if [[ "${EVENT_NAME}" == workflow_dispatch && "${INPUT_RERUN}" == true ]]; then rerun=true; fi
+          fi
+          # A re-run restarts jobs that hold Forge machines, and the thread is
+          # where anyone watching the tag looks, so it is never done without
+          # telling the thread: re-running needs posting on too.
+          if [[ "${rerun}" == true && "${post}" != true ]]; then
+            rerun=false
+            echo "::notice::a re-run was asked for but posting is off, so this only says what it would do: a re-run is not started without telling the thread."
+            echo "> A re-run was asked for but posting is off, so nothing is re-run: a re-run is not started without telling the thread." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
           # An automatic run reads the attempt that finished, from the event and
           # not the API: a re-run started before this step runs makes the API's
           # latest attempt the new one, which has no failed jobs yet. A manual
@@ -151,6 +188,7 @@ jobs:
             echo "tag=${tag}"
             echo "url=${url}"
             echo "post=${post}"
+            echo "rerun=${rerun}"
             echo "post-attempt=${want_attempt:-${attempt}}"
             echo "summary-attempt=${want_attempt}"
           } >> "${GITHUB_OUTPUT}"
@@ -171,6 +209,7 @@ jobs:
       # thread, or an expired one, previews nothing; the summary above still
       # names every failure.
       - name: Restore the thread
+        id: restore
         if: steps.run.outputs.tag != ''
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
@@ -201,3 +240,48 @@ jobs:
           set -Eeuo pipefail
           FORMAT=jsonl TRIAGE="${RUNNER_TEMP}/triage" RULES=release/triage.yaml \
             release/hack/triage-run.sh "${RUN_ID}" | release/hack/triage-post.sh
+
+      # The one retry. It runs after the reply, so the thread has the diagnosis
+      # before it hears about the re-run, and it is not allowed to fail the run:
+      # a re-run that did not start leaves the summary saying why. The token
+      # that writes to Actions is the workflow's own, and the Slack token reaches
+      # this step only for a real post, as it does in the one above.
+      - name: Re-run the failed jobs once
+        if: steps.run.outputs.tag != ''
+        continue-on-error: true
+        timeout-minutes: 5
+        env:
+          RUN_ID: ${{ steps.run.outputs.run-id }}
+          ATTEMPT: ${{ steps.run.outputs.post-attempt }}
+          RUN_URL: ${{ steps.run.outputs.url }}
+          DRY_RUN: ${{ (steps.run.outputs.rerun == 'true' && steps.restore.outcome == 'success') && 'false' || 'true' }}
+          WANT_RERUN: ${{ steps.run.outputs.rerun }}
+          THREAD_RESTORED: ${{ steps.restore.outcome }}
+          NOTIFY_DRY_RUN: ${{ steps.run.outputs.post == 'true' && 'false' || 'true' }}
+          NOTIFY: go run ./release/cmd/notify
+          NOTIFY_STATE_KEY: ${{ steps.run.outputs.tag }}
+          STATE_DIR: ${{ runner.temp }}/notify-state
+          SLACK_BOT_TOKEN: ${{ steps.run.outputs.post == 'true' && secrets.NOTIFY_SLACK_BOT_TOKEN || '' }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -Eeuo pipefail
+          # The decision cannot be undone, so it is made only on a complete
+          # classification: the rows go to a file, and are read only if the
+          # classifier finished.
+          rows="${RUNNER_TEMP}/rerun-rows.jsonl"
+          if ! FORMAT=jsonl TRIAGE="${RUNNER_TEMP}/triage" RULES=release/triage.yaml \
+            release/hack/triage-run.sh "${RUN_ID}" >"${rows}"; then
+            {
+              echo "## Automatic re-run of run ${RUN_ID}"
+              echo
+              echo "Not re-run: the failed jobs could not all be classified, so nothing was decided."
+            } | tee -a "${GITHUB_STEP_SUMMARY}"
+            exit 1
+          fi
+          release/hack/triage-rerun.sh <"${rows}" | tee -a "${GITHUB_STEP_SUMMARY}"
+          # A re-run is not started without a thread to tell: with no saved
+          # thread the message would be skipped without a word.
+          if [[ "${WANT_RERUN}" == true && "${THREAD_RESTORED}" != success ]]; then
+            echo "> A re-run was asked for but the run's thread could not be restored, so nothing was re-run: a re-run is not started without a thread to tell." | tee -a "${GITHUB_STEP_SUMMARY}"
+          fi

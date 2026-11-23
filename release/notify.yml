@@ -107,6 +107,15 @@ notifications:
       {{.Event.note}}
       Matched: `{{.Event.evidence}}` · <{{.Event.run_url}}|the failed run>
 
+  # The automatic retry of a failed run. It follows the triage findings in the
+  # same thread and says that the failed jobs were started again, once; a second
+  # failure is left to a person. Information, not an alert: it mentions nobody.
+  - name: triage-rerun
+    title: "🔁 Re-running the failed jobs"
+    severity: info
+    message_template: |
+      Started the failed jobs again, once (attempt {{.Event.next_attempt}}): {{.Event.classes}}. If they fail again, this is left to a person. <{{.Event.run_url}}|the run>
+
   # The outcome, one notification each, so the colour says which it was. The
   # severity of a notification is fixed, so a single one would show a failure in
   # the same blue as a pass.
@@ -149,6 +158,8 @@ subscriptions:
         notification: stream-passed
       - name: "qualification:triage"
         notification: triage-finding
+      - name: "qualification:triage-rerun"
+        notification: triage-rerun
       - name: "qualification:passed"
         notification: qualification-passed
       - name: "qualification:stopped"

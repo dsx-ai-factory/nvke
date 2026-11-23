@@ -124,6 +124,9 @@ func TestSBOMRender(t *testing.T) {
 			t.Errorf("controller %s = %v, want %s", keys, got, want)
 		}
 	}
+	if got, ok := controllerValues["nodeMetadata"]; ok {
+		t.Errorf("controller nodeMetadata = %v, want the chart's default left alone", got)
+	}
 	env := mustJSON(t, controllerValues["env"])
 	for _, want := range []string{
 		`{"name":"NODE_AGENT_PORT","value":"15005"}`,
@@ -181,6 +184,22 @@ func TestSBOMRender(t *testing.T) {
 	if config.Nico["APIName"] != "forge" || config.Nico["Token"] != "tok" ||
 		config.Tenant["User"] != "admin" || config.ClusterName != "e2e-site" {
 		t.Errorf("bootstrap config = %+v", config)
+	}
+}
+
+func TestSBOMRenderAllowlistsNodeLabelKeys(t *testing.T) {
+	t.Log("Doing: rendering a stack whose tenants carry node-role labels")
+	d := testSBOM().withDefaults()
+	d.NodeMetadataAllowlistedLabelKeys = []string{"node-role.kubernetes.io/worker", "node-role.kubernetes.io/monitoring"}
+	files, err := d.render(sbomTarget, []byte(spireOverlay))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Log("Testing: the controller values allowlist exactly those keys")
+	got := mustJSON(t, dig(t, decode(t, files["controller.yaml"]), "nodeMetadata", "allowlistedLabelKeys"))
+	if want := `["node-role.kubernetes.io/worker","node-role.kubernetes.io/monitoring"]`; got != want {
+		t.Errorf("controller nodeMetadata.allowlistedLabelKeys = %s, want %s", got, want)
 	}
 }
 

@@ -1030,6 +1030,11 @@ func TestValidateNodeMetadataAllowlistedLabelKeys(t *testing.T) {
 			want: []string{"k8s.io/custom", "node-role.kubernetes.io/worker"},
 		},
 		{
+			name: "accepts the worker and monitoring node-role keys",
+			line: "nodeMetadataAllowlistedLabelKeys: [node-role.kubernetes.io/worker, node-role.kubernetes.io/monitoring]\n",
+			want: []string{"node-role.kubernetes.io/worker", "node-role.kubernetes.io/monitoring"},
+		},
+		{
 			name: "accepts a key outside the reserved domains",
 			line: "nodeMetadataAllowlistedLabelKeys: [nvidia.com/gpu, nodegroup]\n",
 			want: []string{"nvidia.com/gpu", "nodegroup"},

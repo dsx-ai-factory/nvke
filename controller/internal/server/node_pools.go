@@ -107,9 +107,13 @@ func (s *nodePoolService) ListNodePools(ctx context.Context, req api.ListNodePoo
 	if err != nil {
 		return nil, fmt.Errorf("failed to list node pools: %w", err)
 	}
+	counts, err := nodePoolCountsFromDB(ctx, s.db, dbNodePools)
+	if err != nil {
+		return nil, err
+	}
 	apiNodePools := make([]api.NodePool, len(dbNodePools))
 	for i := range dbNodePools {
-		apiNodePools[i] = apiNodePoolFromDB(&dbNodePools[i])
+		apiNodePools[i] = apiNodePoolFromDB(&dbNodePools[i], counts[dbNodePools[i].ID])
 	}
 	return api.ListNodePools200JSONResponse{NodePools: apiNodePools}, nil
 }
@@ -211,7 +215,8 @@ func (s *nodePoolService) CreateNodePool(
 		return nil, err
 	}
 
-	return api.CreateNodePool201JSONResponse(apiNodePoolFromDB(&createdNodePool)), nil
+	// Provisioning is queued by this transaction, so its initial node counts are zero.
+	return api.CreateNodePool201JSONResponse(apiNodePoolFromDB(&createdNodePool, db.NodePoolCounts{})), nil
 }
 
 func clusterIsCAPIBacked(cluster db.Cluster) bool {
@@ -421,7 +426,11 @@ func (s *nodePoolService) GetNodePool(ctx context.Context, req api.GetNodePoolRe
 		return nil, fmt.Errorf("failed to get node pool: %w", err)
 	}
 
-	return api.GetNodePool200JSONResponse(apiNodePoolFromDB(&dbNodePool)), nil
+	counts, err := nodePoolCountsFromDB(ctx, s.db, []db.NodePool{dbNodePool})
+	if err != nil {
+		return nil, err
+	}
+	return api.GetNodePool200JSONResponse(apiNodePoolFromDB(&dbNodePool, counts[dbNodePool.ID])), nil
 }
 
 func (s *nodePoolService) DeleteNodePool(
@@ -456,6 +465,7 @@ func (s *nodePoolService) UpdateNodePool(
 	req api.UpdateNodePoolRequestObject,
 ) (api.UpdateNodePoolResponseObject, error) {
 	var updatedNodePool db.NodePool
+	var counts map[uuid.UUID]db.NodePoolCounts
 	err := s.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		// Re-read the pool without a lock first, solely to learn its cluster, then
 		// lock the cluster before the node-pool row. This matches the global
@@ -555,7 +565,8 @@ func (s *nodePoolService) UpdateNodePool(
 			return fmt.Errorf("failed to update node pool: %w", err)
 		}
 
-		return nil
+		counts, err = nodePoolCountsFromDB(ctx, tx, []db.NodePool{updatedNodePool})
+		return err
 	})
 	if err != nil {
 		if errors.Is(err, db.ErrControlPlaneMutationBlocked) {
@@ -571,7 +582,7 @@ func (s *nodePoolService) UpdateNodePool(
 		return nil, err
 	}
 
-	return api.UpdateNodePool200JSONResponse(apiNodePoolFromDB(&updatedNodePool)), nil
+	return api.UpdateNodePool200JSONResponse(apiNodePoolFromDB(&updatedNodePool, counts[updatedNodePool.ID])), nil
 }
 
 func applyUpdateNodePoolRequest(cluster db.Cluster, dbNodePool *db.NodePool, req *api.UpdateNodePoolRequest) error {
@@ -930,7 +941,24 @@ func uuidSliceDedupe(s []uuid.UUID) []uuid.UUID {
 	return out
 }
 
-func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
+// nodePoolCountsFromDB fetches observations once for the requested pools and
+// rejects missing observations rather than reporting an unobserved zero.
+// Update calls this inside its transaction so a read failure rolls back the mutation.
+func nodePoolCountsFromDB(ctx context.Context, queries db.NodePoolQueries, pools []db.NodePool) (map[uuid.UUID]db.NodePoolCounts, error) {
+	counts, err := queries.ListNodePoolCounts(ctx, pools)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get node pool counts: %w", err)
+	}
+	for i := range pools {
+		if _, ok := counts[pools[i].ID]; !ok {
+			return nil, fmt.Errorf("node pool counts missing for %s", pools[i].ID)
+		}
+	}
+	return counts, nil
+}
+
+// apiNodePoolFromDB converts one stored pool and its observed counts into an API response.
+func apiNodePoolFromDB(dbNodePool *db.NodePool, count db.NodePoolCounts) api.NodePool {
 	var maxSurge *int
 	if dbNodePool.MaxSurge > 0 {
 		maxSurge = &dbNodePool.MaxSurge
@@ -971,6 +999,9 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool) api.NodePool {
 		},
 		MachineAnnotations: maps.Clone(dbNodePool.MachineAnnotations),
 		MachineLabels:      maps.Clone(dbNodePool.MachineLabels),
+		ObservedNodeCount:  &count.NodeCount,
+		ReadyNodeCount:     &count.ReadyNodeCount,
+		UpdatedNodeCount:   &count.UpdatedNodeCount,
 	}
 }
 

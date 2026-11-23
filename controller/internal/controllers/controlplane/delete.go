@@ -100,7 +100,7 @@ func (r *reconciler) restartFailedTeardown(ctx context.Context, node db.Node) (b
 	}
 
 	workflowID := constants.TeardownNodeWorkflowPrefix + node.ID.String()
-	desc, err := r.controllerTemporalClient.DescribeWorkflowExecution(ctx, workflowID, "")
+	desc, err := r.controllerTemporalClient.DescribeWorkflow(ctx, workflowID, "")
 	if err != nil {
 		if isWorkflowNotFoundError(err) {
 			// The outbox has not delivered the start yet. Leave it alone.
@@ -108,7 +108,7 @@ func (r *reconciler) restartFailedTeardown(ctx context.Context, node db.Node) (b
 		}
 		return false, fmt.Errorf("describing teardown workflow for node %s: %w", node.ID, err)
 	}
-	if !teardownClosedUnsuccessfully(desc.GetWorkflowExecutionInfo()) {
+	if !teardownClosedUnsuccessfully(desc.RawResponse.GetWorkflowExecutionInfo()) {
 		return false, nil
 	}
 

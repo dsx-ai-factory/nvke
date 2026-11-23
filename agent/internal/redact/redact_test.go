@@ -47,6 +47,23 @@ func TestStringRedactsByContext(t *testing.T) {
 			want: fmt.Sprintf("[bootstrap-token] Using token: %s\n[upload-certs] Using certificate key:\n<redacted>\n", redactedToken),
 		},
 		{
+			name: "join flags in a JSON argument list inside a JSON string",
+			in:   fmt.Sprintf(`{"err":"[\"--token\", \"%s\", \"--certificate-key\", \"%s\"]"}`, token, certificateKey),
+			want: fmt.Sprintf(`{"err":"[\"--token\", \"%s\", \"--certificate-key\", \"<redacted>\"]"}`, redactedToken),
+		},
+		{
+			name: "join flags in a JSON-logged argument list",
+			in: fmt.Sprintf(`{"msg":"issuing kubeadm join command","args":["join","10.0.0.1:6443","--token","%s","--tls-bootstrap-token", "%s","--control-plane","--certificate-key","%s"]}`,
+				token, token, certificateKey),
+			want: fmt.Sprintf(`{"msg":"issuing kubeadm join command","args":["join","10.0.0.1:6443","--token","%[1]s","--tls-bootstrap-token", "%[1]s","--control-plane","--certificate-key","<redacted>"]}`,
+				redactedToken),
+		},
+		{
+			name: "the certificate key after a JSON-escaped line break or tab",
+			in:   fmt.Sprintf(`{"stdout":"[upload-certs] Using certificate key:\n%[1]s\n","output":"Using certificate key:\r\n%[1]s","err":"Using certificate key:\t%[1]s"}`, certificateKey),
+			want: `{"stdout":"[upload-certs] Using certificate key:\n<redacted>\n","output":"Using certificate key:\r\n<redacted>","err":"Using certificate key:\t<redacted>"}`,
+		},
+		{
 			name: "prose that names a flag is left alone",
 			in:   "error: flag --token is required\nunknown flag: --certificate-key\nSee 'kubeadm join --help'",
 			want: "error: flag --token is required\nunknown flag: --certificate-key\nSee 'kubeadm join --help'",
@@ -82,6 +99,79 @@ func TestStringRedactsKnownValues(t *testing.T) {
 
 		assert.Equal(t, "kubeadm join 10.0.0.1:6443 --token <redacted>", given.String("kubeadm join 10.0.0.1:6443 --token not-a-token-shape"))
 	})
+}
+
+func TestSavedRedactsByShape(t *testing.T) {
+	imageDigest := "registry.k8s.io/pause@sha256:" + strings.Repeat("e", 64)
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "a join request logged as JSON, with its configuration's line breaks escaped",
+			in: fmt.Sprintf(`{"msg":"issuing kubeadm join call","request":{"join_config":"discovery:\n  bootstrapToken:\n    token: %[1]s\n    caCertHashes:\n    - %[2]s\n  tlsBootstrapToken: %[1]s\ncontrolPlane:\n  certificateKey: %[3]s\n","certificate_key":"%[3]s"}}`,
+				token, caCertHash, certificateKey),
+			want: fmt.Sprintf(`{"msg":"issuing kubeadm join call","request":{"join_config":"discovery:\n  bootstrapToken:\n    token: %[1]s\n    caCertHashes:\n    - %[2]s\n  tlsBootstrapToken: %[1]s\ncontrolPlane:\n  certificateKey: <redacted>\n","certificate_key":"<redacted>"}}`,
+				redactedToken, caCertHash),
+		},
+		{
+			name: "tokens with no flag, as kubeadm token create and token list print them",
+			in:   fmt.Sprintf("%[1]s\nTOKEN   TTL   USAGES\n%[1]s   23h   authentication,signing\n", token),
+			want: fmt.Sprintf("%[1]s\nTOKEN   TTL   USAGES\n%[1]s   23h   authentication,signing\n", redactedToken),
+		},
+		{
+			name: "a token after a JSON-escaped line break",
+			in:   fmt.Sprintf(`{"stdout":"TOKEN\n%s   23h"}`, token),
+			want: fmt.Sprintf(`{"stdout":"TOKEN\n%s   23h"}`, redactedToken),
+		},
+		{
+			name: "certificate keys after their field name, quoted, unquoted and with escaped quotes",
+			in: fmt.Sprintf(`certificateKey: "%[1]s" {"CertificateKey":"%[1]s"} {CertificateKey:%[1]s} {"err":"{\"certificate_key\": \"%[1]s\"}"}`,
+				certificateKey),
+			want: `certificateKey: "<redacted>" {"CertificateKey":"<redacted>"} {CertificateKey:<redacted>} {"err":"{\"certificate_key\": \"<redacted>\"}"}`,
+		},
+		{
+			name: "a certificate key with its quotes escaped twice",
+			in:   fmt.Sprintf(`{"msg":"{\"err\":\"{\\\"certificate_key\\\":\\\"%s\\\"}\"}"}`, certificateKey),
+			want: `{"msg":"{\"err\":\"{\\\"certificate_key\\\":\\\"<redacted>\\\"}\"}"}`,
+		},
+		{
+			name: "65 hex digits after a certificate key field are kept",
+			in:   "certificateKey: " + certificateKey + "c",
+			want: "certificateKey: " + certificateKey + "c",
+		},
+		{
+			name: "etcd encryption keys after their field name, and the fields that only name or digest one",
+			in:   `{"api_encryption_key":"a2V5/+==","api_encryption_key_name":"key-1","api_encryption_key_sha256":"abc"} api_encryption_key:"a2V5" {ApiEncryptionKey:a2V5} {"err":"{\"apiEncryptionKey\": \"a2V5\"}"}`,
+			want: `{"api_encryption_key":"<redacted>","api_encryption_key_name":"key-1","api_encryption_key_sha256":"abc"} api_encryption_key:"<redacted>" {ApiEncryptionKey:<redacted>} {"err":"{\"apiEncryptionKey\": \"<redacted>\"}"}`,
+		},
+		{
+			name: "an etcd encryption key with its quotes escaped twice, and one in key=value form",
+			in:   `{"msg":"{\"err\":\"{\\\"api_encryption_key\\\":\\\"a2V5\\\"}\"}"} api_encryption_key=a2V5 node=gpu-01`,
+			want: `{"msg":"{\"err\":\"{\\\"api_encryption_key\\\":\\\"<redacted>\\\"}\"}"} api_encryption_key=<redacted> node=gpu-01`,
+		},
+		{
+			name: "an etcd encryption key field named in prose or left empty is kept",
+			in:   "missing api_encryption_key: request rejected {ApiEncryptionKey: ApiEncryptionKeyName:x}",
+			want: "missing api_encryption_key: request rejected {ApiEncryptionKey: ApiEncryptionKeyName:x}",
+		},
+		{
+			name: "a token shape inside a longer hostname or identifier, versions, CA hashes and image digests are kept",
+			in: fmt.Sprintf(`node-a1b2c3.example.internal x%[1]s %[1]sx X%[1]sY 9%[1]s %[1]s9 n%[1]s \x%[1]s %[1]s.example v1.31.0 %[2]s %[3]s %[4]s`,
+				token, caCertHash, imageDigest, certificateKey),
+			want: fmt.Sprintf(`node-a1b2c3.example.internal x%[1]s %[1]sx X%[1]sY 9%[1]s %[1]s9 n%[1]s \x%[1]s %[1]s.example v1.31.0 %[2]s %[3]s %[4]s`,
+				token, caCertHash, imageDigest, certificateKey),
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := New().Saved(tc.in)
+
+			assert.Equal(t, tc.want, got)
+			assert.Equal(t, got, New().Saved(got), "redacting twice changes nothing")
+		})
+	}
 }
 
 func TestAddConfig(t *testing.T) {
@@ -177,5 +267,6 @@ func TestArgs(t *testing.T) {
 	assert.Equal(t, []string{"join", "--token", redactedToken, "--certificate-key=<redacted>", "--discovery-token-ca-cert-hash", caCertHash, "--token-ttl", "24h"}, got)
 	assert.Equal(t, original, args, "the input must not be modified")
 	assert.Equal(t, []string{"join", "--token"}, Args([]string{"join", "--token"}), "a flag with no value is left alone")
+	assert.Equal(t, []string{"token", "delete", redactedToken}, Args([]string{"token", "delete", token}), "a token with no flag is redacted by shape")
 	assert.Empty(t, Args(nil))
 }

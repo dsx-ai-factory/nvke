@@ -25,14 +25,16 @@ type failureDomains struct {
 }
 
 // errInfrastructureNotProvisioned means the CAPI cluster does not exist yet or has
-// not published its failure domains. The reconcile continues with the steps that
-// place no node; any other discovery error aborts it.
+// not published its failure domains: the expected state during bring-up, as
+// opposed to a failure to read them. Either way the reconcile defers only the
+// steps that place or shed nodes (see discoverPlacement).
 var errInfrastructureNotProvisioned = errors.New("capi cluster infrastructure is not yet provisioned")
 
 // readFailureDomains returns a complete snapshot of the control-plane-eligible
 // failure domains of a cluster and the domain CAPI already reports for each of
 // its active control-plane Machines. A discovery error is returned with a nil
-// snapshot.
+// snapshot; it does not abort the reconcile, which still runs the steps that do
+// not read placement.
 func (r *reconciler) readFailureDomains(ctx context.Context, cluster db.Cluster) (*failureDomains, error) {
 	if r.k8sClient == nil {
 		return nil, fmt.Errorf("kubernetes client is not configured")

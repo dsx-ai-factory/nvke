@@ -301,6 +301,7 @@ names another.
 | `steps.env` | What each step resolved |
 | `e2e-config.yaml`, `site-inputs/` | The suite's config, and the archives the site was given |
 | diagnostics | On a failure, what the suite collected |
+| `kaps-bench-results.tar.gz` | kaps-bench's output dir from every run spec it ran, absent when no run spec got far enough for kaps-bench to write one |
 
 A run that fails once its stream is chosen still writes
 `qualify-result.json`, errored when the suite never wrote a report, as the
@@ -311,8 +312,9 @@ The jump hosts and the token issuer are scrubbed from the text files (the log,
 the JUnit and JSON reports, `tenant-diagnostics.json` and
 `site-cluster-state.txt`) before they are moved there. Nothing else is
 scrubbed: those files still carry node addresses, the Forge ids, the NGC org
-and the Teleport login, and `nvkectl-diagnostics.tar.gz` and the
-`site-bundle*` files are moved as the suite wrote them. Only
+and the Teleport login, and `nvkectl-diagnostics.tar.gz`,
+`kaps-bench-results.tar.gz` and the `site-bundle*` files are moved as the suite
+wrote them. Only
 `qualify-result.json` is fit to attach to a pull request.
 
 When anything was built, the result is written from `plan-as-run.json`, so it
@@ -552,6 +554,7 @@ Planning needs `QUALIFY_E2E_NGC_ORG` whatever the registry, because
 | `QUALIFY_E2E_SITE_CONTROLLER_VERSION` | The plan's controller | The site controller version, in place of the one the plan names |
 | `SITE_DEPLOY_PATH_REF` | The controller's commit | The commit the deploy path is exported from |
 | `NVKE_CONTROLLER_NAMESPACE`, `NVKE_CONTROLLER_SERVICE` | `nvke-controller` | The name the controller is installed under. A release cut before the rename uses `nke-controller`. |
+| `E2E_KAPS_BENCH_DIR` | None | Absolute path of a kaps-bench folder holding the `kaps-bench` binary, `bin/helm` and `run-specs`. kaps-bench installs the Prometheus its run specs need, which stays for the following runs. A stream that lists `kapsBenchRunSpecs`, such as perf, needs it; at stage `full`, the only stage that runs them, the suite checks it before a machine is taken. CI stages it for the perf stream. |
 
 ### How it stays the same run as CI
 
@@ -768,7 +771,7 @@ job; `qualify local` runs the one stream you name.
 | `l40s` | Ubuntu 24.04 on L40S, amd64, at site-1 |
 | `dsx` | the DSX datahalls, except GB300 |
 | `dsx-gb300` | GB300 on the third DSX datahall |
-| `perf` | the performance stream on the NVKE Scale Forge site: CPU machines only, a three worker tenant |
+| `perf` | the performance stream on the NVKE Scale Forge site: CPU machines only, a three worker tenant with one monitoring node |
 | `full` | every Forge stream except the perf one: GB200 and L40S on Ubuntu 24.04 and 26.04 |
 
 The perf stream holds the NVKE Scale site for hours, so only a beta tag pushed
@@ -777,8 +780,13 @@ that takes its scope from the repository variable `QUALIFY_E2E_SCOPE` while it
 is `perf`, such as a `qualify-e2e` label run, runs it, and `full` leaves it
 out. A stream can also carry
 `parameters` in `release/policy.yaml`: the environment file it runs against,
-the workers its tenant gets, the suite's timeout and the TestGrid group it
-publishes to, which is `nvke-scale` for the perf stream. The plan records them,
+the workers its tenant gets, the monitoring nodes beside them
+(`monitoringWorkers`, one on the perf stream, kept for the benchmark's
+Prometheus), the suite's timeout, the TestGrid group it
+publishes to, which is `nvke-scale` for the perf stream, and the kaps-bench run
+specs (`kapsBenchRunSpecs`, such as `smoke/smoke-prometheus.yaml`) the suite runs on the
+tenant once its checks pass, where kaps-bench installs Prometheus in
+`monitoring` itself. The plan records them,
 and the stream's result says which it ran with. The job's timeout and the timeout of
 `go test` follow from the suite's, so they cannot be set to disagree.
 

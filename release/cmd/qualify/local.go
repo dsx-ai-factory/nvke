@@ -251,6 +251,7 @@ func runLocal(ctx context.Context, out io.Writer, o localOptions) error {
 		"SITE_DEPLOY_PATH_REF",
 		"NVKE_CONTROLLER_NAMESPACE",
 		"NVKE_CONTROLLER_SERVICE",
+		"E2E_KAPS_BENCH_DIR",
 	} {
 		l.env = append(l.env, name+"="+os.Getenv(name))
 	}

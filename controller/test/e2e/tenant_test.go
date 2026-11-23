@@ -39,6 +39,13 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/tenantauth"
 )
 
+const (
+	// workerRoleLabelKey marks the hardware tenant's workers when it has monitoring nodes beside them.
+	workerRoleLabelKey = "node-role.kubernetes.io/worker"
+	// monitoringRoleLabelKey marks the hardware tenant's monitoring nodes.
+	monitoringRoleLabelKey = "node-role.kubernetes.io/monitoring"
+)
+
 // clusterLifecycle creates a cluster, reads it back, and deletes it again.
 // *nvke.Client satisfies it and is every entry's default; the nvkectl entry
 // substitutes a CLI-backed implementation.
@@ -465,7 +472,7 @@ func nicoForgeTenant() testSpec {
 			// Cluster-level rather than a control-plane node pool: the site's controller
 			// rejects such a pool at create.
 			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
-			// No workerPools: the builder reads -e2e.tenant-workers, which is unparsed when this runs.
+			// No workerPools: the builder reads -e2e.tenant-workers and -e2e.monitoring-workers, unparsed when this runs.
 		},
 		// Generous next to the simulator lanes: these timeouts cover a bare
 		// machine booting an OS image over the network and installing
@@ -504,12 +511,43 @@ func nicoForgeTenant() testSpec {
 	}
 }
 
-// tenantWorkerPools returns the hardware tenant's one worker pool, or an error below one worker.
-func tenantWorkerPools(workers int) ([]nvke.NodePoolSpec, error) {
+// tenantWorkerPools returns the hardware tenant's worker pool, a tainted monitoring pool above 0, or an error.
+func tenantWorkerPools(workers, monitoring int) ([]nvke.NodePoolSpec, error) {
 	if workers < 1 {
 		return nil, fmt.Errorf("-e2e.tenant-workers is %d, and a hardware tenant needs at least 1", workers)
 	}
-	return []nvke.NodePoolSpec{{DesiredNodeCount: workers}}, nil
+	if monitoring < 0 {
+		return nil, fmt.Errorf("-e2e.monitoring-workers is %d, which is not a number of nodes", monitoring)
+	}
+	if monitoring == 0 {
+		return []nvke.NodePoolSpec{{DesiredNodeCount: workers}}, nil
+	}
+	return []nvke.NodePoolSpec{
+		{DesiredNodeCount: workers, NodeLabels: map[string]string{workerRoleLabelKey: ""}},
+		{
+			Name:             "monitoring",
+			NodeNamePrefix:   "m",
+			DesiredNodeCount: monitoring,
+			NodeLabels:       map[string]string{monitoringRoleLabelKey: ""},
+			NodeTaints:       []api.NodeTaint{{Key: "monitoring", Value: "true", Effect: api.NodeTaintEffectNoSchedule}},
+		},
+	}, nil
+}
+
+// tenantRoleLabelKeys returns the node-role label keys tenantWorkerPools sets, which the site controller must allowlist.
+func tenantRoleLabelKeys(monitoring int) []string {
+	if monitoring == 0 {
+		return nil
+	}
+	return []string{workerRoleLabelKey, monitoringRoleLabelKey}
+}
+
+// requireNoMonitoringWithGPURuntime refuses monitoring nodes when plan installs the GPU runtime.
+func requireNoMonitoringWithGPURuntime(plan tenantGPURuntimePlan, monitoring int) error {
+	if monitoring > 0 && plan.installs() {
+		return fmt.Errorf("-e2e.monitoring-workers is %d, and a tenant with monitoring nodes cannot take the GPU runtime -e2e.tenant-gpu-runtime installs for this run", monitoring)
+	}
+	return nil
 }
 
 // nicoDSXTenant is nicoForgeTenant on a DSX datahall: one control-plane node
@@ -551,6 +589,12 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 		AfterEach(func() { failed = failed || CurrentSpecReport().Failed() })
 
 		It("creates the cluster", func(ctx context.Context) {
+			if spec.validate.tenantChecks {
+				capabilities, capabilitiesErr := runCapabilities()
+				gpuRuntime := planTenantGPURuntime(tenantGPURuntime, capabilities, capabilitiesErr)
+				Expect(requireNoMonitoringWithGPURuntime(gpuRuntime, monitoringWorkers)).To(Succeed())
+				Expect(requireKapsBenchTools(kapsBenchRunSpecs, kapsBenchDir)).To(Succeed())
+			}
 			test = expectSucceed(setupTenantTest(ctx, expectSucceed(resolve()), spec.options))
 			if spec.createVia == clientNvkectl {
 				// Torn down in AfterAll. A DeferCleanup registered here would run
@@ -702,6 +746,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 					validateTenantGPURuntime(&test, gpuRuntime, tenantFailed)
 				}
 				validateTenant(laneTenantTarget(&test, tenantFailed), gpuRuntime.tenantSettings(laneTenantSettings, spec.shape, tenantWorkers))
+				if len(kapsBenchRunSpecs) > 0 {
+					validateTenantKapsBench(&test, tenantFailed)
+				}
 			}
 		})
 
@@ -1008,6 +1055,9 @@ type managementCluster struct {
 	// sets it, because only there does the release outlast the controller's
 	// own teardown by most of an hour. Nil waits for the cluster to go.
 	Instances terminationWaiter
+
+	// Secrets is every value the tenant's archives must not carry.
+	Secrets []string
 }
 
 // terminationWaiter is the part of the Forge provider the delete wait needs.
@@ -1048,7 +1098,7 @@ func configuredManagement() (managementCluster, error) {
 	if err != nil {
 		return managementCluster{}, fmt.Errorf("loading e2e config: %w", err)
 	}
-	return managementCluster{Kubeconfig: cfg.Kube.Kubeconfig, Context: cfg.Kube.Context}, nil
+	return managementCluster{Kubeconfig: cfg.Kube.Kubeconfig, Context: cfg.Kube.Context, Secrets: withheldFromEnvironment()}, nil
 }
 
 // setupTenantTest builds the per-backend wiring (clients, trust domain, logger)
@@ -1769,8 +1819,8 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nvke.Cluste
 	}, kubernetesVersion, versions[versionCNIOVN])
 	Expect(err).NotTo(HaveOccurred(), "should render the Forge node payloads")
 
-	// The worker count comes from -e2e.tenant-workers rather than shape.workerPools.
-	pools, err := tenantWorkerPools(tenantWorkers)
+	// Pools come from -e2e.tenant-workers and -e2e.monitoring-workers rather than shape.workerPools.
+	pools, err := tenantWorkerPools(tenantWorkers, monitoringWorkers)
 	Expect(err).NotTo(HaveOccurred(), "should build the tenant's worker pool")
 
 	return nvke.ClusterSpec{
@@ -1895,6 +1945,8 @@ func forgeNodePoolSpecs(
 			SubnetIDs:      optionalStrings(pool.SubnetIDs, site.SubnetID),
 			VpcPrefixIDs:   optionalStrings(pool.VpcPrefixIDs, site.VpcPrefixID),
 			SSHKeyGroupIDs: defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
+			NodeLabels:     pool.NodeLabels,
+			NodeTaints:     pool.NodeTaints,
 		})
 	}
 	return out
@@ -2055,8 +2107,8 @@ func nicoDSXSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 	}, kubernetesVersion, versions[versionCNIOVN])
 	Expect(err).NotTo(HaveOccurred(), "should render the node payloads")
 
-	// The worker count comes from -e2e.tenant-workers rather than shape.workerPools.
-	pools, err := tenantWorkerPools(tenantWorkers)
+	// Pools come from -e2e.tenant-workers and -e2e.monitoring-workers rather than shape.workerPools.
+	pools, err := tenantWorkerPools(tenantWorkers, monitoringWorkers)
 	Expect(err).NotTo(HaveOccurred(), "should build the tenant's worker pool")
 
 	return nvke.ClusterSpec{
@@ -2102,6 +2154,8 @@ func dsxNodePoolSpecs(
 			VpcPrefixIDs:         optionalStrings(pool.VpcPrefixIDs, site.VpcPrefixID),
 			AutoNetwork:          site.AutoNetwork,
 			SSHKeyGroupIDs:       defaultStrings(pool.SSHKeyGroupIDs, site.SSHKeyGroupID),
+			NodeLabels:           pool.NodeLabels,
+			NodeTaints:           pool.NodeTaints,
 		})
 	}
 	return out

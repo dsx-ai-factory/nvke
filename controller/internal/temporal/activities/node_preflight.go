@@ -7,16 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
 	"strings"
 
-	"github.com/blang/semver/v4"
 	"github.com/google/uuid"
-	"go.temporal.io/sdk/activity"
-	"go.temporal.io/sdk/log"
 	"go.temporal.io/sdk/temporal"
-	"google.golang.org/grpc/codes"
-	"google.golang.org/grpc/status"
 
 	nvkeproto "github.com/dsx-ai-factory/nvke/agent/pkg/agent/proto"
 
@@ -24,11 +18,10 @@ import (
 )
 
 const (
-	capdBootstrapSuccessPath           = "/run/cluster-api/bootstrap-success.complete"
-	minCloudInitStatusPreflightVersion = "0.1.24"
-	nodePreflightStatusNotReady        = "notready"
-	nodePreflightStatusReady           = "ready"
-	nodePreflightNotReadyErrorType     = "NodePreflightNotReady"
+	capdBootstrapSuccessPath       = "/run/cluster-api/bootstrap-success.complete"
+	nodePreflightStatusNotReady    = "notready"
+	nodePreflightStatusReady       = "ready"
+	nodePreflightNotReadyErrorType = "NodePreflightNotReady"
 )
 
 type NodePreflightInput struct {
@@ -43,7 +36,7 @@ func (a *Activities) NodePreflight(ctx context.Context, input NodePreflightInput
 		UpdateCondition: a.nodeProvisioningConditionMessageUpdater(input.NodeID),
 		RenderError:     messageForTemporalError,
 		ActivityBody: func() (struct{}, error) {
-			return struct{}{}, a.nodePreflight(ctx, input.NodeID, activity.GetLogger(ctx))
+			return struct{}{}, a.nodePreflight(ctx, input.NodeID)
 		},
 	}
 
@@ -51,31 +44,25 @@ func (a *Activities) NodePreflight(ctx context.Context, input NodePreflightInput
 	return err
 }
 
-func (a *Activities) nodePreflight(ctx context.Context, nodeID uuid.UUID, logger log.Logger) error {
+func (a *Activities) nodePreflight(ctx context.Context, nodeID uuid.UUID) error {
 	node, err := a.db.GetNode(ctx, nodeID)
 	if err != nil {
 		return fmt.Errorf("failed to get node: %w", err)
 	}
 
-	agentVersion, err := a.nodeAgentClient.GetAgentVersion(ctx, node)
-	if err != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return ctxErr
+	// Readiness normally populates AgentVersion, but health checks can be disabled.
+	// In that case, discover the version for this request without persisting it.
+	if strings.TrimSpace(node.AgentVersion) == "" {
+		node.AgentVersion, err = a.nodeAgentClient.GetAgentVersion(ctx, node)
+		if err != nil {
+			return fmt.Errorf("failed to get agent version for node %s: %w", node.Name, err)
 		}
-		if status.Code(err) != codes.Unavailable {
-			return err
-		}
-		return nodePreflightNotReadyError(
-			fmt.Sprintf("node agent is not ready on node %s", node.Name),
-			err,
-		)
 	}
-
-	// agent versions before v0.1.24 do not have nvkeproto.CheckCloudInitStatus.
-	// So the only preflight gate was on agent connectivity.
-	if !nodeAgentVersionAtLeast(agentVersion, minCloudInitStatusPreflightVersion, false) {
-		logger.Info("node agent version predates strict node preflight checks", "nodeID", node.ID, "nodeName", node.Name, "agentVersion", agentVersion)
-		return nil
+	if strings.TrimSpace(node.AgentVersion) == "" {
+		return nodePreflightNotReadyError(
+			fmt.Sprintf("node agent version is not populated on node %s", node.Name),
+			nil,
+		)
 	}
 
 	req, err := a.nodePreflightRequestForNode(ctx, node)
@@ -109,46 +96,6 @@ func nodePreflightNotReadyError(message string, cause error) error {
 			Category: temporal.ApplicationErrorCategoryBenign,
 		},
 	)
-}
-
-func nodeAgentVersionAtLeast(version, minVersion string, defaultOnParseError bool) bool {
-	current, err := semver.ParseTolerant(normalizeNodeAgentVersion(version))
-	if err != nil {
-		return defaultOnParseError
-	}
-	minimum, err := semver.ParseTolerant(minVersion)
-	if err != nil {
-		return defaultOnParseError
-	}
-	return current.GTE(minimum)
-}
-
-func normalizeNodeAgentVersion(version string) string {
-	version = strings.TrimPrefix(strings.TrimSpace(version), "v")
-	parts := strings.Split(version, "-")
-	if len(parts) == 2 && parts[1] == "dirty" {
-		return parts[0]
-	}
-	if len(parts) >= 3 {
-		if _, err := strconv.Atoi(parts[1]); err == nil &&
-			strings.HasPrefix(parts[2], "g") &&
-			isHexString(strings.TrimPrefix(parts[2], "g")) {
-			return parts[0]
-		}
-	}
-	return version
-}
-
-func isHexString(value string) bool {
-	if value == "" {
-		return false
-	}
-	for _, char := range value {
-		if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
-			return false
-		}
-	}
-	return true
 }
 
 func (a *Activities) nodePreflightRequestForNode(ctx context.Context, node db.Node) (*nvkeproto.ExecuteNodePreflightRequest, error) {

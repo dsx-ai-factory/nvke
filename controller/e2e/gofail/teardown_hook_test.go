@@ -113,9 +113,9 @@ func TestGofailTeardownHookBlocksUnlessForceUnreachable(t *testing.T) {
 	require.False(t, scheduled,
 		"normal teardown skipped a failing beforeRemoveNode hook; the hooks protect data and must keep blocking")
 
-	describe, err := server.Client().DescribeWorkflowExecution(ctx, blockedRun.GetID(), blockedRun.GetRunID())
+	describe, err := server.Client().DescribeWorkflow(ctx, blockedRun.GetID(), blockedRun.GetRunID())
 	require.NoError(t, err)
-	status := describe.GetWorkflowExecutionInfo().GetStatus()
+	status := describe.RawResponse.GetWorkflowExecutionInfo().GetStatus()
 
 	blockedAttempts, err := hookActivityAttempts(ctx, server.Client(), blockedRun)
 	require.NoError(t, err)

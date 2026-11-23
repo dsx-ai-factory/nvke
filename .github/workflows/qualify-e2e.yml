@@ -712,6 +712,8 @@ jobs:
       # Writing the site node's SSH key is for a workstation: on a runner it
       # would sit beside the files the artifacts step uploads.
       NODE_KEY_DIR: ""
+      # Only a stream with kaps-bench run specs names this folder, copied out of the kaps-bench image.
+      E2E_KAPS_BENCH_DIR: ${{ matrix.kaps_bench_run_specs != '' && format('{0}/.kaps-bench', github.workspace) || '' }}
       # ghcr or nvcr. Only the runner pulls from it: every image it names is
       # staged onto the node as an archive. The node's own pull is CAPNICo,
       # which is published to GHCR alone, so the GHCR login below stays either
@@ -968,9 +970,10 @@ jobs:
       # An NGC key with pull access on the QUALIFY_E2E_NGC_ORG org's registry.
       # Separate from FORGE_API_KEY because NGC cannot scope one key to both
       # the Forge tenant and the registry. The runner is the only thing that
-      # pulls with it: nothing on the node pulls from NVCR.
+      # pulls with it, the site images and the kaps-bench image alike: nothing
+      # on the node pulls from NVCR.
       - name: Log in to NVCR
-        if: env.SITE_IMAGE_REGISTRY == 'nvcr'
+        if: env.SITE_IMAGE_REGISTRY == 'nvcr' || env.E2E_KAPS_BENCH_RUN_SPECS != ''
         uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: nvcr.io
@@ -985,6 +988,22 @@ jobs:
         uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
         with:
           version: ${{ steps.oras.outputs.version }}
+
+      - name: Stage kaps-bench
+        if: env.E2E_KAPS_BENCH_RUN_SPECS != ''
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          image="$(make --no-print-directory print-KAPS_BENCH_IMAGE)"
+          echo "kaps-bench image: ${image}"
+          container="$(docker create --pull always --platform linux/amd64 "${image}")"
+          echo "kaps-bench digest: $(docker image inspect --format '{{index .RepoDigests 0}}' "${image}")"
+          trap 'docker rm "${container}" >/dev/null' EXIT
+          rm -rf "${E2E_KAPS_BENCH_DIR}"
+          docker cp "${container}:/kaps-bench" "${E2E_KAPS_BENCH_DIR}"
+          docker cp "${container}:/usr/local/bin/kaps-bench" "${E2E_KAPS_BENCH_DIR}/kaps-bench"
+          cd "${E2E_KAPS_BENCH_DIR}"
+          ./kaps-bench list-run-specs
 
       # Probed here, after the logins, because the GHCR package is private,
       # so a missing tag fails before a machine is taken.
@@ -1093,7 +1112,7 @@ jobs:
 
       - name: Set up Helm
         if: env.DRY_RUN != 'true' && env.TENANT_GPU_RUNTIME == 'true'
-        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
         with:
           version: ${{ steps.gpu-runtime-tools.outputs.helm }}
 
@@ -1344,7 +1363,9 @@ jobs:
             "perf jump host|FORGE_PERF_JUMP_HOST|||"
             "stream environment|E2E_ENVIRONMENT|||"
             "tenant workers|E2E_TENANT_WORKERS|||"
+            "monitoring workers|E2E_MONITORING_WORKERS|||"
             "suite timeout minutes|SUITE_TIMEOUT_MINUTES|||"
+            "kaps-bench run specs|E2E_KAPS_BENCH_RUN_SPECS|||"
           )
 
           # A row nobody remembers to add is the whole failure mode: the
@@ -1597,6 +1618,8 @@ jobs:
       # redaction could not be shown clean and the suite kept the archive
       # back. The name carries the attempt, as the other lanes' do, so a
       # re-run's upload does not collide with the first attempt's.
+      #
+      # kaps-bench-results.tar.gz is kaps-bench's output dir, redacted on the runner before it is written.
       - name: Upload the run log
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -1608,6 +1631,7 @@ jobs:
             controller/test/e2e/nvkectl-diagnostics.tar.gz
             controller/test/e2e/tenant-diagnostics.json
             controller/test/e2e/site-cluster-state.txt
+            controller/test/e2e/kaps-bench-results.tar.gz
             controller/test/e2e/site-bundle*
             qualify-result.json
             ${{ runner.temp }}/run-inputs.txt
