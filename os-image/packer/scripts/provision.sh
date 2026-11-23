@@ -110,6 +110,20 @@ sudo systemctl mask ovs-exporter.service
 # Ubuntu's package enables openvswitch-switch.service; DOCA's postinst does not.
 sudo systemctl enable openvswitch-switch.service
 
+# The boot configuration: the tool that points the kernel console at a serial
+# device, so boot messages and the disk-unlock prompt reach a serial console and
+# a BMC as well as the VGA framebuffer. The device is the build's choice (the
+# architecture default, or SERIAL_CONSOLE), so the package carries the tool and
+# this passes it the device. It writes the grub drop-in and runs update-grub.
+SERIAL_CONSOLE="${SERIAL_CONSOLE:?SERIAL_CONSOLE is required}"
+boot_deb="$(find "${SRC}/debs" -maxdepth 1 -type f -name 'nvke-node-boot_*.deb' -print -quit 2>/dev/null || true)"
+if [[ -z "${boot_deb}" ]]; then
+  echo "no nvke-node-boot deb in ${SRC}/debs; the image would have no serial console" >&2
+  exit 1
+fi
+sudo dpkg -i "${boot_deb}"
+sudo /usr/lib/nvke/configure-console.sh "${SERIAL_CONSOLE}"
+
 # Give cloud-image importers a stable root-filesystem identifier. Do not rely
 # on a device path because it can change between the build VM and a target.
 root_device="$(findmnt -n -o SOURCE /)"

@@ -61,6 +61,7 @@ class ComposeImageInputsTest(unittest.TestCase):
             ("ovn", "ovn.deb"),
             ("spire-agent", "spire-agent_1.0_all.deb"),
             ("doca-ovs", "doca-openvswitch-switch_1.0_all.deb"),
+            ("nvke-node-boot", "nvke-node-boot_1.0_all.deb"),
         ):
             write_package_archive(self.materials / binding, name)
         for name in ("nvke-agent-spire.conf", "wait-spiffe-socket.sh",
@@ -125,6 +126,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                 "debs/ovn.deb",
                 "debs/spire-agent_1.0_all.deb",
                 "debs/doca-openvswitch-switch_1.0_all.deb",
+                "debs/nvke-node-boot_1.0_all.deb",
                 "nvke-agent-spire.conf",
                 "nvke-agent.deb",
                 "wait-spiffe-socket.sh",
@@ -180,10 +182,12 @@ class ComposeImageInputsTest(unittest.TestCase):
         require_real_tools(self, "dpkg-deb", "dpkg-scanpackages")
         (self.tools / "dpkg-scanpackages").unlink()
         (self.tools / "dpkg-deb").unlink()
-        for number, binding in enumerate(("agent", "calico", "kubeadm-distro", "ovn", "spire-agent", "doca-ovs")):
+        for number, binding in enumerate(
+                ("agent", "calico", "kubeadm-distro", "ovn", "spire-agent", "doca-ovs", "nvke-node-boot")):
             name = "fixture-shared" if number in (1, 2) else {
                 "spire-agent": "spire-agent",
                 "doca-ovs": "doca-openvswitch-switch",
+                "nvke-node-boot": "nvke-node-boot",
             }.get(binding, f"fixture-{binding}")
             package = self.root / f"package-{number}"
             control = package / "DEBIAN"
@@ -523,8 +527,20 @@ class ComposeImageInputsTest(unittest.TestCase):
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("exactly one doca-openvswitch-switch_*.deb", result.stderr)
 
+    def test_nvke_node_boot_cardinality(self):
+        for filenames in (("other.deb",), ("nvke-node-boot_1_all.deb", "nvke-node-boot_2_all.deb")):
+            with self.subTest(filenames=filenames):
+                with tarfile.open(self.materials / "nvke-node-boot", "w") as archive:
+                    for name in filenames:
+                        member = tarfile.TarInfo(name)
+                        member.size = 1
+                        archive.addfile(member, io.BytesIO(b"x"))
+                result = self.run_compose(self.root / "boot.tar")
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn("exactly one nvke-node-boot_*.deb", result.stderr)
+
     def test_missing_files_and_unsafe_outputs(self):
-        for relative in ("materials/ovn", "materials/agent", "source-files/nvke-agent-spire.conf",
+        for relative in ("materials/ovn", "materials/agent", "materials/nvke-node-boot", "source-files/nvke-agent-spire.conf",
                          "source-files/wait-spiffe-socket.sh", "source-files/conntrack-tune.service",
                          "source-files/configure-conntrack.sh", "source-files/10-nke-conntrack-timeouts.conf",
                          "source-files/99-disable-network-config.cfg", "source-files/00-dhcp-all.yaml"):

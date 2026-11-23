@@ -1,0 +1,17 @@
+#!/bin/sh
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Remove leaves the console setting in place, as it does a conffile: removing
+# the tool is not a request to lose a node's serial console. Purge takes back the
+# file the tool generated, which dpkg does not own, and regenerates grub.cfg.
+set -e
+
+case "$1" in
+purge)
+  if [ -e /etc/default/grub.d/50-nvke-console.cfg ]; then
+    rm -f /etc/default/grub.d/50-nvke-console.cfg
+    update-grub >/dev/null 2>&1 || true
+  fi
+  ;;
+esac

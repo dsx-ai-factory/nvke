@@ -148,8 +148,8 @@ iPXE `luks.key=` kernel parameter. `luks-tpm-firstboot.sh` strips
 `luks.key=` from GRUB once the TPM bind succeeds, so a later boot against a
 different TPM has no fallback and correctly fails to unlock.
 
-The autoinstall layout also bakes `console=tty0 console=ttyS0,115200` into
-GRUB, so boot and kernel messages — including
+The image also bakes `console=tty0 console=ttyS0,115200` into GRUB
+(`nvke-node-boot`'s `configure-console.sh`, run by `provision.sh`), so boot and kernel messages — including
 the LUKS unlock prompt on a boot that *doesn't* have `luks.key=` anymore —
 reach a serial console (`virsh console`, `-nographic`, real BMC/SOL access)
 and not just the VGA framebuffer. Earlier revisions of this variant shipped
