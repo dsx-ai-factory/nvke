@@ -21,7 +21,7 @@ We will authorize every request to an NVKE API through one shared library, [`aut
 Requests the Kubernetes API server authorizes are out of scope, and keep Kubernetes RBAC.
 
 - Every API asks `auth/authz` for each decision. No API calls a policy engine or an authorization service itself.
-- A backend implements the library's `Authorizer` interface. The deployer picks the backend in configuration. Changing the backend changes no API code.
+- A backend implements the library's `Authorizer` interface. `localbundle` is the only backend today, and nothing selects one yet; a later change adds that to configuration. Changing the backend changes no API code.
 - The standalone backend, [`localbundle`](../../auth/authz/localbundle/localbundle.go), evaluates Cedar policy from files the deployer mounts. Its typed configuration, `AuthorizationConfiguration`, is a public contract that a person or an automated system can write. A new field is optional. Removing or renaming a field needs a new `apiVersion`. A ConfigMap carries the document today, and a custom resource could carry it later.
 - Managed-service backends are not built. One will call any authorization service through a standard decision API, such as [OpenID AuthZEN](https://openid.net/specs/authorization-api-1_0.html). An IAM service with its own API gets its own backend.
 - The library holds the rules every backend must apply, such as tenant isolation. Its [conformance suite](../../auth/authz/authztest/conformance.go) tests each backend against them.
@@ -42,7 +42,7 @@ The same API runs on a laptop with mounted files and as a managed service under 
 
 Supporting a new authorization service takes one backend, not a change to every API.
 
-Tenant isolation depends on each backend applying the library's rules. The conformance suite catches a backend that skips them, but the library does not re-check an allow at run time. NVKE supports only the backends it ships and tests. A backend that passes the suite elsewhere is supported by whoever runs it.
+Tenant isolation depends on each backend applying the library's rules. The conformance suite catches a backend that skips them, but the library does not re-check an allow at run time. NVKE supports only the backends it ships and tests. A backend that passes the suite elsewhere is supported by whoever runs it. In permissive mode the library serves every request and a list returns every tenant, so tenant isolation holds only while authorization enforces. An enforcing API refuses a request with no authenticated caller.
 
 The interface carries only what every backend can answer. A feature that only one IAM service offers waits until the interface carries it for every backend.
 
