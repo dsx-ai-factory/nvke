@@ -12,7 +12,7 @@ NVKE runs in two kinds of environment:
 
 An API that takes its decisions from one source cannot run in the other environment. An API that writes its own authorization also repeats shared rules, such as tenant isolation, and can get them wrong.
 
-Callers reach authorization already authenticated, as [`20261106-configuration-driven-jwt-authentication.md`](20261106-configuration-driven-jwt-authentication.md) describes. That record also defines NVKE APIs.
+When authentication is enforcing, callers reach authorization already authenticated, as [`20261106-configuration-driven-jwt-authentication.md`](20261106-configuration-driven-jwt-authentication.md) describes. That record also defines NVKE APIs, and its chart default leaves authentication off; see Consequences for what that means here.
 
 ## Decision
 
@@ -21,6 +21,7 @@ We will authorize every request to an NVKE API through one shared library, [`aut
 Requests the Kubernetes API server authorizes are out of scope, and keep Kubernetes RBAC.
 
 - Every API asks `auth/authz` for each decision. No API calls a policy engine or an authorization service itself.
+- Probes (`/healthz` and `/readyz`) are not operations in an API's specification, so they skip authorization as they skip authentication.
 - A backend implements the library's `Authorizer` interface. `localbundle` is the only backend today, and nothing selects one yet; a later change adds that to configuration. Changing the backend changes no API code.
 - The standalone backend, [`localbundle`](../../auth/authz/localbundle/localbundle.go), evaluates Cedar policy from files the deployer mounts. Its typed configuration, `AuthorizationConfiguration`, is a public contract that a person or an automated system can write. A new field is optional. Removing or renaming a field needs a new `apiVersion`. A ConfigMap carries the document today, and a custom resource could carry it later.
 - Managed-service backends are not built. One will call any authorization service through a standard decision API, such as [OpenID AuthZEN](https://openid.net/specs/authorization-api-1_0.html). An IAM service with its own API gets its own backend.
