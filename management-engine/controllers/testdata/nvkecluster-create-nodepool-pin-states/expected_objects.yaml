@@ -212,5 +212,6 @@ items:
         version: 1.36.3
       id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
       name: workers-unpinned
+      replicas: 2147483647
     observedGeneration: 1
 metadata: {}

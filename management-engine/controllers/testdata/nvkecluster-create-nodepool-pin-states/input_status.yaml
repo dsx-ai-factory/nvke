@@ -13,3 +13,7 @@ nodePools:
   currentRelease:
     name: worker-deprecated-release
     version: "1.36.2"
+- name: workers-unpinned
+  replicas: 7
+  readyReplicas: 6
+  updatedReplicas: 5

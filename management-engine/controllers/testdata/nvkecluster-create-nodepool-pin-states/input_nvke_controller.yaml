@@ -88,6 +88,10 @@ nodePools:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     name: workers-unpinned
     desiredNodeCount: 1
+    # Preserve the int32 maximum; invalid counts must clear stale status values.
+    observedNodeCount: 2147483647
+    readyNodeCount: -1
+    updatedNodeCount: 2147483648
     conditions:
       provisioned:
         status: "True"

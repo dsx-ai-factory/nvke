@@ -6,12 +6,8 @@
 package controllers
 
 import (
-	"math"
-	"testing"
-
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
-	"github.com/stretchr/testify/require"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/cluster-api/util/conditions"
@@ -118,22 +114,3 @@ var _ = fixture.DescribeCaseSet(controllerCaseSet(
 		})
 	},
 ))
-
-func TestNodePoolReplicaCount(t *testing.T) {
-	for _, tt := range []struct {
-		name  string
-		count *int
-		want  *int32
-	}{
-		{name: "unknown"},
-		{name: "zero", count: new(0), want: new(int32(0))},
-		{name: "observed", count: new(5), want: new(int32(5))},
-		{name: "maximum", count: new(int(math.MaxInt32)), want: new(int32(math.MaxInt32))},
-		{name: "negative", count: new(-1)},
-		{name: "overflow", count: new(int(math.MaxInt32) + 1)},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, nodePoolReplicaCount(tt.count))
-		})
-	}
-}
