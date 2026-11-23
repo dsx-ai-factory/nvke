@@ -632,6 +632,11 @@ type CreateClusterRequest struct {
 	// for a NICo cluster. `launchLayer` is required for a LaunchLayer cluster.
 	ControlPlaneConfig *CreateClusterControlPlaneConfig `json:"controlPlaneConfig,omitempty"`
 
+	// EnableCPNodeRecycling When true, control-plane upgrades and configuration changes replace nodes
+	// automatically. When false, the default, nodes needing replacement are reported as
+	// pending and wait for an operator.
+	EnableCPNodeRecycling *bool `json:"enableCPNodeRecycling,omitempty"`
+
 	// Infra CAPI infrastructure fields for a cluster: the caller supplies the CAPI manifests
 	// directly. Not to be used merely because a cluster is provisioned through CAPI —
 	// `nico` clusters may be too. Mutually exclusive with `nico`.

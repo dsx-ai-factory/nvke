@@ -2367,6 +2367,33 @@ func TestDbClusterFromAPI_NestedProvidersReachTheStoredCluster(t *testing.T) {
 	})
 }
 
+func TestDbClusterFromAPI_EnableCPNodeRecycling(t *testing.T) {
+	boolPtr := func(b bool) *bool { return &b }
+	cases := []struct {
+		name  string
+		input *bool
+		want  bool
+	}{
+		{name: "unset defaults to false", input: nil, want: false},
+		{name: "explicit false is stored as false", input: boolPtr(false), want: false},
+		{name: "explicit true is stored as true", input: boolPtr(true), want: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := &api.CreateClusterRequest{
+				Name:                          "recycle",
+				ControlPlaneKubernetesVersion: "1.31.0",
+				CniPlugin:                     "cilium",
+				EnableCPNodeRecycling:         tc.input,
+			}
+
+			cluster, err := server.DBClusterFromAPI(req)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, cluster.EnableCPNodeRecycling)
+		})
+	}
+}
+
 func TestApiClusterFromDB_OmitsMissingProviderPayload(t *testing.T) {
 	// The nico mapper reads the JSONB payload, so a row whose payload has not
 	// been stamped yet emits nico:null rather than inventing one.

@@ -1497,17 +1497,22 @@ func DBClusterFromAPI(req *api.CreateClusterRequest) (db.Cluster, error) {
 	if req.CniVersion != nil {
 		cniVersion = strings.TrimSpace(*req.CniVersion)
 	}
+	var enableCPNodeRecycling bool
+	if req.EnableCPNodeRecycling != nil {
+		enableCPNodeRecycling = *req.EnableCPNodeRecycling
+	}
 	cniPlugin := db.EffectiveCNIPlugin(db.CniPlugin(req.CniPlugin))
 	controlPlaneVIP := strings.TrimSpace(req.ControlPlaneVIP)
 
 	cluster := db.Cluster{
-		Name:              req.Name,
-		CniPlugin:         cniPlugin,
-		CniVersion:        db.EffectiveCNIVersion(cniPlugin, cniVersion),
-		EtcdEncrypted:     req.EtcdEncrypted,
-		KubernetesVersion: req.ControlPlaneKubernetesVersion,
-		ControlPlaneVIP:   controlPlaneVIP,
-		TeleportEnabled:   teleportEnabled,
+		Name:                  req.Name,
+		CniPlugin:             cniPlugin,
+		CniVersion:            db.EffectiveCNIVersion(cniPlugin, cniVersion),
+		EtcdEncrypted:         req.EtcdEncrypted,
+		KubernetesVersion:     req.ControlPlaneKubernetesVersion,
+		ControlPlaneVIP:       controlPlaneVIP,
+		TeleportEnabled:       teleportEnabled,
+		EnableCPNodeRecycling: enableCPNodeRecycling,
 
 		Conditions: db.ClusterConditions{
 			Provisioning:          db.NewCondition(true, "Starting provisioning"),
