@@ -87,7 +87,7 @@ checksum is verified. `curl`, `gpg`, `gzip`, `sha256sum` and `tar` must be on
 | Variable | Default | Purpose |
 |---|---|---|
 | `K8S_VERSIONS` | `v1.37.2 v1.36.3 v1.35.3 v1.34.2` | Kubernetes releases to build |
-| `DEB_REVISION` | `2` | Debian packaging revision; the Kubernetes patch is in the package name |
+| `DEB_REVISION` | `3` | Debian packaging revision; the Kubernetes patch is in the package name |
 | `LOCK_DIR` | `./lock` | The committed lock files |
 | `DIST_DIR` | `./dist` | Artifact cache. Anything that still hashes to its lock entry is reused offline; anything else is re-downloaded and re-verified |
 
