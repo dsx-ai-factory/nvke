@@ -84,7 +84,7 @@ jobs:
       # asks for the highest of its members. go.work went to 1.26.6 while
       # cli/go.mod stayed on 1.26.5, and build-cross failed on every cli/v* tag.
       - name: Set up Go
-        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.work
 
