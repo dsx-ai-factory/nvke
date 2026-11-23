@@ -100,6 +100,9 @@ if [[ -n "${DOCA_VERSION:-}" ]]; then
 fi
 make -C "${repo_root}/os-image/packages/doca-ovs" debs "${doca_args[@]}"
 
+echo "building nvke-node-boot deb (${repo_root}/os-image/packages/nvke-node-boot)"
+make -C "${repo_root}/os-image/packages/nvke-node-boot" debs OUT_DIR="${ARTIFACTS_DIR}/debs"
+
 files_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../files" && pwd)"
 install -m 0644 "${files_dir}/nvke-agent-spire.conf" "${ARTIFACTS_DIR}/nvke-agent-spire.conf"
 install -m 0644 "${files_dir}/00-dhcp-all.yaml" "${ARTIFACTS_DIR}/00-dhcp-all.yaml"

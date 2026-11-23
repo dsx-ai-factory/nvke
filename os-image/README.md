@@ -107,8 +107,10 @@ control-plane hardware uses the second UART:
 make -C os-image/packer os-image-non-fde SERIAL_CONSOLE=ttyS1
 ```
 
-The image writes `console=tty0 console=<value>,115200` to
-`/etc/default/grub.d/99-console.cfg`. The **last** `console=` owns
+`provision.sh` installs the `nvke-node-boot` package and runs its
+`configure-console.sh` with that device. The script writes
+`console=tty0 console=<value>,115200` to
+`/etc/default/grub.d/50-nvke-console.cfg` and runs `update-grub`. The **last** `console=` owns
 `/dev/console`, so the serial one is the owner and the getty follows it.
 
 Only the installed system moves; the installer keeps the first UART, where the
@@ -117,7 +119,8 @@ in `run-vm`/`boot-smoke`'s serial view — QEMU gives the guest one UART — but
 those tools check over SSH and still pass.
 
 Packer validates against `^tty[A-Za-z0-9]+$`. That is a boundary, not a typo
-check: the value reaches a shell command in the autoinstall late-commands.
+check: the value is written into a file grub sources as shell. `configure-console.sh`
+applies the same pattern again, so it is also enforced on the node.
 
 Image baking uses the existing package Make targets.
 `NKE_PACKAGE_BUILDER=auto|host|nix` picks the package builder: `auto` builds on

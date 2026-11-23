@@ -36,7 +36,14 @@ if [[ -z "${QCOW}" ]]; then
 fi
 SSH_KEY="${SSH_KEY:-${ROOT}/.ssh/id_ed25519}"
 SSH_PORT="${SSH_PORT:-2222}"
-nvke_qemu_env "$(nke_arch_from_qcow "${QCOW}")"
+smoke_arch="$(nke_arch_from_qcow "${QCOW}")"
+nvke_qemu_env "${smoke_arch}"
+# The serial device the image was built with: SERIAL_CONSOLE when the build
+# overrode it, else the architecture default. Same defaults as packer/locals.pkr.hcl.
+case "${smoke_arch}" in
+  arm64) expected_console="${SERIAL_CONSOLE:-ttyAMA0}" ;;
+  *) expected_console="${SERIAL_CONSOLE:-ttyS0}" ;;
+esac
 OVMF_CODE="${OVMF_CODE:-${EFI_CODE_DEFAULT}}"
 OVMF_VARS_TEMPLATE="${OVMF_VARS_TEMPLATE:-${EFI_VARS_DEFAULT}}"
 ROOT_FS_LABEL="${ROOT_FS_LABEL:-cloudimg-rootfs}"
@@ -132,10 +139,11 @@ echo "boot-smoke: VM booted and completed cloud-init OK"
 timeout 30 ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=5 -o BatchMode=yes \
-    ubuntu@127.0.0.1 bash -s -- "${ROOT_FS_LABEL}" "${target_disk_bytes}" <<'EOF'
+    ubuntu@127.0.0.1 bash -s -- "${ROOT_FS_LABEL}" "${target_disk_bytes}" "${expected_console}" <<'EOF'
 set -euo pipefail
 root_fs_label=$1
 target_disk_bytes=$2
+expected_console=$3
 test "$(findmnt -n -o LABEL /)" = "${root_fs_label}"
 systemctl is-active lvm-growth-firstboot.service
 root_bytes=$(df -B1 --output=size / | tail -n 1 | tr -d ' ')
@@ -203,6 +211,18 @@ id -u spire >/dev/null
 test "$(. /etc/spire-agent/spire-agent.env; echo "${TPM_PLUGIN_CHECKSUM}")" \
     = "$(sha256sum /usr/local/lib/spire-agent/tpm_attestor_agent | cut -d' ' -f1)"
 grep -Fq -- -expandEnv /lib/systemd/system/spire-agent.service
+# The serial console comes from nvke-node-boot's configure-console.sh. dpkg owns
+# the script; the drop-in it generated names the device this image's
+# architecture (or SERIAL_CONSOLE) calls for, and the kernel is running with it
+# after console=tty0. A wrong default would pass a check that only looked for
+# some tty. The late-command's old file must be gone, because it sorts after the
+# new one and would win.
+dpkg-query -W -f='${Status}\n' nvke-node-boot | grep -Fxq 'install ok installed'
+test "$(dpkg-query -S /usr/lib/nvke/configure-console.sh | cut -d: -f1)" = nvke-node-boot
+grep -Fxq "GRUB_CMDLINE_LINUX=\"console=tty0 console=${expected_console},115200\"" /etc/default/grub.d/50-nvke-console.cfg
+test ! -e /etc/default/grub.d/99-console.cfg
+grep -Eq '(^| )console=tty0( |$)' /proc/cmdline
+grep -Fq " console=${expected_console},115200 " <<<" $(cat /proc/cmdline) "
 # Persistent upload scratch must not remain in the golden image.
 test ! -e /var/tmp/nke-image
 

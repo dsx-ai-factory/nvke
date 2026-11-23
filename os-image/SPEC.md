@@ -147,7 +147,7 @@ It satisfies everything above, plus:
 | Passphrase removal | The build-time LUKS passphrase slot is removed once the TPM bind is verified unsealable. After that, the volume unlocks **only** via that node's TPM — moving the disk to different hardware, or losing the TPM state, makes it unrecoverable by design. |
 | No key material off-image | The only secret on the cidata/autoinstall medium is the shared build-time passphrase (documented default, not a per-node secret); no per-node key, join token, or TPM-derived material is ever written to cloud-init, user-data, or the genesis medium. |
 | Unattended first unlock | `GRUB_CMDLINE_LINUX_DEFAULT` carries `luks.key=<passphrase>` (build-time, same shared default) until `luks-tpm-firstboot.sh` strips it post-bind; `files/luks/luks-cmdline-script` reads it. Matches how production feeds an iPXE `luks.key=` kernel parameter. |
-| Serial console | `GRUB_CMDLINE_LINUX` carries `console=tty0 console=ttyS0,115200`, so boot/kernel messages (including any LUKS prompt) reach a serial console, not only the VGA framebuffer. |
+| Serial console | `nvke-node-boot`'s `configure-console.sh` writes `/etc/default/grub.d/50-nvke-console.cfg`, so `GRUB_CMDLINE_LINUX` carries `console=tty0 console=ttyS0,115200` (`ttyAMA0` on arm64, or the build's `SERIAL_CONSOLE`). Boot/kernel messages (including any LUKS prompt) reach a serial console, not only the VGA framebuffer. |
 | Node replacement | Each new node image boot re-runs first-boot binding against its own local TPM — no old-TPM/new-TPM migration step exists or is needed. |
 
 ## Must have (non-FDE variant, no encryption)
@@ -160,7 +160,7 @@ parity is intentional.
 |---|---|
 | Root volume | Plain LVM (`ubuntu-vg`/`ubuntu-lv`), no LUKS container. The root filesystem has a configurable cloud-image label. Its default is `cloudimg-rootfs`. |
 | Storage growth | `lvm-growth-firstboot.service` grows the partition, PV, LV, and filesystem to the target disk's full size on first boot. |
-| Serial console | Same `console=tty0 console=ttyS0,115200` GRUB parameter as the FDE variant (installer-based images otherwise carry no `console=` at all). |
+| Serial console | Same `console=tty0 console=ttyS0,115200` GRUB parameter as the FDE variant, written by `nvke-node-boot`'s `configure-console.sh` (installer-based images otherwise carry no `console=` at all). |
 
 ## Identity rules (runtime)
 

@@ -18,7 +18,7 @@ import tarfile
 import tempfile
 
 
-ARCHIVE_BINDINGS = ("calico", "kubeadm-distro", "ovn", "spire-agent", "doca-ovs")
+ARCHIVE_BINDINGS = ("calico", "kubeadm-distro", "ovn", "spire-agent", "doca-ovs", "nvke-node-boot")
 MAX_ARCHIVE_MEMBERS = 16384
 MAX_PACKAGES = 16384
 MAX_PACKAGE_BYTES = 1 << 30
@@ -275,6 +275,9 @@ def main() -> None:
         # provision.sh installs it by name; two versions would make the pick apt's.
         if len(list(debs.glob("doca-openvswitch-switch_*.deb"))) != 1:
             raise SystemExit("image inputs must contain exactly one doca-openvswitch-switch_*.deb across all bindings")
+        # provision.sh installs it by name, like the other node packages.
+        if len(list(debs.glob("nvke-node-boot_*.deb"))) != 1:
+            raise SystemExit("image inputs must contain exactly one nvke-node-boot_*.deb across all bindings")
         if len(list(debs.glob("nvke-cni-calico-manifests-*.deb"))) > 1:
             raise SystemExit("calico inputs must contain at most one nvke-cni-calico-manifests-*.deb")
 

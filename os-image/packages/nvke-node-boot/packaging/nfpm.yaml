@@ -1,0 +1,40 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# nfpm package spec for nvke-node-boot. build-deb.sh exports the environment
+# this file expands: DEB_VERSION.
+#
+# The script is read straight out of ../../../files/, where the image's own
+# copy has always lived -- the .deb takes ownership of it rather than forking a
+# second copy.
+#
+# The package carries the mechanism, not the setting. The console device
+# differs by architecture and by hardware, so the image build passes it to
+# configure-console.sh, which writes /etc/default/grub.d/50-nvke-console.cfg.
+# That file is generated, not packaged: update-grub reads only /etc/default/grub.d,
+# and a packaged file there would be a conffile with a dpkg prompt on upgrade.
+
+name: "nvke-node-boot"
+arch: "all"
+platform: "linux"
+version: "${DEB_VERSION}"
+version_schema: none
+section: admin
+priority: optional
+maintainer: "NVKE <nke-dev@exchange.nvidia.com>"
+# Fixed rather than the build time, so two builds of the same input produce a
+# byte-identical .deb.
+mtime: "2026-01-01T00:00:00Z"
+description: |
+  Boot configuration for an NVKE node
+  The tool that points a node's kernel console at a serial device, so boot
+  messages and the disk-unlock prompt reach a serial console and a BMC, not
+  only the VGA framebuffer. The image build runs it with the device to use.
+
+scripts:
+  postremove: "postrm"
+
+contents:
+  - src: "../../../files/configure-console.sh"
+    dst: "/usr/lib/nvke/configure-console.sh"
+    file_info: { mode: 0755 }

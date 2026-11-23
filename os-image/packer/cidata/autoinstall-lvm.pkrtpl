@@ -116,12 +116,9 @@ autoinstall:
     # boots (SPEC.md's "Cloud-init input" — spire.env/trust-bundle.pem
     # delivery), so keep it active here too rather than diverge per variant.
     - curtin in-target --target=/target -- rm -f /etc/cloud/cloud-init.disabled
-    # Mirror boot/kernel output to serial as well as the VGA console. Without
-    # this, an installer-based image has no console= kernel parameter at all, so
-    # -nographic/serial-only tooling (demo-fde.sh, `virsh console`, real
-    # out-of-band/BMC serial access) never sees boot messages or the LUKS
-    # unlock prompt — they only ever reach the VGA framebuffer.
-    - curtin in-target --target=/target -- sh -c 'echo "GRUB_CMDLINE_LINUX=\"console=tty0 console=${serial_console},115200\"" > /etc/default/grub.d/99-console.cfg'
+    # The serial console (console=tty0 console=<tty>,115200) is not set here.
+    # provision.sh installs nvke-node-boot and runs its configure-console.sh,
+    # which writes the grub drop-in and runs update-grub.
 %{ if luks_enabled ~}
     # ========================================================================
     # Build-time-only unlock: a temporary keyfile so the post-autoinstall
