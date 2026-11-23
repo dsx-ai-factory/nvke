@@ -25,23 +25,22 @@ func init() {
 	flag.StringVar(&selectedJUnitPath, "e2e.junit-report", "", "write a JUnit report of only the specs the run selected")
 }
 
+// Ginkgo exits 0 when every selected spec skips, or when the filter selects
+// none, which a runner of the validation image would read as a cluster that
+// passed. ReportAfterSuite hooks run in the order they are registered, each on
+// the report as it stood before it ran, so this one must come before the JUnit
+// report for that report to carry its failure.
+var _ = ReportAfterSuite("a validation run checked something", func(report Report) {
+	if validationCheckedNothing(report, os.LookupEnv) {
+		Fail("no check passed, so the run says nothing about the cluster; see the skips")
+	}
+})
+
 var _ = ReportAfterSuite("JUnit report of the selected specs", func(report Report) {
 	if selectedJUnitPath == "" {
 		return
 	}
 	Expect(reporters.GenerateJUnitReport(selectedSpecs(report), selectedJUnitPath)).To(Succeed())
-})
-
-// selectedSpecs drops the specs the filters excluded. A filtered spec is
-// skipped with no message; a spec that called Skip carries its reason, and is
-// kept, because a skip the run did ask for is a result.
-// Ginkgo exits 0 when every selected spec skips, or when the filter selects
-// none, which a runner of the validation image would read as a cluster that
-// passed.
-var _ = ReportAfterSuite("a validation run checked something", func(report Report) {
-	if validationCheckedNothing(report, os.LookupEnv) {
-		Fail("no check passed, so the run says nothing about the cluster; see the skips")
-	}
 })
 
 // validationCheckedNothing is whether report is of a validation image run,
@@ -58,6 +57,9 @@ func validationCheckedNothing(report Report, lookupEnv func(string) (string, boo
 	return true
 }
 
+// selectedSpecs drops the specs the filters excluded. A filtered spec is
+// skipped with no message; a spec that called Skip carries its reason, and is
+// kept, because a skip the run did ask for is a result.
 func selectedSpecs(report Report) Report {
 	kept := make(types.SpecReports, 0, len(report.SpecReports))
 	for _, spec := range report.SpecReports {
