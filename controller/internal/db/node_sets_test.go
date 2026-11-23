@@ -151,3 +151,66 @@ func TestNodePoolNeedsNewNodeSet(t *testing.T) {
 		})
 	}
 }
+
+func TestNodePoolMatchesNodeSet(t *testing.T) {
+	pool := db.NodePool{KubernetesVersion: "1.34.1", SystemReservedMemory: "16Gi", KubeReservedMemory: "2Gi"}
+	pool.SetCapi(db.CAPINodePoolProvider{
+		InfraMachineTemplate:   json.RawMessage(`{"kind":"DockerMachineTemplate","image":"new"}`),
+		BootstrapFiles:         []db.CloudInitFile{{Path: "/etc/example", Content: "new"}},
+		PreKubeadmCommands:     []string{"echo new"},
+		SpireAttestationMethod: db.SpireAttestationMethodJoinToken,
+	})
+	snapshot := db.NodeSet{ID: uuid.New(), KubernetesVersion: pool.KubernetesVersion, SystemReservedMemory: pool.SystemReservedMemory, KubeReservedMemory: pool.KubeReservedMemory}
+	snapshot.SetCapi(*pool.Capi)
+	tests := []struct {
+		name   string
+		change func(*db.NodeSet)
+	}{
+		{"kubernetes version", func(s *db.NodeSet) { s.KubernetesVersion = "1.33.1" }},
+		{"image template", func(s *db.NodeSet) { s.Capi.InfraMachineTemplate = json.RawMessage(`{"image":"old"}`) }},
+		{"initialization files", func(s *db.NodeSet) { s.Capi.BootstrapFiles[0].Content = "old" }},
+		{"initialization commands", func(s *db.NodeSet) { s.Capi.PreKubeadmCommands[0] = "echo old" }},
+		{"attestation", func(s *db.NodeSet) { s.Capi.SpireAttestationMethod = db.SpireAttestationMethodTPM }},
+		{"system memory", func(s *db.NodeSet) { s.SystemReservedMemory = "32Gi" }},
+		{"kube memory", func(s *db.NodeSet) { s.KubeReservedMemory = "4Gi" }},
+		{"teleport", func(s *db.NodeSet) { s.TeleportEnabled = true }},
+		{"missing provider", func(s *db.NodeSet) { s.Capi = nil }},
+	}
+	// PostgreSQL JSONB can reorder keys and add whitespace, including in a
+	// PATCH response whose desired template has not yet been re-read.
+	reformatted := snapshot
+	reformatted.SetCapi(*snapshot.Capi)
+	reformatted.Capi.InfraMachineTemplate = json.RawMessage(`{ "image": "new", "kind": "DockerMachineTemplate" }`)
+	require.True(t, db.NodePoolMatchesNodeSet(pool, reformatted))
+	// A match doesn't require an active-generation pointer.
+	require.True(t, db.NodePoolMatchesNodeSet(pool, snapshot))
+	require.True(t, db.NodePoolNeedsNewNodeSet(pool, snapshot))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			changed := snapshot
+			changed.SetCapi(*snapshot.Capi)
+			tt.change(&changed)
+			require.False(t, db.NodePoolMatchesNodeSet(pool, changed))
+		})
+	}
+	for _, tt := range []struct {
+		name   string
+		change func(*db.NicoNodePoolProvider)
+	}{
+		{"release", func(p *db.NicoNodePoolProvider) { p.Release = "old" }},
+		{"config profile", func(p *db.NicoNodePoolProvider) { p.ConfigProfile = "old" }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			pool.SetNico(db.NicoNodePoolProvider{Release: "new", ConfigProfile: "new"})
+			snapshot.SetNico(*pool.Nico)
+			require.True(t, db.NodePoolMatchesNodeSet(pool, snapshot))
+			tt.change(snapshot.Nico)
+			require.False(t, db.NodePoolMatchesNodeSet(pool, snapshot))
+		})
+	}
+	pool.SetLaunchLayer(db.LaunchLayerNodePoolProvider{HostOSProfile: "new", VMProfile: "new"})
+	snapshot.SetLaunchLayer(*pool.LaunchLayer)
+	require.True(t, db.NodePoolMatchesNodeSet(pool, snapshot))
+	snapshot.LaunchLayer.HostOSProfile = "old"
+	require.False(t, db.NodePoolMatchesNodeSet(pool, snapshot))
+}

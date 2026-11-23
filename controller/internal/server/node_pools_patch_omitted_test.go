@@ -71,6 +71,7 @@ func TestUpdateNodePoolMaxSurge(t *testing.T) {
 			}
 
 			mockDB := &mockDB{MockTx: &mockTx{}}
+			mockDB.MockTx.On("ListNodePoolCounts", mock.Anything, mock.Anything).Return(map[uuid.UUID]db.NodePoolCounts{uuid.Nil: {}, nodePoolID: {}}, nil).Once()
 			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 			mockDB.MockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(stored, nil)
 			mockDB.MockTx.On("GetClusterForUpdate", mock.Anything, clusterID).Return(forgeDBCluster(db.Cluster{

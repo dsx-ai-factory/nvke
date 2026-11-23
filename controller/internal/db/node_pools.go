@@ -4,7 +4,6 @@
 package db
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -16,6 +15,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/uptrace/bun"
+
+	"github.com/dsx-ai-factory/nvke/controller/internal/utils"
 )
 
 const (
@@ -97,7 +98,7 @@ func uuidPtrEqual(a, b *uuid.UUID) bool {
 
 // Equal reports whether two CAPINodePoolProvider values represent the same configuration.
 func (c CAPINodePoolProvider) Equal(other CAPINodePoolProvider) bool {
-	return bytes.Equal(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
+	return utils.JSONEqual(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
 		c.SpireAttestationMethod == other.SpireAttestationMethod &&
 		cloudInitFilesEqual(c.BootstrapFiles, other.BootstrapFiles) &&
 		slices.Equal(c.PreKubeadmCommands, other.PreKubeadmCommands)
@@ -371,7 +372,23 @@ type NodePoolMetrics struct {
 	DeprecatedCount int       `bun:"deprecated_count"`
 }
 
+// NodePoolCounts describes observed lifecycle records, including pending and
+// deleting nodes. Updated nodes need not be provisioned or Kubernetes-ready.
+type NodePoolCounts struct {
+	NodeCount        int
+	ReadyNodeCount   int
+	UpdatedNodeCount int
+}
+
+type nodeSetCounts struct {
+	NodePoolID     uuid.UUID
+	NodeCount      int
+	ReadyNodeCount int
+	NodeSet        NodeSet `bun:"embed:node_set_"`
+}
+
 type NodePoolQueries interface {
+	ListNodePoolCounts(ctx context.Context, pools []NodePool) (map[uuid.UUID]NodePoolCounts, error)
 	ListNodePools(ctx context.Context, filters NodePoolFilters) ([]NodePool, error)
 	ListNodePoolMetrics(ctx context.Context) ([]NodePoolMetrics, error)
 	GetNodePool(ctx context.Context, id uuid.UUID) (NodePool, error)
@@ -406,6 +423,60 @@ func (q *queriesImpl) ListNodePools(ctx context.Context, filters NodePoolFilters
 
 	err := query.Scan(ctx)
 	return nodePools, err
+}
+
+// ListNodePoolCounts aggregates only the requested pools in one query. NodeSet
+// configuration and node counts are read together; configuration matching uses
+// the supplied pool versions (the same versions serialized by the API).
+// Pool-managed nodes reference an existing NodeSet, so the query uses an inner join.
+func (q *queriesImpl) ListNodePoolCounts(ctx context.Context, pools []NodePool) (map[uuid.UUID]NodePoolCounts, error) {
+	counts := make(map[uuid.UUID]NodePoolCounts, len(pools))
+	byID := make(map[uuid.UUID]NodePool, len(pools))
+	ids := make([]uuid.UUID, 0, len(pools))
+	for _, pool := range pools {
+		counts[pool.ID] = NodePoolCounts{}
+		byID[pool.ID] = pool
+		ids = append(ids, pool.ID)
+	}
+	if len(ids) == 0 {
+		return counts, nil
+	}
+
+	var groups []nodeSetCounts
+	err := q.db.NewRaw(`
+		SELECT nc.node_pool_id, nc.node_count, nc.ready_node_count,
+		       ns.id AS node_set_id, ns.node_pool_id AS node_set_node_pool_id,
+		       ns.kubernetes_version AS node_set_kubernetes_version,
+		       ns.system_reserved_memory AS node_set_system_reserved_memory,
+		       ns.kube_reserved_memory AS node_set_kube_reserved_memory,
+		       ns.teleport_enabled AS node_set_teleport_enabled,
+		       ns.nico AS node_set_nico, ns.capi AS node_set_capi,
+		       ns.launch_layer AS node_set_launch_layer
+		FROM (
+			SELECT node_pool_id, node_set_id, COUNT(*) AS node_count,
+			       SUM(CASE WHEN conditions->'kubernetesReady'->>'status' = 'True'
+			                THEN 1 ELSE 0 END) AS ready_node_count
+			FROM nodes
+			WHERE node_pool_id IN (?)
+			GROUP BY node_pool_id, node_set_id
+		) nc
+		INNER JOIN node_sets ns ON ns.id = nc.node_set_id
+	`, bun.List(ids)).Scan(ctx, &groups)
+	if err != nil {
+		return nil, fmt.Errorf("aggregate node pool counts: %w", err)
+	}
+
+	for _, group := range groups {
+		count := counts[group.NodePoolID]
+		count.NodeCount += group.NodeCount
+		count.ReadyNodeCount += group.ReadyNodeCount
+		if group.NodeSet.NodePoolID == group.NodePoolID &&
+			NodePoolMatchesNodeSet(byID[group.NodePoolID], group.NodeSet) {
+			count.UpdatedNodeCount += group.NodeCount
+		}
+		counts[group.NodePoolID] = count
+	}
+	return counts, nil
 }
 
 // ListNodePoolMetrics returns aggregated metrics for all node pools
