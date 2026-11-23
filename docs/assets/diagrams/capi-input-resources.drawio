@@ -1,0 +1,76 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/27.0.9 Chrome/134.0.6998.205 Electron/35.4.0 Safari/537.36" version="27.0.9">
+  <diagram id="capi-input-resources" name="CAPI input resources">
+    <mxGraphModel dx="2019" dy="1450" grid="1" gridSize="20" guides="0" tooltips="1" connect="1" arrows="1" fold="1" page="0" pageScale="1" pageWidth="1160" pageHeight="600" background="none" math="0" shadow="0" adaptiveColors="auto">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="control-panel" value="&lt;b style=&quot;font-size:21px;&quot;&gt;Control Plane&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#D9E1E7;strokeWidth=1;align=left;verticalAlign=top;spacing=10;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=0;container=0;collapsible=0;recursiveResize=0;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="20" y="100" width="1100" height="260" as="geometry" />
+        </mxCell>
+        <mxCell id="worker-panel" value="&lt;b style=&quot;font-size:21px;&quot;&gt;Workers&lt;/b&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#F8FAFC;strokeColor=#D9E1E7;strokeWidth=1;align=left;verticalAlign=top;spacing=10;fontFamily=Arial;fontSize=17;fontColor=#18262E;fontStyle=0;container=0;collapsible=0;recursiveResize=0;spacingLeft=10;" parent="1" vertex="1">
+          <mxGeometry x="20" y="400" width="1100" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="cluster" value="&lt;b style=&quot;font-size:18px;&quot;&gt;Cluster&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px;font-weight:normal;&quot;&gt;CAPI core&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1;align=center;verticalAlign=middle;spacing=10;fontFamily=Arial;fontSize=17;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="60" y="160" width="241" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="infra" value="&lt;b style=&quot;font-size:18px;&quot;&gt;NicoCluster&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px;font-weight:normal;&quot;&gt;Cluster infrastructure&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#C4D5DE;strokeColor=#23445d;strokeWidth=1;align=center;verticalAlign=middle;spacing=10;fontFamily=Arial;fontSize=16;fontStyle=0;container=0;" parent="1" vertex="1">
+          <mxGeometry x="840" y="160" width="241" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="control-plane" value="&lt;b style=&quot;font-size:18px;&quot;&gt;NVKEControlPlane&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px;font-weight:normal;&quot;&gt;Control plane&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=1;align=center;verticalAlign=middle;spacing=10;fontFamily=Arial;fontSize=16;fontStyle=0;container=0;" parent="1" vertex="1">
+          <mxGeometry x="540" y="260" width="241" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cp-machines" value="&lt;b style=&quot;font-size:18px;&quot;&gt;NicoMachineTemplate&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px;font-weight:normal;&quot;&gt;Control-plane machines&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#C4D5DE;strokeColor=#23445d;strokeWidth=1;align=center;verticalAlign=middle;spacing=10;fontFamily=Arial;fontSize=16;fontStyle=0;container=0;" parent="1" vertex="1">
+          <mxGeometry x="840" y="260" width="241" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="workers" value="&lt;b style=&quot;font-size:18px;&quot;&gt;MachineDeployment&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px;font-weight:normal;&quot;&gt;CAPI core&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;strokeWidth=1;align=center;verticalAlign=middle;spacing=10;fontFamily=Arial;fontSize=17;fontStyle=1;container=0;" parent="1" vertex="1">
+          <mxGeometry x="60" y="460" width="241" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="bootstrap" value="&lt;b style=&quot;font-size:18px;&quot;&gt;NVKEConfigTemplate&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px;font-weight:normal;&quot;&gt;Worker bootstrap&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;strokeWidth=1;align=center;verticalAlign=middle;spacing=10;fontFamily=Arial;fontSize=16;fontStyle=0;container=0;" parent="1" vertex="1">
+          <mxGeometry x="540" y="460" width="241" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="worker-machines" value="&lt;b style=&quot;font-size:18px;&quot;&gt;NicoMachineTemplate&lt;/b&gt;&lt;br&gt;&lt;span style=&quot;font-size:15px;font-weight:normal;&quot;&gt;Worker machines&lt;/span&gt;" style="rounded=1;absoluteArcSize=1;arcSize=20;whiteSpace=wrap;html=1;fillColor=#C4D5DE;strokeColor=#23445d;strokeWidth=1;align=center;verticalAlign=middle;spacing=10;fontFamily=Arial;fontSize=16;fontStyle=0;container=0;" parent="1" vertex="1">
+          <mxGeometry x="840" y="540" width="241" height="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cluster-to-infra" value="infrastructureRef" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Arial;fontSize=15;" parent="1" source="cluster" target="infra" edge="1">
+          <mxGeometry x="0.0018" y="20" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="180" y="160" />
+            </Array>
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="cluster-to-control-plane" value="controlPlaneRef" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Arial;fontSize=15;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="cluster" target="control-plane" edge="1">
+          <mxGeometry x="0.2359" y="19" relative="1" as="geometry">
+            <mxPoint as="offset" />
+            <Array as="points">
+              <mxPoint x="240" y="290" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="control-plane-to-cp-machines" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Arial;fontSize=15;strokeWidth=1;" parent="1" source="control-plane" target="cp-machines" edge="1">
+          <mxGeometry x="0.0063" y="40" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="workers-to-cluster" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Arial;fontSize=15;" parent="1" source="workers" target="cluster" edge="1">
+          <mxGeometry y="1" relative="1" as="geometry">
+            <mxPoint x="1" as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="workers-to-bootstrap" value="&amp;nbsp;template bootstrap.configRef" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Arial;fontSize=15;" parent="1" source="workers" target="bootstrap" edge="1">
+          <mxGeometry x="-0.0036" y="16" relative="1" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="workers-to-worker-machines" value="template infrastructureRef" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=1;fontFamily=Arial;fontSize=15;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" parent="1" source="workers" target="worker-machines" edge="1">
+          <mxGeometry x="0.002" y="15" relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="181" y="570" />
+            </Array>
+            <mxPoint x="1" as="offset" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
