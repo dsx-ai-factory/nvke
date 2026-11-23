@@ -150,6 +150,59 @@ func TestOpenVSwitchReconciliationTransformsNetplanAndVerifiesBridge(t *testing.
 	assert.Equal(t, map[string]any{"addresses": []any{"10.0.0.53"}}, bridge["nameservers"])
 }
 
+// A locally administered MAC (cloud VM, KVM) walks the whole netplan path: the
+// written file carries the pin, and verify reads the bridge MAC.
+func TestOpenVSwitchReconciliationPinsLocalMACOnNetplanBridge(t *testing.T) {
+	const localMAC = "0e:ff:c9:36:97:4b"
+	root := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/netplan"), 0o755))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/openvswitch"), 0o755))
+	configPath := filepath.Join(root, "etc/netplan/00-dhcp-all.yaml")
+	require.NoError(t, os.WriteFile(configPath, []byte(`network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    all-en:
+      match:
+        name: "e*"
+      dhcp4: true
+      optional: true
+`), 0o600))
+	runner := newOpenVSwitchTestRunner(t, map[string][]openVSwitchCommandResult{
+		"ovs-vsctl set bridge brens5 external-ids:bridge-uplink=ens5":           {{}, {}, {}},
+		"ovs-vsctl br-get-external-id brens5 bridge-uplink":                     {{output: []byte("ens5\n")}, {output: []byte("ens5\n")}, {output: []byte("ens5\n")}, {output: []byte("ens5\n")}},
+		"dpkg-query --show --showformat=${db:Status-Abbrev} openvswitch-switch": {{output: []byte("ii ")}},
+		"systemctl enable --now openvswitch-switch":                             {{}},
+		"ip -j route show default": {
+			{output: []byte(`[{"dst":"default","gateway":"10.0.0.1","dev":"ens5"}]`)},
+			{output: []byte(`[{"dst":"default","gateway":"10.0.0.1","dev":"brens5"}]`)},
+		},
+		"ovs-vsctl list-br": {
+			{output: nil},
+			{output: []byte("brens5\n")},
+		},
+		"ip -j link show dev ens5":       {{output: []byte(`[{"ifname":"ens5","address":"0e:ff:c9:36:97:4b","mtu":9001}]`)}},
+		"ip -j link show dev brens5":     {{output: []byte(`[{"ifname":"brens5","address":"0e:ff:c9:36:97:4b","mtu":9001}]`)}},
+		"systemctl restart ovs-vswitchd": {{}},
+		"netplan generate":               {{}},
+		"netplan apply":                  {{}},
+	})
+	server := &NodeAgentServer{Runner: runner, RootPath: root, openVSwitchSettleDelay: 1}
+
+	result, _, err := server.reconcileOpenVSwitchLocked(context.Background())
+
+	require.NoError(t, err)
+	assert.Equal(t, pb.OpenVSwitchReconciliationResult_OUTCOME_CONFIGURED, result.GetOutcome())
+	assert.Contains(t, runner.calls, "ip -j link show dev brens5")
+	data, err := os.ReadFile(configPath)
+	require.NoError(t, err)
+	config := map[string]any{}
+	require.NoError(t, yaml.Unmarshal(data, &config))
+	bridge := config["network"].(map[string]any)["bridges"].(map[string]any)["brens5"].(map[string]any)
+	assert.Equal(t, localMAC, bridge["macaddress"])
+	assert.Equal(t, map[string]any{"other-config": map[string]any{"hwaddr": localMAC}}, bridge["openvswitch"])
+}
+
 func TestOpenVSwitchNetplanMatchNamePatterns(t *testing.T) {
 	link := openVSwitchLink{Name: "enp1s0", Address: "00:11:22:33:44:55"}
 	tests := map[string]struct {
@@ -165,6 +218,230 @@ func TestOpenVSwitchNetplanMatchNamePatterns(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			stanza := map[string]any{"match": map[string]any{"name": test.name}}
 			assert.Equal(t, test.want, openVSwitchStanzaMatchesLink(stanza, link))
+		})
+	}
+}
+
+func TestOpenVSwitchNetplanPlanKeepsUplinkMACOnBridge(t *testing.T) {
+	// Cloud VM and KVM interface MACs are locally administered; OVS does not copy
+	// those to the bridge, so DHCP would see a new client.
+	const localMAC = "0e:ff:c9:36:97:4b"
+	const globalMAC = "00:11:22:33:44:55"
+	tests := map[string]struct {
+		netplan       string
+		mac           string
+		wantOVS       map[string]any
+		wantMAC       string
+		wantErrSubstr string
+	}{
+		"locally administered MAC is pinned": {
+			netplan: `network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    all-en:
+      match:
+        name: "e*"
+      dhcp4: true
+      optional: true
+`,
+			mac:     localMAC,
+			wantOVS: map[string]any{"other-config": map[string]any{"hwaddr": localMAC}},
+			wantMAC: localMAC,
+		},
+		"globally unique MAC is left to OVS": {
+			netplan: `network:
+  version: 2
+  ethernets:
+    eth0:
+      dhcp4: true
+`,
+			mac:     globalMAC,
+			wantOVS: map[string]any{},
+		},
+		// The uplink stanza's own macaddress is dropped with its L2 identity;
+		// the bridge gets the MAC the NIC reports.
+		"uplink stanza macaddress is replaced by the NIC MAC": {
+			netplan: `network:
+  version: 2
+  ethernets:
+    uplink:
+      match:
+        macaddress: "0e:ff:c9:36:97:4b"
+      set-name: eth0
+      macaddress: "02:00:00:00:00:01"
+      dhcp4: true
+`,
+			mac:     localMAC,
+			wantOVS: map[string]any{"other-config": map[string]any{"hwaddr": localMAC}},
+			wantMAC: localMAC,
+		},
+		"pending bridge from an interrupted run is pinned": {
+			netplan: `network:
+  version: 2
+  ethernets:
+    eth0:
+      mtu: 9001
+      match:
+        macaddress: "0e:ff:c9:36:97:4b"
+  bridges:
+    breth0:
+      dhcp4: true
+      interfaces: [eth0]
+      openvswitch: {}
+`,
+			mac:     localMAC,
+			wantOVS: map[string]any{"other-config": map[string]any{"hwaddr": localMAC}},
+			wantMAC: localMAC,
+		},
+		"pending bridge keeps its other OVS settings": {
+			netplan: `network:
+  version: 2
+  ethernets:
+    eth0:
+      match:
+        macaddress: "0e:ff:c9:36:97:4b"
+  bridges:
+    breth0:
+      dhcp4: true
+      interfaces: [eth0]
+      openvswitch:
+        fail-mode: standalone
+        other-config:
+          disable-in-band: "true"
+`,
+			mac: localMAC,
+			wantOVS: map[string]any{
+				"fail-mode":    "standalone",
+				"other-config": map[string]any{"disable-in-band": "true", "hwaddr": localMAC},
+			},
+			wantMAC: localMAC,
+		},
+		// The NIC was replaced after an interrupted run; the old pin must not
+		// keep the previous identity.
+		"stale pin on a pending bridge follows a globally unique NIC MAC": {
+			netplan: `network:
+  version: 2
+  ethernets:
+    eth0:
+      match:
+        macaddress: "00:11:22:33:44:55"
+  bridges:
+    breth0:
+      dhcp4: true
+      interfaces: [eth0]
+      macaddress: "0e:ff:c9:36:97:4b"
+      openvswitch:
+        other-config:
+          hwaddr: "0e:ff:c9:36:97:4b"
+`,
+			mac:     globalMAC,
+			wantOVS: map[string]any{"other-config": map[string]any{"hwaddr": globalMAC}},
+			wantMAC: globalMAC,
+		},
+		"pending bridge with a non-mapping openvswitch value is rejected": {
+			netplan: `network:
+  version: 2
+  ethernets:
+    eth0:
+      match:
+        macaddress: "0e:ff:c9:36:97:4b"
+  bridges:
+    breth0:
+      interfaces: [eth0]
+      openvswitch: enabled
+`,
+			mac:           localMAC,
+			wantErrSubstr: "openvswitch must be a mapping",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			root := t.TempDir()
+			require.NoError(t, os.MkdirAll(filepath.Join(root, "etc/netplan"), 0o755))
+			require.NoError(t, os.WriteFile(filepath.Join(root, "etc/netplan/50-cloud-init.yaml"), []byte(test.netplan), 0o600))
+			server := &NodeAgentServer{RootPath: root}
+			link := openVSwitchLink{Name: "eth0", Address: test.mac, MTU: 9001}
+
+			plan, err := server.buildOpenVSwitchNetplanPlan(link, "10.0.0.1", "breth0")
+
+			if test.wantErrSubstr != "" {
+				require.ErrorContains(t, err, test.wantErrSubstr)
+				return
+			}
+			require.NoError(t, err)
+			config := map[string]any{}
+			require.NoError(t, yaml.Unmarshal(plan.config, &config))
+			bridge := config["network"].(map[string]any)["bridges"].(map[string]any)["breth0"].(map[string]any)
+			assert.Equal(t, test.wantOVS, bridge["openvswitch"])
+			if test.wantMAC == "" {
+				assert.NotContains(t, bridge, "macaddress")
+			} else {
+				assert.Equal(t, test.wantMAC, bridge["macaddress"])
+			}
+		})
+	}
+}
+
+func TestOpenVSwitchVerifyPlanChecksBridgeMAC(t *testing.T) {
+	const localMAC = "0e:ff:c9:36:97:4b"
+	converged := map[string][]openVSwitchCommandResult{
+		"ovs-vsctl list-br":        {{output: []byte("breth0\n")}},
+		"ip -j route show default": {{output: []byte(`[{"dst":"default","gateway":"10.0.0.1","dev":"breth0"}]`)}},
+	}
+	recorded := map[string][]openVSwitchCommandResult{
+		"ovs-vsctl set bridge breth0 external-ids:bridge-uplink=eth0": {{}, {}},
+		"ovs-vsctl br-get-external-id breth0 bridge-uplink":           {{output: []byte("eth0\n")}, {output: []byte("eth0\n")}},
+	}
+	tests := map[string]struct {
+		uplinkMAC     string
+		bridgeLink    string
+		wantErrSubstr string
+	}{
+		"bridge keeps a locally administered uplink MAC": {
+			uplinkMAC:  localMAC,
+			bridgeLink: `[{"ifname":"breth0","address":"0e:ff:c9:36:97:4b","mtu":9001}]`,
+		},
+		"bridge MAC matches regardless of case": {
+			uplinkMAC:  "0E:FF:C9:36:97:4B",
+			bridgeLink: `[{"ifname":"breth0","address":"0e:ff:c9:36:97:4b","mtu":9001}]`,
+		},
+		// The bridge has the default route but presents another MAC to DHCP.
+		"bridge with another MAC has not converged": {
+			uplinkMAC:     localMAC,
+			bridgeLink:    `[{"ifname":"breth0","address":"16:45:22:ff:ae:4f","mtu":9001}]`,
+			wantErrSubstr: "bridge breth0 has MAC 16:45:22:ff:ae:4f instead of uplink MAC 0e:ff:c9:36:97:4b",
+		},
+		// OVS copies a globally unique MAC itself; the bridge link is not read.
+		"globally unique uplink MAC is not checked": {
+			uplinkMAC: "00:11:22:33:44:55",
+		},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			responses := map[string][]openVSwitchCommandResult{}
+			for key, value := range converged {
+				responses[key] = value
+			}
+			if test.wantErrSubstr == "" {
+				for key, value := range recorded {
+					responses[key] = value
+				}
+			}
+			if test.bridgeLink != "" {
+				responses["ip -j link show dev breth0"] = []openVSwitchCommandResult{{output: []byte(test.bridgeLink)}}
+			}
+			server := &NodeAgentServer{Runner: newOpenVSwitchTestRunner(t, responses)}
+			plan := openVSwitchPlan{bridgeName: "breth0", uplinkName: "eth0", uplinkMAC: test.uplinkMAC}
+
+			err := server.verifyOpenVSwitchPlan(plan)
+
+			if test.wantErrSubstr != "" {
+				require.ErrorIs(t, err, errOpenVSwitchNotConverged)
+				require.ErrorContains(t, err, test.wantErrSubstr)
+				return
+			}
+			require.NoError(t, err)
 		})
 	}
 }
@@ -368,6 +645,7 @@ iface eth0 inet static
 			{output: []byte("breth0\n")},
 		},
 		"ip -j link show dev eth0":                                          {{output: []byte(`[{"ifname":"eth0","address":"02:11:22:33:44:55","mtu":1500}]`)}},
+		"ip -j link show dev breth0":                                        {{output: []byte(`[{"ifname":"breth0","address":"02:11:22:33:44:55","mtu":1500}]`)}},
 		"systemctl restart ovs-vswitchd":                                    {{}},
 		"ovs-vsctl --may-exist add-br breth0":                               {{}},
 		"ovs-vsctl set bridge breth0 other-config:hwaddr=02:11:22:33:44:55": {{}},

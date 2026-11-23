@@ -158,6 +158,13 @@ func (s *NodeAgentServer) buildOpenVSwitchNetplanPlan(link openVSwitchLink, gate
 		}
 		selected.document.ethernets[link.Name] = physical
 	}
+	bridge, ok := selected.document.bridges[bridgeName].(map[string]any)
+	if !ok {
+		return openVSwitchPlan{}, fmt.Errorf("netplan bridge %s is not an object", bridgeName)
+	}
+	if err := pinOpenVSwitchNetplanBridgeMAC(bridge, link.Address); err != nil {
+		return openVSwitchPlan{}, fmt.Errorf("netplan bridge %s: %w", bridgeName, err)
+	}
 	data, err := yaml.Marshal(selected.document.root)
 	if err != nil {
 		return openVSwitchPlan{}, fmt.Errorf("render %s: %w", selected.path, err)
@@ -185,6 +192,67 @@ func (s *NodeAgentServer) applyOpenVSwitchNetplanPlan(ctx context.Context, plan 
 		return fmt.Errorf("apply netplan: %w", err)
 	}
 	return sleepOrDone(ctx, s.openVSwitchSettleDelayOrDefault())
+}
+
+// pinOpenVSwitchNetplanBridgeMAC keeps the uplink's MAC on the bridge, so DHCP
+// sees the same identity after the move. OVS copies a globally unique NIC MAC
+// to the bridge itself, but never a locally administered one, such as a KVM
+// guest or cloud VM interface MAC. Netplan passes openvswitch.other-config
+// through to `ovs-vsctl set Bridge`, which is the pin the ifupdown path sets
+// directly.
+// macaddress gives networkd the same MAC when it configures the bridge, which
+// can happen before the Open vSwitch unit sets hwaddr. A pending bridge from an
+// interrupted run gets the pin too.
+func pinOpenVSwitchNetplanBridgeMAC(bridge map[string]any, mac string) error {
+	if !openVSwitchMACIsLocallyAdministered(mac) {
+		repointOpenVSwitchNetplanBridgeMAC(bridge, mac)
+		return nil
+	}
+	bridge["macaddress"] = mac
+	openVSwitch, err := openVSwitchNetplanMappingOrCreate(bridge, "openvswitch")
+	if err != nil {
+		return err
+	}
+	otherConfig, err := openVSwitchNetplanMappingOrCreate(openVSwitch, "other-config")
+	if err != nil {
+		return err
+	}
+	otherConfig["hwaddr"] = mac
+	return nil
+}
+
+// repointOpenVSwitchNetplanBridgeMAC points a MAC pin that a pending bridge
+// already carries at the current uplink MAC, for example after the NIC was
+// replaced, so a stale pin does not override the MAC OVS would copy. It adds
+// no pin where none exists.
+func repointOpenVSwitchNetplanBridgeMAC(bridge map[string]any, mac string) {
+	if mac == "" {
+		return
+	}
+	if _, exists := bridge["macaddress"]; exists {
+		bridge["macaddress"] = mac
+	}
+	openVSwitch, _ := bridge["openvswitch"].(map[string]any)
+	otherConfig, _ := openVSwitch["other-config"].(map[string]any)
+	if _, exists := otherConfig["hwaddr"]; exists {
+		otherConfig["hwaddr"] = mac
+	}
+}
+
+// openVSwitchNetplanMappingOrCreate returns the mapping under key, creating an
+// absent or null one, and rejects any other value instead of replacing it.
+func openVSwitchNetplanMappingOrCreate(parent map[string]any, key string) (map[string]any, error) {
+	raw, exists := parent[key]
+	if !exists || raw == nil {
+		mapping := map[string]any{}
+		parent[key] = mapping
+		return mapping, nil
+	}
+	mapping, ok := raw.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be a mapping", key)
+	}
+	return mapping, nil
 }
 
 func cloneStringMap(source map[string]any) map[string]any {
