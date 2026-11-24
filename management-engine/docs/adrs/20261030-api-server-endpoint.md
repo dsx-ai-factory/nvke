@@ -13,7 +13,7 @@ We will add an optional `spec.apiServerEndpoint.address`, sent to the controller
 
 - The address must be unicast IPv4 outside the pod and service networks. The caller ensures no other cluster uses it.
 - Errors use the `ClusterReconciled` condition and never name another cluster or tenant.
-- The field sits beside `apiServerAccess`, not inside it: one is where the API server is served, the other is who may reach it.
+- The field identifies where the API server is served. Public access policy through `apiServerAccess` is deferred.
 
 ## Consequences
 
@@ -27,7 +27,7 @@ Later needs stay additive:
 
 - **Managed allocation:** leave the spec unset and report the chosen address in status. This is why status has its own copy.
 - **Hostname and port:** add them to the status type, which is separate from the spec type for this reason. The field is named `address` rather than `vip` for the same reason.
-- **Public endpoint:** report it in status when `apiServerAccess.publicAccessEnabled` is true.
+- **Public endpoint:** report it in status when public access policy is implemented and enabled.
 - **Uniqueness and per-tenant ranges:** validation only, with no API change.
 
 ## Options considered

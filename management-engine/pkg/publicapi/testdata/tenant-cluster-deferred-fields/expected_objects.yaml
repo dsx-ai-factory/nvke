@@ -1,0 +1,22 @@
+---
+items:
+- apiVersion: service.nvke.nvidia.com/v1
+  kind: NVKECluster
+  metadata:
+    creationTimestamp: null
+    generation: 1
+    name: example-cluster
+    namespace: org-a
+  spec:
+    clusterNetwork:
+      pods:
+        cidrBlocks:
+        - 10.244.0.0/16
+      services:
+        cidrBlocks:
+        - 10.96.0.0/12
+    controlPlaneClass: standard
+    release:
+      channel:
+        name: stable
+metadata: {}

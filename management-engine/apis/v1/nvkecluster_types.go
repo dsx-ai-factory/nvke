@@ -14,12 +14,15 @@ import (
 // +kubebuilder:validation:XValidation:rule="has(self.apiServerEndpoint) == has(oldSelf.apiServerEndpoint) && (!has(self.apiServerEndpoint) || self.apiServerEndpoint == oldSelf.apiServerEndpoint)",message="apiServerEndpoint is only configurable at cluster creation"
 // +kubebuilder:validation:XValidation:rule="!has(self.apiServerEndpoint) || (self.clusterNetwork.pods.cidrBlocks.all(c, !cidr(c).containsIP(ip(self.apiServerEndpoint.address))) && self.clusterNetwork.services.cidrBlocks.all(c, !cidr(c).containsIP(ip(self.apiServerEndpoint.address))))",message="apiServerEndpoint.address must not be inside the pod or service networks"
 type NVKEClusterSpec struct {
-	APIServerAccess APIServerAccess `json:"apiServerAccess"`
+	// Public API access policy is deferred.
+	// APIServerAccess APIServerAccess `json:"apiServerAccess"`
+
 	// APIServerEndpoint gives the API server a stable address that survives control-plane node changes.
 	// Required for more than one control-plane node and for upgrades.
 	// +optional
 	APIServerEndpoint *APIServerEndpoint `json:"apiServerEndpoint,omitempty"`
 	// Authentication configures additional JWT issuers for cluster access.
+	// Custom authentication is not yet supported by the service.
 	// It can only be set when creating the cluster.
 	// +optional
 	Authentication *ClusterAuthentication `json:"authentication,omitempty"`
@@ -27,9 +30,9 @@ type NVKEClusterSpec struct {
 	Release        ReleaseSelection       `json:"release"`
 	// ControlPlaneClass names the class that determines control-plane sizing and configuration.
 	ControlPlaneClass ResourceName `json:"controlPlaneClass"`
-	// AcceleratedRuntime selects an accelerated runtime bundle. Use name "none" to opt out.
-	// +optional
-	AcceleratedRuntime *AcceleratedRuntimeSelection `json:"acceleratedRuntime,omitempty"`
+	// Accelerated runtime selection is deferred.
+	// AcceleratedRuntime *AcceleratedRuntimeSelection `json:"acceleratedRuntime,omitempty"`
+
 	// Network selects the existing VPC shared by the node pools.
 	// +optional
 	Network *Network `json:"network,omitempty"`
@@ -83,20 +86,21 @@ type PublicAccessCIDR struct {
 	Description string `json:"description,omitempty"`
 }
 
-// ClusterNetwork describes the pod/service networks and cluster DNS domain.
+// ClusterNetwork describes the pod and service networks.
 type ClusterNetwork struct {
 	// Pods specifies the address ranges used by pods.
 	Pods NetworkRanges `json:"pods"`
 	// Services specifies the address ranges used by cluster services.
 	Services NetworkRanges `json:"services"`
-	// ServiceDomain is the DNS domain used by cluster services.
-	ServiceDomain ResourceName `json:"serviceDomain"`
+	// Custom service domains are deferred. The domain is fixed to cluster.local.
+	// ServiceDomain ResourceName `json:"serviceDomain"`
 }
 
 // NetworkRanges contains the CIDRs requested for a cluster network.
 type NetworkRanges struct {
 	// CIDRBlocks contains one address range, or one IPv4 and one IPv6 range for dual-stack.
 	// The first range selects the default IP family.
+	// Provisioning currently supports a single IPv4 range.
 	// +listType=atomic
 	// +kubebuilder:validation:MinItems=1
 	// +kubebuilder:validation:MaxItems=2

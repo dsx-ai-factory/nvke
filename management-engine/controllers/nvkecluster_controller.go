@@ -974,18 +974,10 @@ func nodePoolRecycleBudget(rollout *internalv1.Rollout, desiredReplicas int32) (
 
 func invalidNVKEControllerRequest(message string) error { return &InvalidSpecError{Message: message} }
 
+// validateNVKEControllerSpec rejects authentication configuration unsupported by the NVKE controller integration.
 func validateNVKEControllerSpec(cluster *internalv1.NVKECluster) error {
 	if cluster.Spec.Authentication != nil {
 		return invalidNVKEControllerRequest("Custom authentication is not supported")
-	}
-	if cluster.Spec.APIServerAccess.PublicAccessEnabled || len(cluster.Spec.APIServerAccess.PublicAccessCIDRs) != 0 {
-		return invalidNVKEControllerRequest("Public API access configuration is not supported")
-	}
-	if runtime := cluster.Spec.AcceleratedRuntime; runtime != nil && (runtime.Name != "none" || runtime.Version != "") {
-		return invalidNVKEControllerRequest("Accelerated runtime configuration is not supported")
-	}
-	if cluster.Spec.ClusterNetwork.ServiceDomain != "cluster.local" {
-		return invalidNVKEControllerRequest("Only the cluster.local service domain is supported")
 	}
 	return nil
 }
