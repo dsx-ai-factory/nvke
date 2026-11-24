@@ -971,9 +971,13 @@ M nodes labeled `node-role.kubernetes.io/monitoring` and tainted
 `monitoring=true:NoSchedule`, so only Pods that tolerate the taint land there,
 and labels the workers `node-role.kubernetes.io/worker`. A site the suite
 builds then allowlists both label keys in its controller, and the capacity
-check asks for N + M workers. A site the suite did not build, as in the
+check asks for N + M workers. With M at 0, a run given
+`-e2e.kaps-bench-run-specs` still labels the workers
+`node-role.kubernetes.io/worker`, and a site the suite builds allowlists that
+key alone. A site the suite did not build, as in the
 `nico-forge` lane, answers the create with a 400 unless its
-controller's `nodeMetadata.allowlistedLabelKeys` already lists both keys.
+controller's `nodeMetadata.allowlistedLabelKeys` already lists each key the
+run sets.
 M above 0 cannot be combined with a GPU runtime `-e2e.tenant-gpu-runtime`
 installs: such a run fails before a machine is taken.
 
@@ -1013,6 +1017,15 @@ flags for the perf stream, and the results land in
 `kaps-bench-results.tar.gz` in this directory.
 Every lane checks the folder before it takes a machine: the site lane in its
 first step at stage `full`, the `nico-forge` lane at the start of the tenant create.
+Each run gets the tenant's worker count as kaps-bench's `NODE_COUNT` parameter.
+
+kaps-bench publishes its results to OpenSearch instead when the shell that runs
+the suite sets an endpoint:
+
+| Name | What it is |
+|---|---|
+| `KB_OPENSEARCH_URL` | OpenSearch endpoint. Secret. Empty keeps the results local. |
+| `KB_OPENSEARCH_USER`, `KB_OPENSEARCH_PASS` | Basic auth for the endpoint. Secret. Uploaded files keep the user name readable. |
 
 Both lanes create the same `nico-forge` tenant and both entries carry that
 label, so pick between them with `site-controller`, which only the lane that

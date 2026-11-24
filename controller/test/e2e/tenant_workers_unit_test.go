@@ -42,7 +42,7 @@ func TestTenantWorkers(t *testing.T) {
 	for _, workers := range []int{1, 3} {
 		t.Run(strconv.Itoa(workers), func(t *testing.T) {
 			t.Log("Testing: the tenant spec carries one worker pool of that many nodes")
-			pools, err := tenantWorkerPools(workers, 0)
+			pools, err := tenantWorkerPools(workers, 0, nil)
 			require.NoError(t, err)
 			require.Len(t, pools, 1)
 			require.Equal(t, workers, pools[0].DesiredNodeCount)
@@ -58,7 +58,7 @@ func TestTenantWorkers(t *testing.T) {
 	for _, workers := range []int{0, -1} {
 		t.Run(strconv.Itoa(workers), func(t *testing.T) {
 			t.Log("Testing: a tenant of fewer than one worker is refused before the provider is asked")
-			_, err := tenantWorkerPools(workers, 0)
+			_, err := tenantWorkerPools(workers, 0, nil)
 			require.ErrorContains(t, err, "-e2e.tenant-workers")
 			var checker capacityRecorder
 			require.ErrorContains(t, requireRunCapacity(t.Context(), &checker, siteStageFull, workers, 0), "-e2e.tenant-workers")
@@ -101,7 +101,7 @@ func TestTenantMonitoringWorkers(t *testing.T) {
 
 	t.Run("0", func(t *testing.T) {
 		t.Log("Doing: building the pools of a three worker tenant with no monitoring node")
-		pools, err := tenantWorkerPools(3, 0)
+		pools, err := tenantWorkerPools(3, 0, nil)
 		require.NoError(t, err)
 
 		t.Log("Testing: one worker pool with no labels or taints, as before")
@@ -118,12 +118,25 @@ func TestTenantMonitoringWorkers(t *testing.T) {
 		require.Equal(t, 3, checker.workers)
 
 		t.Log("Testing: the site allowlists no label key")
-		require.Nil(t, tenantRoleLabelKeys(0))
+		require.Nil(t, tenantRoleLabelKeys(0, nil))
+	})
+
+	t.Run("0 with kaps-bench run specs", func(t *testing.T) {
+		t.Log("Doing: building the pools of a three worker tenant with no monitoring node that runs kaps-bench")
+		runSpecs := []string{"smoke/smoke-prometheus.yaml", "baseline/cluster-density-v2.yaml"}
+		pools, err := tenantWorkerPools(3, 0, runSpecs)
+		require.NoError(t, err)
+
+		t.Log("Testing: the one worker pool is labeled workers, and no monitoring pool exists")
+		require.Equal(t, []nvke.NodePoolSpec{{DesiredNodeCount: 3, NodeLabels: map[string]string{"node-role.kubernetes.io/worker": ""}}}, pools)
+
+		t.Log("Testing: the site allowlists the worker label key alone")
+		require.Equal(t, []string{"node-role.kubernetes.io/worker"}, tenantRoleLabelKeys(0, runSpecs))
 	})
 
 	t.Run("1", func(t *testing.T) {
 		t.Log("Doing: building the pools of a three worker tenant with one monitoring node")
-		pools, err := tenantWorkerPools(3, 1)
+		pools, err := tenantWorkerPools(3, 1, nil)
 		require.NoError(t, err)
 
 		t.Log("Testing: the workers are labeled workers, and a second pool is labeled and tainted for monitoring")
@@ -169,12 +182,12 @@ func TestTenantMonitoringWorkers(t *testing.T) {
 		require.Equal(t, 4, checker.workers)
 
 		t.Log("Testing: the site allowlists the two node-role label keys the pools carry")
-		require.Equal(t, []string{"node-role.kubernetes.io/worker", "node-role.kubernetes.io/monitoring"}, tenantRoleLabelKeys(1))
+		require.Equal(t, []string{"node-role.kubernetes.io/worker", "node-role.kubernetes.io/monitoring"}, tenantRoleLabelKeys(1, nil))
 	})
 
 	t.Run("-1", func(t *testing.T) {
 		t.Log("Testing: a negative monitoring count is refused before the provider is asked")
-		_, err := tenantWorkerPools(3, -1)
+		_, err := tenantWorkerPools(3, -1, nil)
 		require.ErrorContains(t, err, "-e2e.monitoring-workers")
 		var checker capacityRecorder
 		require.ErrorContains(t, requireRunCapacity(t.Context(), &checker, siteStageFull, 3, -1), "-e2e.monitoring-workers")
@@ -216,8 +229,8 @@ func TestNoMonitoringWithGPURuntime(t *testing.T) {
 }
 
 func TestAllowTenantNodeLabels(t *testing.T) {
-	saved := monitoringWorkers
-	t.Cleanup(func() { monitoringWorkers = saved })
+	saved, savedRunSpecs := monitoringWorkers, kapsBenchRunSpecs
+	t.Cleanup(func() { monitoringWorkers, kapsBenchRunSpecs = saved, savedRunSpecs })
 
 	t.Log("Doing: building the stack of a run with no monitoring node")
 	monitoringWorkers = 0
@@ -233,5 +246,13 @@ func TestAllowTenantNodeLabels(t *testing.T) {
 
 	t.Log("Testing: the stack allowlists exactly the two node-role keys")
 	require.Equal(t, []string{"node-role.kubernetes.io/worker", "node-role.kubernetes.io/monitoring"}, stack.NodeMetadataAllowlistedLabelKeys)
+	require.Equal(t, "x86_64", stack.Arch)
+
+	t.Log("Doing: building the stack of a run with no monitoring node that runs kaps-bench, as -e2e.kaps-bench-run-specs sets")
+	monitoringWorkers, kapsBenchRunSpecs = 0, []string{"baseline/cluster-density-v2.yaml"}
+	stack = allowTenantNodeLabels(site.Stack{Arch: "x86_64"})
+
+	t.Log("Testing: the stack allowlists the worker key alone")
+	require.Equal(t, []string{"node-role.kubernetes.io/worker"}, stack.NodeMetadataAllowlistedLabelKeys)
 	require.Equal(t, "x86_64", stack.Arch)
 }

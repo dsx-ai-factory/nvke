@@ -11,6 +11,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,6 +46,7 @@ func TestParseKapsBenchRunSpecs(t *testing.T) {
 }
 
 func TestRequireKapsBenchTools(t *testing.T) {
+	t.Setenv("KB_OPENSEARCH_URL", "")
 	t.Log("Doing: complete kaps-bench folders, and copies that each lack one piece")
 	folder := func() string {
 		dir := t.TempDir()
@@ -117,17 +119,108 @@ func TestRequireKapsBenchTools(t *testing.T) {
 		t.Log("Testing: kaps-bench brings its own helm, so the runner's PATH needs none")
 		require.NoError(t, requireKapsBenchTools(specs, dir))
 	})
+
+	for _, tc := range []struct {
+		name     string
+		url      string
+		pass     string
+		expected string
+	}{
+		{name: "a password line the redactor cannot hide", url: "https://opensearch.example.test:9200", pass: "abc\nlong-secret-value", expected: "KB_OPENSEARCH_PASS"},
+		{name: "a one-line password long enough to redact", url: "https://opensearch.example.test:9200", pass: "long-secret-value"},
+		{name: "no endpoint checks no password", pass: "abc"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Log("Doing: a complete folder with this case's OpenSearch endpoint and password")
+			t.Setenv("KB_OPENSEARCH_URL", tc.url)
+			t.Setenv("KB_OPENSEARCH_PASS", tc.pass)
+			err := requireKapsBenchTools(specs, dir)
+			if tc.expected == "" {
+				t.Log("Testing: the password is accepted")
+				require.NoError(t, err)
+				return
+			}
+			t.Log("Testing: the run is refused, naming the variable and no line of its value")
+			require.ErrorContains(t, err, tc.expected)
+			for line := range strings.SplitSeq(tc.pass, "\n") {
+				require.NotContains(t, err.Error(), line)
+			}
+		})
+	}
 }
 
 func TestKapsBenchRunArgs(t *testing.T) {
-	t.Log("Testing: kaps-bench runs the spec against the tenant and publishes locally")
-	require.Equal(t, []string{
-		"run", "smoke/smoke-prometheus.yaml",
-		"--kubeconfig", "/w/kubeconfig",
-		"--cluster-context", "/w/cluster-context.yaml",
-		"--output-dir", "/w/output",
-		"--local-publisher",
-	}, kapsBenchRunArgs("smoke/smoke-prometheus.yaml", "/w/kubeconfig", "/w/cluster-context.yaml", "/w/output"))
+	for _, tc := range []struct {
+		name        string
+		publishTags []string
+		want        []string
+	}{
+		{
+			name: "no publish tags publishes locally",
+			want: []string{
+				"run", "smoke/smoke-prometheus.yaml",
+				"--kubeconfig", "/w/kubeconfig",
+				"--cluster-context", "/w/cluster-context.yaml",
+				"--output-dir", "/w/output",
+				"--param", "NODE_COUNT=3",
+				"--local-publisher",
+			},
+		},
+		{
+			name:        "publish tags publish to OpenSearch under them",
+			publishTags: []string{"release_version=v0.24.0", "release_source=nvke"},
+			want: []string{
+				"run", "smoke/smoke-prometheus.yaml",
+				"--kubeconfig", "/w/kubeconfig",
+				"--cluster-context", "/w/cluster-context.yaml",
+				"--output-dir", "/w/output",
+				"--param", "NODE_COUNT=3",
+				"--tags", "release_version=v0.24.0",
+				"--tags", "release_source=nvke",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Log("Testing: kaps-bench runs the spec against the tenant's 3 workers, publishing locally only without publish tags")
+			got := kapsBenchRunArgs("smoke/smoke-prometheus.yaml", "/w/kubeconfig", "/w/cluster-context.yaml", "/w/output", 3, tc.publishTags)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+func TestKapsBenchTags(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		vars map[string]string
+		want []string
+	}{
+		{
+			name: "a GitHub Actions run links its attempt",
+			vars: map[string]string{
+				"GITHUB_SERVER_URL":  "https://github.com",
+				"GITHUB_REPOSITORY":  "dsx-ai-factory/nvke",
+				"GITHUB_RUN_ID":      "42",
+				"GITHUB_RUN_ATTEMPT": "2",
+			},
+			want: []string{
+				"ci_job_url=https://github.com/dsx-ai-factory/nvke/actions/runs/42/attempts/2",
+				"release_version=v0.24.0",
+				"release_source=nvke",
+			},
+		},
+		{
+			name: "a run with no run ID has no ci_job_url",
+			vars: map[string]string{"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": "dsx-ai-factory/nvke"},
+			want: []string{"release_version=v0.24.0", "release_source=nvke"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Log("Doing: the tags for release v0.24.0")
+			tags := kapsBenchTags("v0.24.0", func(name string) string { return tc.vars[name] })
+			t.Log("Testing: the run is tagged with its release and, inside GitHub Actions, its run")
+			require.Equal(t, tc.want, tags)
+		})
+	}
 }
 
 func TestKapsBenchClusterContext(t *testing.T) {
@@ -135,6 +228,50 @@ func TestKapsBenchClusterContext(t *testing.T) {
 	document, err := kapsBenchClusterContext("az41-ganesh-test", "209b2b00-e17b-4d05-8073-dccbed7ef5f0")
 	require.NoError(t, err)
 	require.Equal(t, "cluster:\n  name: az41-ganesh-test\n  uuid: 209b2b00-e17b-4d05-8073-dccbed7ef5f0\n", string(document))
+}
+
+func TestKapsBenchOpenSearchEnv(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		vars map[string]string
+		want []string
+	}{
+		{
+			name: "no endpoint passes nothing, credentials included",
+			vars: map[string]string{"KB_OPENSEARCH_USER": "kaps", "KB_OPENSEARCH_PASS": "pass"},
+		},
+		{
+			name: "an endpoint passes the settings that are set and nothing else",
+			vars: map[string]string{
+				"KB_OPENSEARCH_URL":   "https://opensearch.example.test:9200",
+				"KB_OPENSEARCH_PASS":  "pass",
+				"KB_OPENSEARCH_USER":  "",
+				"KB_OPENSEARCH_OTHER": "not-passed",
+				"FORGE_PERF_API_KEY":  "not-passed",
+			},
+			want: []string{"KB_OPENSEARCH_URL=https://opensearch.example.test:9200", "KB_OPENSEARCH_PASS=pass"},
+		},
+		{
+			name: "an endpoint with every setting passes all three in order",
+			vars: map[string]string{
+				"KB_OPENSEARCH_URL":  "https://opensearch.example.test:9200",
+				"KB_OPENSEARCH_USER": "kaps",
+				"KB_OPENSEARCH_PASS": "pass",
+			},
+			want: []string{
+				"KB_OPENSEARCH_URL=https://opensearch.example.test:9200",
+				"KB_OPENSEARCH_USER=kaps",
+				"KB_OPENSEARCH_PASS=pass",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Log("Doing: pick kaps-bench's OpenSearch settings from the runner's environment")
+			env := kapsBenchOpenSearchEnv(func(name string) string { return tc.vars[name] })
+			t.Log("Testing: only the three settings kaps-bench reads reach it, and only with an endpoint")
+			require.Equal(t, tc.want, env)
+		})
+	}
 }
 
 func TestKeepKapsBenchResults(t *testing.T) {

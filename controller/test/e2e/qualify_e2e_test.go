@@ -58,12 +58,14 @@ const (
 )
 
 // withheldFromEnvironment is every value in the run's environment that must
-// not reach an artifact: the jump hosts, the SSA issuer and the DSX API hosts,
-// which the workflow's own step seds out of the text files it uploads, a
-// datahall's CA certificate, and the jump host password when a run uses one.
+// not reach an artifact: the jump hosts, the SSA issuer, the DSX API hosts and
+// the OpenSearch endpoint and password, which the workflow's own step seds out
+// of the text files it uploads, a datahall's CA certificate, and the jump host
+// password when a run uses one.
 // The archives the suite writes cannot be sed-ed, so the suite carries the
 // same list into its redaction. Each value raw, without a trailing slash and,
 // for a URL, as its host alone, as the workflow matches it.
+// Each line of the OpenSearch password is matched whole as well, as the workflow matches it.
 func withheldFromEnvironment() []string {
 	var values []string
 	for _, kv := range os.Environ() {
@@ -73,10 +75,18 @@ func withheldFromEnvironment() []string {
 		}
 		dsxAPI := strings.HasPrefix(name, "DSX_") && strings.HasSuffix(name, "_API")
 		if !strings.HasSuffix(name, "_JUMP_HOST") && !strings.HasSuffix(name, "_CA_CERT") && !dsxAPI &&
-			name != "SSA_ISSUER" && name != envJumpHostPassword {
+			name != "SSA_ISSUER" && name != "KB_OPENSEARCH_URL" && name != envJumpHostPassword &&
+			name != "KB_OPENSEARCH_PASS" {
 			continue
 		}
 		values = append(values, value)
+		if name == "KB_OPENSEARCH_PASS" {
+			for _, line := range passwordLines(value) {
+				if line != value {
+					values = append(values, line)
+				}
+			}
+		}
 		if trimmed := strings.TrimRight(value, "/"); trimmed != value {
 			values = append(values, trimmed)
 		}
@@ -85,6 +95,17 @@ func withheldFromEnvironment() []string {
 		}
 	}
 	return values
+}
+
+// passwordLines returns each non-blank line of pass, trimmed, as the workflow matches it.
+func passwordLines(pass string) []string {
+	var lines []string
+	for line := range strings.SplitSeq(pass, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 // The versions a site run is given in -e2e.versions, all required. A run that
@@ -553,7 +574,7 @@ func requireRunCapacity(ctx context.Context, provider infra.Provider, stage stri
 	if stage == siteStageDeployment {
 		return checker.RequireCapacity(ctx, capabilities, 1, 0)
 	}
-	if _, err := tenantWorkerPools(workers, monitoring); err != nil {
+	if _, err := tenantWorkerPools(workers, monitoring, nil); err != nil {
 		return err
 	}
 	return checker.RequireCapacity(ctx, capabilities, 2, workers+monitoring)
@@ -1235,7 +1256,7 @@ func newStack(cfg config.Config, arch string) (site.Stack, []string, error) {
 
 // allowTenantNodeLabels returns stack allowlisting the reserved node-role labels this run's tenant pools set.
 func allowTenantNodeLabels(stack site.Stack) site.Stack {
-	stack.NodeMetadataAllowlistedLabelKeys = tenantRoleLabelKeys(monitoringWorkers)
+	stack.NodeMetadataAllowlistedLabelKeys = tenantRoleLabelKeys(monitoringWorkers, kapsBenchRunSpecs)
 	return stack
 }
 

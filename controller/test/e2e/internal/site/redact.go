@@ -14,12 +14,12 @@ import (
 )
 
 const (
-	// minRedactable is the shortest value worth searching for. A journal is
+	// MinRedactable is the shortest value worth searching for. A journal is
 	// full of short strings, so a three-byte token would match unrelated text
 	// and cost more in readability than it buys, and a credential that short
 	// is not protecting anything. Shorter values are dropped rather than
 	// half-applied.
-	minRedactable = 8
+	MinRedactable = 8
 
 	redactedMarker = "[redacted by the e2e suite]"
 )
@@ -100,14 +100,14 @@ func redactions(secrets []string) [][]byte {
 	seen := make(map[string]bool, len(secrets)*2)
 	var needles [][]byte
 	add := func(value string) {
-		if len(value) < minRedactable || seen[value] {
+		if len(value) < MinRedactable || seen[value] {
 			return
 		}
 		seen[value] = true
 		needles = append(needles, []byte(value))
 	}
 	for _, secret := range secrets {
-		if len(secret) < minRedactable {
+		if len(secret) < MinRedactable {
 			continue
 		}
 		add(secret)

@@ -723,6 +723,8 @@ step_run() {
   if [ -n "${GITHUB_ACTIONS:-}" ]; then
     local var host
     while IFS= read -r var; do
+      # GitHub masks the password itself, and its host would be a fragment of it.
+      [ "${var}" != KB_OPENSEARCH_PASS ] || continue
       host="$(host_of "${!var:-}")"
       [ -z "${host}" ] || echo "::add-mask::${host}"
     done < <(withheld_vars)
@@ -811,16 +813,16 @@ step_run() {
     ${keep[@]+"${keep[@]}"} ${workers[@]+"${workers[@]}"} ${gpu_runtime[@]+"${gpu_runtime[@]}"} ${kaps_bench[@]+"${kaps_bench[@]}"} 2>&1 | log_to qualify-e2e.log
 }
 
-# The variables withhold scrubs and run masks.
+# The variables withhold scrubs, and run masks all but KB_OPENSEARCH_PASS.
 withheld_vars() {
-  compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$|^DSX_.*_API$' || true
+  compgen -v | grep -E '_JUMP_HOST$|^SSA_ISSUER$|^DSX_.*_API$|^KB_OPENSEARCH_URL$|^KB_OPENSEARCH_PASS$' || true
 }
 
 # The host a URL names, which an error can carry without the rest of the
 # URL: a DNS lookup, a certificate that does not match. Whitespace goes
 # first, or it hides the port, and an IPv6 address loses its brackets.
 host_of() {
-  printf '%s' "$1" | tr -d '[:space:]' | sed -E 's|^[A-Za-z][A-Za-z0-9+.-]*://||; s|[/?#].*$||; s|:[0-9]*$||; s|^\[(.*)\]$|\1|'
+  printf '%s' "$1" | tr -d '[:space:]' | sed -E 's|^[A-Za-z][A-Za-z0-9+.-]*://||; s|[/?#].*$||; s|^.*@||; s|:[0-9]*$||; s|^\[(.*)\]$|\1|'
 }
 
 # The suite names the jump host in its own errors ("not reachable
@@ -828,7 +830,8 @@ host_of() {
 # errors it returns. Both land in the log and the JUnit report, and
 # GitHub masks a secret in the job log but not in an uploaded artifact.
 # A DSX API host names its datahall and reaches the same places, in the
-# provider's errors and in any issuer built on it.
+# provider's errors and in any issuer built on it. kaps-bench names its
+# OpenSearch endpoint in its log and in a failed connection's error.
 #
 # Every declared host: a run reaches one of them, and which one is not
 # worth branching on here. Discovered by suffix rather than listed, so a
@@ -839,7 +842,7 @@ host_of() {
 # to notice.
 step_withhold() {
   cd "${1:-${e2e}}"
-  local var raw trimmed form value f
+  local var raw trimmed forms form value f
   while IFS= read -r var; do
     raw="${!var:-}"
     [ -n "${raw}" ] || continue
@@ -848,7 +851,15 @@ step_withhold() {
     # slash reaches an error without it and a single literal match
     # would leave that form in the artifact. Then the host alone.
     trimmed="$(printf '%s' "${raw}" | sed 's#^[[:space:]]*##; s#[[:space:]]*$##; s#/*$##')"
-    for form in "${raw}" "${trimmed}" "$(host_of "${raw}")"; do
+    forms=("${raw}" "${trimmed}" "$(host_of "${raw}")")
+    if [ "${var}" = KB_OPENSEARCH_PASS ]; then
+      # Each line of the password is replaced whole: sed matches within a line, and a host is a fragment.
+      forms=()
+      while IFS= read -r form; do
+        forms+=("${form}")
+      done <<<"${raw}"
+    fi
+    for form in "${forms[@]}"; do
       [ -n "${form}" ] || continue
       value="$(printf '%s' "${form}" | sed 's/[][\.*^$/]/\\&/g')"
       for f in "${scrubbed[@]}"; do

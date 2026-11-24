@@ -519,18 +519,22 @@ func nicoForgeTenant() testSpec {
 }
 
 // tenantWorkerPools returns the hardware tenant's worker pool, a tainted monitoring pool above 0, or an error.
-func tenantWorkerPools(workers, monitoring int) ([]nvke.NodePoolSpec, error) {
+func tenantWorkerPools(workers, monitoring int, runSpecs []string) ([]nvke.NodePoolSpec, error) {
 	if workers < 1 {
 		return nil, fmt.Errorf("-e2e.tenant-workers is %d, and a hardware tenant needs at least 1", workers)
 	}
 	if monitoring < 0 {
 		return nil, fmt.Errorf("-e2e.monitoring-workers is %d, which is not a number of nodes", monitoring)
 	}
-	if monitoring == 0 {
+	if monitoring == 0 && len(runSpecs) == 0 {
 		return []nvke.NodePoolSpec{{DesiredNodeCount: workers}}, nil
 	}
+	worker := nvke.NodePoolSpec{DesiredNodeCount: workers, NodeLabels: map[string]string{workerRoleLabelKey: ""}}
+	if monitoring == 0 {
+		return []nvke.NodePoolSpec{worker}, nil
+	}
 	return []nvke.NodePoolSpec{
-		{DesiredNodeCount: workers, NodeLabels: map[string]string{workerRoleLabelKey: ""}},
+		worker,
 		{
 			Name:             "monitoring",
 			NodeNamePrefix:   "m",
@@ -542,9 +546,12 @@ func tenantWorkerPools(workers, monitoring int) ([]nvke.NodePoolSpec, error) {
 }
 
 // tenantRoleLabelKeys returns the node-role label keys tenantWorkerPools sets, which the site controller must allowlist.
-func tenantRoleLabelKeys(monitoring int) []string {
-	if monitoring == 0 {
+func tenantRoleLabelKeys(monitoring int, runSpecs []string) []string {
+	if monitoring == 0 && len(runSpecs) == 0 {
 		return nil
+	}
+	if monitoring == 0 {
+		return []string{workerRoleLabelKey}
 	}
 	return []string{workerRoleLabelKey, monitoringRoleLabelKey}
 }
@@ -1840,7 +1847,7 @@ func nicoForgeSpec(_ config.Config, name string, shape clusterShape) nvke.Cluste
 	Expect(err).NotTo(HaveOccurred(), "should render the Forge node payloads")
 
 	// Pools come from -e2e.tenant-workers and -e2e.monitoring-workers rather than shape.workerPools.
-	pools, err := tenantWorkerPools(tenantWorkers, monitoringWorkers)
+	pools, err := tenantWorkerPools(tenantWorkers, monitoringWorkers, kapsBenchRunSpecs)
 	Expect(err).NotTo(HaveOccurred(), "should build the tenant's worker pool")
 
 	return nvke.ClusterSpec{
@@ -2128,7 +2135,7 @@ func nicoDSXSpec(_ config.Config, name string, shape clusterShape) nvke.ClusterS
 	Expect(err).NotTo(HaveOccurred(), "should render the node payloads")
 
 	// Pools come from -e2e.tenant-workers and -e2e.monitoring-workers rather than shape.workerPools.
-	pools, err := tenantWorkerPools(tenantWorkers, monitoringWorkers)
+	pools, err := tenantWorkerPools(tenantWorkers, monitoringWorkers, kapsBenchRunSpecs)
 	Expect(err).NotTo(HaveOccurred(), "should build the tenant's worker pool")
 
 	return nvke.ClusterSpec{
