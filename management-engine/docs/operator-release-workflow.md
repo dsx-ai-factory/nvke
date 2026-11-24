@@ -26,10 +26,6 @@ Use the site's published Gateway URL for the tenant API and its approved interna
 endpoint for the operator API. Both refer to Cluster Service. Add the authentication
 options required by your deployment to each curl command.
 
-The publication example uses `spec.kubernetes.version`. On an API without that
-field, select a prepared release or [update Cluster Service](helm-installation.md#crd-ownership-upgrades-and-retention)
-before publishing a new one.
-
 | Variable | Value |
 | --- | --- |
 | `TENANT_API_URL` | Published tenant-facing Cluster Service base URL, without a trailing slash or `/v1`. |
