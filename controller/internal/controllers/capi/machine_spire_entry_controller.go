@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	spirev1alpha1 "github.com/spiffe/spire-controller-manager/api/v1alpha1"
@@ -16,11 +17,21 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 	"github.com/dsx-ai-factory/nvke/controller/internal/spiffe"
+)
+
+const (
+	// orphanSweepInterval is how often managed entries are checked for a vanished Machine.
+	orphanSweepInterval = 10 * time.Minute
+	// orphanEntryGracePeriod keeps the sweep off entries young enough to race their Machine into the cache.
+	orphanEntryGracePeriod = time.Hour
+	// legacyCWEManagedBy is the managed-by value the pre-import CWE wrote on host entries; its GC went with it.
+	legacyCWEManagedBy = "cloud-workflow-engine"
 )
 
 type MachineSpireEntryController struct {
@@ -40,6 +51,9 @@ func NewMachineSpireEntryController(cfg config.Config, k8sClient client.Client, 
 }
 
 func (c *MachineSpireEntryController) SetupWithManager(mgr ctrl.Manager) error {
+	if err := mgr.Add(manager.RunnableFunc(c.runOrphanSweep)); err != nil {
+		return fmt.Errorf("failed to add orphan ClusterStaticEntry sweep: %w", err)
+	}
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&clusterv1.Machine{}).
 		Named("machine-spire-entry").
@@ -101,7 +115,137 @@ func (c *MachineSpireEntryController) Reconcile(ctx context.Context, req ctrl.Re
 
 	logger.Info("ClusterStaticEntry applied for machine", "hostID", hostID, "parentID", parentID)
 
+	// A re-provisioned host keeps its TPM parent ID, so a leaked entry for the old host ID would compete for the SVID.
+	if err := c.deleteOrphanedSiblings(ctx, cseName, parentID); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	return ctrl.Result{}, nil
+}
+
+// deleteOrphanedSiblings deletes managed entries sharing parentID with keepName whose host ID has no live Machine.
+func (c *MachineSpireEntryController) deleteOrphanedSiblings(ctx context.Context, keepName, parentID string) error {
+	entries, err := c.listManagedEntries(ctx)
+	if err != nil {
+		return err
+	}
+	var siblings []*spirev1alpha1.ClusterStaticEntry
+	for i := range entries {
+		if entries[i].Name != keepName && entries[i].Spec.ParentID == parentID {
+			siblings = append(siblings, &entries[i])
+		}
+	}
+	if len(siblings) == 0 {
+		return nil
+	}
+
+	live, err := c.machineEntryNames(ctx, false)
+	if err != nil {
+		return err
+	}
+	for _, entry := range siblings {
+		if _, ok := live[entry.Name]; ok {
+			continue
+		}
+		if err := c.deleteEntry(ctx, entry, "sibling entry has no live Machine"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *MachineSpireEntryController) runOrphanSweep(ctx context.Context) error {
+	ticker := time.NewTicker(orphanSweepInterval)
+	defer ticker.Stop()
+	for {
+		if err := c.sweepOrphanedEntries(ctx, time.Now()); err != nil {
+			c.logger.Error("Failed to sweep orphaned ClusterStaticEntries", "error", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+	}
+}
+
+// sweepOrphanedEntries deletes managed entries older than the grace period whose host ID matches no Machine.
+func (c *MachineSpireEntryController) sweepOrphanedEntries(ctx context.Context, now time.Time) error {
+	entries, err := c.listManagedEntries(ctx)
+	if err != nil {
+		return err
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	existing, err := c.machineEntryNames(ctx, true)
+	if err != nil {
+		return err
+	}
+	for i := range entries {
+		entry := &entries[i]
+		if _, ok := existing[entry.Name]; ok {
+			continue
+		}
+		if now.Sub(entry.CreationTimestamp.Time) < orphanEntryGracePeriod {
+			continue
+		}
+		if err := c.deleteEntry(ctx, entry, "entry has no Machine"); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// listManagedEntries returns the host ClusterStaticEntries this controller, or the pre-import CWE, labeled.
+func (c *MachineSpireEntryController) listManagedEntries(ctx context.Context) ([]spirev1alpha1.ClusterStaticEntry, error) {
+	list := &spirev1alpha1.ClusterStaticEntryList{}
+	if err := c.k8sClient.List(ctx, list); err != nil {
+		return nil, fmt.Errorf("failed to list cluster static entries: %w", err)
+	}
+	managed := make([]spirev1alpha1.ClusterStaticEntry, 0, len(list.Items))
+	for _, entry := range list.Items {
+		if entry.DeletionTimestamp.IsZero() && isManagedHostEntry(&entry) {
+			managed = append(managed, entry)
+		}
+	}
+	return managed, nil
+}
+
+func isManagedHostEntry(entry *spirev1alpha1.ClusterStaticEntry) bool {
+	labels := entry.GetLabels()
+	if keys.ManagedBy.Value(labels) == constants.FieldManagerMachineSpireEntry {
+		return true
+	}
+	return labels[keys.ManagedBy.Legacy()] == legacyCWEManagedBy && strings.HasPrefix(entry.Name, machineSpireEntryName(""))
+}
+
+// machineEntryNames returns the entry names of Machines in all namespaces, skipping deleting ones unless includeDeleting.
+func (c *MachineSpireEntryController) machineEntryNames(ctx context.Context, includeDeleting bool) (map[string]struct{}, error) {
+	machines := &clusterv1.MachineList{}
+	if err := c.k8sClient.List(ctx, machines); err != nil {
+		return nil, fmt.Errorf("failed to list machines: %w", err)
+	}
+	names := make(map[string]struct{}, len(machines.Items))
+	for i := range machines.Items {
+		machine := &machines.Items[i]
+		if !includeDeleting && !machine.DeletionTimestamp.IsZero() {
+			continue
+		}
+		if hostID := keys.MachineHostID.Value(machine.GetAnnotations()); hostID != "" {
+			names[machineSpireEntryName(hostID)] = struct{}{}
+		}
+	}
+	return names, nil
+}
+
+func (c *MachineSpireEntryController) deleteEntry(ctx context.Context, entry *spirev1alpha1.ClusterStaticEntry, reason string) error {
+	if err := c.k8sClient.Delete(ctx, entry, client.Preconditions{UID: &entry.UID}); err != nil && !apierrors.IsNotFound(err) {
+		return fmt.Errorf("failed to delete cluster static entry %s: %w", entry.Name, err)
+	}
+	c.logger.Info("Deleted orphaned ClusterStaticEntry",
+		"name", entry.Name, "parentID", entry.Spec.ParentID, "spiffeID", entry.Spec.SPIFFEID, "reason", reason)
+	return nil
 }
 
 func (c *MachineSpireEntryController) applyClusterStaticEntry(ctx context.Context, name, workloadSpiffeID, parentID string) error {
