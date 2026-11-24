@@ -82,6 +82,7 @@ func Setup(ctx context.Context, cfg config.Config, seedDoc seed.Document, logger
 			InstanceTypeID: containerSite.InstanceTypeID, NodeNetwork: cfg.ContainerNodeNetwork,
 			NodeImage: cfg.ContainerNodeImage, DockerBinary: cfg.ContainerDockerBinary,
 			SpireAttestationMethod: cfg.ContainerSpireAttestationMethod,
+			NodeGPUs:               cfg.ContainerNodeGPUs,
 		}, logger)
 		if serviceErr != nil {
 			store.Close()

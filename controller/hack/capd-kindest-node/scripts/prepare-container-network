@@ -2,38 +2,47 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Describe Docker's uplink in netplan and restore its OVS bridge on boot."""
+"""Describe Docker's uplink in netplan and restore its OVS bridge on boot.
+
+Without arguments this runs after systemd-networkd and applies the result.
+With --refresh-persisted it runs before systemd-networkd on every start: it
+only brings an already persisted description up to date with the address
+Docker gave the container for this start, and renders it with `netplan
+generate`, so networkd never applies the previous start's address.
+"""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
 
 import yaml
 
+REFRESH_FLAG = "--refresh-persisted"
+
 
 def run(*args: str) -> str:
     return subprocess.check_output(args, text=True)
 
 
-def main() -> None:
-    config_path = Path("/etc/netplan/50-nke-container.yaml")
-    config = yaml.safe_load(config_path.read_text()) if config_path.exists() else {
-        "network": {"version": 2, "renderer": "networkd", "ethernets": {}}
-    }
-    network = config["network"]
+def docker_uplink(network: dict) -> tuple[dict, dict, dict] | None:
+    """Return Docker's default route, uplink link and L3 settings, or None.
+
+    None means the persisted bridge already carries the default route, so
+    there is no Docker address left on the physical interface to read.
+    """
+    bridges = network.get("bridges", {})
     routes = json.loads(run("ip", "-j", "-4", "route", "show", "default"))
     # On restart networkd may activate the persisted bridge before this unit,
     # while Docker's original route still exists on the physical interface.
-    physical_routes = [r for r in routes if r["dev"] not in network.get("bridges", {})]
-    if not physical_routes and any(r["dev"] in network.get("bridges", {}) for r in routes):
-        return
+    physical_routes = [r for r in routes if r["dev"] not in bridges]
+    if not physical_routes and any(r["dev"] in bridges for r in routes):
+        return None
     if len(physical_routes) != 1 or not physical_routes[0].get("gateway"):
         raise ValueError("expected one Docker IPv4 default route with a gateway")
     route = physical_routes[0]
-    uplink = route["dev"]
-    bridge = "br" + uplink
-    link = json.loads(run("ip", "-j", "-4", "address", "show", "dev", uplink))[0]
+    link = json.loads(run("ip", "-j", "-4", "address", "show", "dev", route["dev"]))[0]
     addresses = [a for a in link["addr_info"] if a["scope"] == "global"]
     if len(addresses) != 1:
         raise ValueError("expected one Docker IPv4 address on the uplink")
@@ -43,6 +52,24 @@ def main() -> None:
         "routes": [{"to": "default", "via": route["gateway"], "on-link": True}],
         "mtu": link["mtu"],
     }
+    return route, link, l3
+
+
+def main(refresh_only: bool) -> None:
+    config_path = Path(os.environ.get("PREPARE_CONTAINER_NETWORK_CONFIG", "/etc/netplan/50-nke-container.yaml"))
+    if refresh_only and not config_path.exists():
+        # First boot: nothing persisted that networkd could apply.
+        return
+    config = yaml.safe_load(config_path.read_text()) if config_path.exists() else {
+        "network": {"version": 2, "renderer": "networkd", "ethernets": {}}
+    }
+    network = config["network"]
+    uplink_state = docker_uplink(network)
+    if uplink_state is None:
+        return
+    route, link, l3 = uplink_state
+    uplink = route["dev"]
+    bridge = "br" + uplink
     restoring_bridge = bridge in network.get("bridges", {})
     if restoring_bridge:
         # Docker recreates eth0 on every start. Refresh the persisted netplan
@@ -55,6 +82,12 @@ def main() -> None:
     config_path.parent.mkdir(parents=True, exist_ok=True)
     config_path.write_text(yaml.safe_dump(config, sort_keys=False))
     config_path.chmod(0o600)
+    if refresh_only:
+        # networkd is not running yet and reads what netplan renders into
+        # /run/systemd/network when it starts; the boot-time generator
+        # rendered the previous start's address there.
+        run("netplan", "generate")
+        return
     if restoring_bridge:
         # Remove Docker's IPv4 state so networkd can assign it to the bridge.
         run("ip", "-4", "route", "del", "default", "via", route["gateway"], "dev", uplink)
@@ -63,8 +96,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    arguments = sys.argv[1:]
+    if arguments not in ([], [REFRESH_FLAG]):
+        print(f"usage: {sys.argv[0]} [{REFRESH_FLAG}]", file=sys.stderr)
+        raise SystemExit(2)
     try:
-        main()
+        main(arguments == [REFRESH_FLAG])
     except (OSError, ValueError, KeyError, yaml.YAMLError, subprocess.CalledProcessError) as error:
         print(f"prepare container network: {error}", file=sys.stderr)
         raise SystemExit(1) from error

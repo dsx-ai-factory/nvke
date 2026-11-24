@@ -100,6 +100,9 @@ RUN set -eux; \
 # tolerates the resulting device-trigger warning inside containers.
 COPY scripts/prepare-container-network /usr/local/sbin/prepare-container-network
 COPY scripts/nke-container-network.service /etc/systemd/system/nke-container-network.service
+# Docker can assign a restarted container another address. The persisted
+# netplan file holds the previous start's, so refresh it before networkd starts.
+COPY scripts/nvke-container-network-refresh.service /etc/systemd/system/nvke-container-network-refresh.service
 RUN set -eux; \
     chmod 0755 /usr/local/sbin/prepare-container-network; \
     mkdir -p /etc/systemd/system/systemd-udevd.service.d; \
@@ -109,7 +112,7 @@ RUN set -eux; \
       > /etc/systemd/system/ovs-vswitchd.service.d/no-rmmod-bridge.conf; \
     SYSTEMD_OFFLINE=1 systemctl enable systemd-networkd.service; \
     SYSTEMD_OFFLINE=1 systemctl disable systemd-networkd-wait-online.service; \
-    SYSTEMD_OFFLINE=1 systemctl enable nke-container-network.service
+    SYSTEMD_OFFLINE=1 systemctl enable nke-container-network.service nvke-container-network-refresh.service
 
 # The DSX identity exchange fixture uses a local CA. The build helper supplies
 # its public certificate when that provider is enabled; other builds keep the
@@ -255,6 +258,25 @@ RUN set -eux; \
       "AGENT_ARGS=\"--disable-mlx5-rescan${NKE_AGENT_SPIFFE_ARG} --secure-server-port ${NODE_AGENT_PORT}${NKE_AGENT_BUNDLE_ARGS}\"" \
       'NKE_LOCAL_DEV=true' \
       > /etc/default/nvke-agent
+
+# The kind base image ships containerd's root config at version 2, but tools that
+# add drop-ins under /etc/containerd/conf.d (GPU Operator toolkit, kata-deploy) write
+# them at the version of the containerd they find, and containerd refuses a drop-in
+# newer than the root config. Migrate the shipped file once, at build time. The
+# base image's entrypoint seds `snapshotter = "overlayfs"` to apply
+# KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER, but migrate writes single quotes, so put
+# the double quotes back and fail the build if any line the entrypoint edits is gone.
+RUN set -eux; \
+    config=/etc/containerd/config.toml; \
+    want="$(containerd config default | sed -n "s/^version = //p")"; \
+    containerd --config "${config}" config migrate > /tmp/containerd-config.toml; \
+    sed -i "s/^\( *snapshotter = \)'overlayfs'$/\1\"overlayfs\"/" /tmp/containerd-config.toml; \
+    grep -qx "version = ${want}" /tmp/containerd-config.toml; \
+    grep -qx ' *snapshotter = "overlayfs"' /tmp/containerd-config.toml; \
+    grep -qx ' *restrict_oom_score_adj = false' /tmp/containerd-config.toml; \
+    grep -qF "address = '/run/containerd-fuse-overlayfs.sock'" /tmp/containerd-config.toml; \
+    install -m 0644 /tmp/containerd-config.toml "${config}"; \
+    rm /tmp/containerd-config.toml
 
 # Pull order for docker.io and registry.k8s.io: CI mirror if one was given, then
 # the local pull-through cache (`make registry-mirror`), then upstream. containerd

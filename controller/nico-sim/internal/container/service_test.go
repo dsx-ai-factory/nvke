@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -105,5 +106,70 @@ esac
 		require.Equal(t, "192.0.2.10", got.instance.GetInterfaces()[0].GetIpAddresses()[0])
 	case <-time.After(2 * time.Second):
 		t.Fatal("instance creation waited for the bootstrap gate")
+	}
+}
+
+// The fake Docker records the arguments of `docker create`, one per line.
+func TestUnit_CreateInstanceNodeFlags(t *testing.T) {
+	const instanceID = "0123456789abcdef"
+	inspect := `[{"Config":{"Labels":{"nvidia.com/nico-containers.instance-id":"` + instanceID + `","nvidia.com/nico-containers.site-id":"site","nvidia.com/nico-containers.vpc-id":"vpc","nvidia.com/nico-containers.tenant-id":"tenant","nvidia.com/nico-containers.spire-attestation-method":"dsxImds"}},"State":{"Running":true},"NetworkSettings":{"Networks":{"kind":{"IPAddress":"192.0.2.10"}}}}]`
+	tests := map[string]struct {
+		gpus     string
+		wantGPUs []string
+	}{
+		"defaults pass no GPU flag":          {},
+		"whitespace GPUs pass no flag":       {gpus: " \t "},
+		"GPUs are passed trimmed":            {gpus: " all ", wantGPUs: []string{"--gpus", "all"}},
+		"device selection is passed through": {gpus: `"device=0,1"`, wantGPUs: []string{"--gpus", `"device=0,1"`}},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			docker := filepath.Join(dir, "docker")
+			calls := filepath.Join(dir, "create-args")
+			fakeDocker := fmt.Sprintf(`#!/bin/sh
+case "$1" in
+  create)
+    shift
+    for arg in "$@"; do printf '%%s\n' "$arg"; done > '%s'
+    echo container
+    ;;
+  inspect) printf '%%s' '%s' ;;
+  exec) cat >/dev/null ;;
+esac
+`, calls, inspect)
+			require.NoError(t, os.WriteFile(docker, []byte(fakeDocker), 0o755))
+			service := &Service{
+				cfg: Config{
+					DockerBinary: docker, NodeNetwork: "kind", NodeImage: "image", SiteID: "site", VPCID: "vpc", TenantID: "tenant",
+					NodeGPUs: tt.gpus,
+				},
+				logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+			}
+			req := &nicosdk.InstanceCreateRequest{}
+			req.SetName("node")
+			req.SetVpcId("vpc")
+			req.SetTenantId("tenant")
+			_, err := service.createInstance(context.Background(), instanceID, *req)
+			require.NoError(t, err)
+
+			recorded, err := os.ReadFile(calls)
+			require.NoError(t, err)
+			args := strings.Split(strings.TrimSuffix(string(recorded), "\n"), "\n")
+
+			if tt.wantGPUs == nil {
+				require.NotContains(t, args, "--gpus")
+			} else {
+				index := slices.Index(args, "--gpus")
+				require.GreaterOrEqual(t, index, 0)
+				require.Equal(t, tt.wantGPUs, args[index:index+2])
+			}
+			require.Contains(t, args, "/var/lib/etcd:size=4g")
+			// Existing flags keep their relative order.
+			wantOrder := []string{"--tmpfs", "/tmp", "--tmpfs", "/run"}
+			require.Equal(t, wantOrder, args[slices.Index(args, "--security-opt")+4:][:4])
+			require.Less(t, slices.Index(args, "--restart"), slices.Index(args, "--network"))
+			require.Less(t, slices.Index(args, "--network"), slices.Index(args, "--volume"))
+		})
 	}
 }

@@ -1,0 +1,24 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Docker may hand a restarted container a different address, and netplan's
+# boot-time generator renders the address nke-container-network persisted on
+# the previous start. Before networkd can apply that, replace it with what
+# Docker assigned for this start, which is still on eth0 at this point. On
+# first boot nothing is persisted and the unit is skipped.
+[Unit]
+Description=Refresh the persisted Docker node address for NVKE
+DefaultDependencies=no
+ConditionPathExists=/etc/netplan/50-nke-container.yaml
+After=local-fs.target
+Before=network-pre.target systemd-networkd.service
+Conflicts=shutdown.target
+Before=shutdown.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/prepare-container-network --refresh-persisted
+RemainAfterExit=yes
+
+[Install]
+WantedBy=sysinit.target
