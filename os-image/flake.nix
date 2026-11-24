@@ -126,7 +126,7 @@
         in
         {
           package-build = pkgs.mkShellNoCC {
-            name = "nke-package-build";
+            name = "nvke-package-build";
             packages = import ./nix/build-tools.nix { inherit pkgs; };
             # Otherwise cgo finds the host's gcc and links the agent against the
             # host's glibc, which the image may not have.
