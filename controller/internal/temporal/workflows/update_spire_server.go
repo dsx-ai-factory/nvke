@@ -17,10 +17,12 @@ import (
 )
 
 const (
-	// spireServerUpdateMetadataServiceChangeID gates skipping nodes that take
-	// their identity from the metadata service. Histories recorded before it
-	// scheduled ReconfigureNodeSpireAgent on every SPIFFE-enabled node.
-	spireServerUpdateMetadataServiceChangeID = "spire-server-update-skip-metadata-service"
+	// spireServerUpdateNodeSelectionChangeID gates which nodes the workflow
+	// schedules an update on: it skips nodes that take their identity from the
+	// metadata service, and reaches a node at its dial address rather than its
+	// IP. Histories recorded before it scheduled ReconfigureNodeSpireAgent on
+	// every SPIFFE-enabled node that had an IP, and failed the rest.
+	spireServerUpdateNodeSelectionChangeID = "spire-server-update-node-selection"
 )
 
 // UpdateSpireServerInput is the input the PATCH /clusters/{clusterID}/spire-server
@@ -74,11 +76,13 @@ func updateSpireServer(ctx workflow.Context, input UpdateSpireServerInput) error
 		},
 	})
 
-	// GetVersion checks workflow history, not the node's identity. A workflow
-	// that recorded a schedule for a metadata-service node must replay it.
-	skipMetadataServiceNodes := workflow.GetVersion(
+	// GetVersion checks workflow history, not the nodes it just listed. A
+	// workflow that recorded a schedule for a metadata-service node, or a
+	// failure for a node reachable only at a dial address, must replay that
+	// decision rather than make it again from this node selection.
+	selectsByNodeIdentityAndDialHost := workflow.GetVersion(
 		ctx,
-		spireServerUpdateMetadataServiceChangeID,
+		spireServerUpdateNodeSelectionChangeID,
 		workflow.DefaultVersion,
 		1,
 	) >= 1
@@ -94,11 +98,15 @@ func updateSpireServer(ctx workflow.Context, input UpdateSpireServerInput) error
 			logger.Info("skipping SPIRE server update on node without SPIFFE", "node", node.Name)
 			continue
 		}
-		if skipMetadataServiceNodes && node.UsesMetadataServiceIdentity() {
+		if selectsByNodeIdentityAndDialHost && node.UsesMetadataServiceIdentity() {
 			logger.Info("skipping SPIRE server update on node without a SPIRE agent", "node", node.Name)
 			continue
 		}
-		if node.AgentDialHost() == "" {
+		dialHost := node.IP
+		if selectsByNodeIdentityAndDialHost {
+			dialHost = node.AgentDialHost()
+		}
+		if dialHost == "" {
 			// It cannot be reached yet, so it still points at the old server.
 			logger.Error("SPIRE server update failed on node without an address", "node", node.Name)
 			failed = append(failed, node.Name)

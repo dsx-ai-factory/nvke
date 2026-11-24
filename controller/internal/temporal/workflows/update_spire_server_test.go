@@ -32,8 +32,8 @@ func TestUpdateSpireServerWorkflow(t *testing.T) {
 	tests := []struct {
 		name  string
 		nodes []db.Node
-		// preMarkerHistory replays a history recorded before nodes could take
-		// their identity from the metadata service.
+		// preMarkerHistory replays a history recorded before the workflow
+		// selected nodes by identity and dial host.
 		preMarkerHistory bool
 		failNode         uuid.UUID
 		wantFailure      string
@@ -48,6 +48,12 @@ func TestUpdateSpireServerWorkflow(t *testing.T) {
 		{
 			name:  "a node reachable at a dial address is updated before it reports an IP",
 			nodes: []db.Node{nodeA, dialAddressOnly, nodeB},
+		},
+		{
+			name:             "a pre-marker history reports a dial-address node as failed",
+			nodes:            []db.Node{nodeA, dialAddressOnly, nodeB},
+			preMarkerHistory: true,
+			wantFailure:      "SPIRE server update failed on nodes: dial-address-only",
 		},
 		{
 			name:        "one node fails and UpdateFailed names it",
@@ -70,11 +76,12 @@ func TestUpdateSpireServerWorkflow(t *testing.T) {
 			if tt.preMarkerHistory {
 				markerVersion = workflow.DefaultVersion
 			}
-			env.OnGetVersion(spireServerUpdateMetadataServiceChangeID, workflow.DefaultVersion, 1).
+			env.OnGetVersion(spireServerUpdateNodeSelectionChangeID, workflow.DefaultVersion, 1).
 				Return(markerVersion).Once()
 
 			// A node is updated when the workflow can reach it and it runs a
-			// SPIRE agent, which a pre-marker history assumes of every node.
+			// SPIRE agent. A pre-marker history assumes every node runs one and
+			// reaches a node only at its IP.
 			updated := []db.Node{nodeA, nodeB}
 			skipped := []db.Node{noSpiffe, noIP}
 			for _, n := range tt.nodes {
@@ -82,6 +89,8 @@ func TestUpdateSpireServerWorkflow(t *testing.T) {
 				case n.ID == noSpireAgent.ID && tt.preMarkerHistory:
 					updated = append(updated, n)
 				case n.ID == noSpireAgent.ID:
+					skipped = append(skipped, n)
+				case n.ID == dialAddressOnly.ID && tt.preMarkerHistory:
 					skipped = append(skipped, n)
 				case n.ID == dialAddressOnly.ID:
 					updated = append(updated, n)
@@ -98,6 +107,15 @@ func TestUpdateSpireServerWorkflow(t *testing.T) {
 				env.OnActivity(a.ReconfigureNodeSpireAgent, mock.Anything, activities.ReconfigureNodeSpireAgentInput{
 					NodeID: n.ID, Address: "spire.example.test", Port: 8081,
 				}).Return(activities.ReconfigureNodeSpireAgentResult{}, err)
+			}
+			// A node the workflow must not reach gets an optional expectation
+			// that succeeds. Without one, scheduling it anyway fails the mock
+			// match, which the workflow reports as the very failure a skipped
+			// node is expected to produce.
+			for _, n := range skipped {
+				env.OnActivity(a.ReconfigureNodeSpireAgent, mock.Anything, activities.ReconfigureNodeSpireAgentInput{
+					NodeID: n.ID, Address: "spire.example.test", Port: 8081,
+				}).Return(activities.ReconfigureNodeSpireAgentResult{}, nil).Maybe()
 			}
 			env.OnActivity(a.ClearSpireServerUpdateInProgress, mock.Anything, activities.ClearSpireServerUpdateInProgressInput{
 				ClusterID: clusterID, FailureMessage: tt.wantFailure,
