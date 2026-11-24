@@ -111,7 +111,8 @@ user does not need to be trusted.
   holds the guest's Nix store and build caches, plus `console.log` and the
   last `build.log`. The disk does not shrink when the guest deletes files, so
   expect it to grow to most of its 32 GiB over a few builds. Delete `stock/` to
-  start again from a fresh disk. If this Mac ran the package VM before,
+  start again from a fresh disk. The build refuses an `--output` directory
+  inside the builder state directory. If this Mac ran the package VM before,
   everything else in the builder state directory is that VM's disk and keys,
   which are no longer used and can be deleted.
 - **One run at a time** can use that state; a second fails with "already in

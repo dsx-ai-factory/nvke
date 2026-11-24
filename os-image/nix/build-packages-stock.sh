@@ -45,6 +45,10 @@ if [[ "$check" == 1 ]]; then exit 0; fi
 repo=$(git -C "$source_dir" rev-parse --show-toplevel)
 mkdir -p "$artifacts"
 artifacts=$(cd "$artifacts" && pwd -P)
+# The runtime directory is deleted at exit, and the rest belongs to the VM.
+case "$artifacts/" in
+  "$state/"*) echo "--output must be outside the builder state directory, $state" >&2; exit 2 ;;
+esac
 version=${VERSION:-$(git -C "$repo" describe --tags --always --dirty --match 'v*')}
 disk=$state/root.qcow2
 runtime=$state/runtime
@@ -100,11 +104,15 @@ stage() {
   # other host users out.
   chmod 0777 "$xchg"
   # Tracked and untracked files, but not ignored ones or deleted tracked paths.
+  # The list is written first, so a git failure stops the run.
+  git -C "$repo" ls-files -z --cached --others --exclude-standard >"$runtime/files"
   while IFS= read -r -d '' file; do
     if [[ -e "$repo/$file" || -L "$repo/$file" ]]; then printf '%s\0' "$file"; fi
-  done < <(git -C "$repo" ls-files -z --cached --others --exclude-standard) |
+  done <"$runtime/files" |
+    # Git lists an untracked repository, such as a worktree kept in the checkout,
+    # as one directory; --no-recursion keeps its files, ignored ones included, out.
     # GNU tar is on PATH; COPYFILE_DISABLE keeps macOS's tar from adding ._ files.
-    COPYFILE_DISABLE=1 tar -C "$repo" --null -T - -cf "$xchg/src-$1.tar"
+    COPYFILE_DISABLE=1 tar -C "$repo" --null --no-recursion -T - -cf "$xchg/src-$1.tar"
   # Credentials such as NGC_API_KEY travel only in this file, which the guest
   # deletes once read; nothing secret is typed on the console, which is logged.
   {
@@ -123,6 +131,9 @@ stage() {
 boot() {
   rm -f -- "$state/console.in"
   mkfifo -m 0600 "$state/console.in"
+  # Emptied here, not by QEMU's redirection below, so the wait for the login
+  # can never read the previous run's log.
+  : >"$console"
   # Held open here, so QEMU never reads end-of-file on its console.
   exec 3<>"$state/console.in"
   # Job control gives the launcher and its QEMU child their own process group.
@@ -156,6 +167,8 @@ boot() {
 run_build() {
   local id=$(($(date +%s)))-$$-$1 status
   retry_reason=
+  # An earlier run's log must not be blamed for this one.
+  rm -f -- "$build_log"
   stage "$id"
   boot
   if [[ "$ready" != 1 ]]; then

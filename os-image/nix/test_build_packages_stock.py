@@ -40,6 +40,7 @@ event("umask", oct(mask))
 event("boot", boot, {k: os.environ.get(k) for k in ("KEYS", "NIX_DISK_IMAGE", "USE_TMPDIR", "QEMU_NET_OPTS")},
       Path(os.environ["NIX_DISK_IMAGE"]).exists())
 Path(os.environ["NIX_DISK_IMAGE"]).touch()
+event("share", sorted(p.name for p in xchg.iterdir()))
 if boot <= int(os.environ.get("BOOT_FAIL", "0")):
     print("Kernel panic", flush=True)
     sys.exit(1)
@@ -78,12 +79,13 @@ for line in sys.stdin:
         wait_for_poweroff()
     corrupt = boot <= int(os.environ.get("CORRUPT", "0"))
     status = 1 if corrupt else int(os.environ.get("GUEST_STATUS", "0"))
-    with open(xchg / f"log-{rid}", "w") as log:
-        log.write("building packages\n")
-        if corrupt:
-            log.write("error: database disk image is malformed\n")
-        if status:
-            log.write("make: *** [Makefile:1: debs] Error 2\n")
+    if not os.environ.get("NO_LOG"):
+        with open(xchg / f"log-{rid}", "w") as log:
+            log.write("building packages\n")
+            if corrupt:
+                log.write("error: database disk image is malformed\n")
+            if status:
+                log.write("make: *** [Makefile:1: debs] Error 2\n")
     if status == 0 and not os.environ.get("NO_ARTIFACTS"):
         with tarfile.open(xchg / f"out-{rid}.tar", "w") as tar:
             for name, data in (("./nvke-agent.deb", b"agent"), ("./nvke-agent-spire.conf", b"conf"),
@@ -190,7 +192,7 @@ fcntl.flock(int(sys.argv[-1]), fcntl.LOCK_EX | fcntl.LOCK_NB)
         self.assertFalse((self.state / "stock/runtime").exists())
 
     def test_vm_has_no_forwarded_port_and_a_persistent_disk(self):
-        self.run_driver()
+        self.run_driver(QEMU_NET_OPTS="hostfwd=tcp:127.0.0.1:31022-:22")
         boot = self.boots()[0]
         self.assertIsNone(boot[2]["QEMU_NET_OPTS"])
         self.assertEqual(boot[2]["NIX_DISK_IMAGE"], str(self.state / "stock/root.qcow2"))
@@ -398,6 +400,51 @@ exit 1
         src = [e[1] for e in self.event_list() if e[0] == "src"][0]
         self.assertEqual(src, [".gitignore", "tracked.txt", "untracked.txt"])
 
+    def test_nested_repository_is_not_archived(self):
+        # Git lists an untracked repository, such as a worktree kept inside the
+        # checkout, as one directory; its files, ignored ones included, stay out.
+        nested = self.repo / "nested"
+        subprocess.run(["git", "init", "-q", str(nested)], check=True)
+        (nested / ".gitignore").write_text("secret.env\n")
+        (nested / "secret.env").write_text("NGC_API_KEY=nested-secret\n")
+        (nested / "file.txt").write_text("n")
+        result = self.run_driver()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        src = [e[1] for e in self.event_list() if e[0] == "src"][0]
+        self.assertEqual(src, [".gitignore", "tracked.txt", "untracked.txt"])
+
+    def test_failed_file_listing_stops_before_boot(self):
+        self.write(self.tools / "git", f"""#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = ls-files ]; then echo "fatal: index file corrupt" >&2; exit 128; fi
+done
+exec {shutil.which("git")} "$@"
+""")
+        result = self.run_driver()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.boots(), [])
+
+    def test_output_inside_the_builder_state_is_refused(self):
+        # The runtime directory is deleted at exit, and the rest is the VM's.
+        output = self.state / "stock/runtime/artifacts"
+        result = self.run_driver("--source", str(self.repo), "--output", str(output))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("outside the builder state", result.stderr)
+        self.assertEqual(self.boots(), [])
+
+    def test_stale_build_log_is_not_blamed_for_this_run(self):
+        # A guest that fails before writing its log; an older log says "corrupt".
+        disk = self.state / "stock/root.qcow2"
+        disk.parent.mkdir(parents=True)
+        disk.write_text("warm disk")
+        (self.state / "stock/build.log").write_text("error: database disk image is malformed\n")
+        result = self.run_driver(NO_LOG="1", GUEST_STATUS="2")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(self.boots()), 1)
+        self.assertTrue(disk.exists())
+        self.assertNotIn("corrupt", result.stderr)
+        self.assertFalse((self.state / "stock/build.log").exists())
+
     def test_concurrent_run_fails_fast(self):
         lock_path = self.state / "stock/build.lock"
         lock_path.parent.mkdir(parents=True)
@@ -415,6 +462,9 @@ exit 1
         (self.state / "stock/console.in").write_text("not a fifo")
         result = self.run_driver()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        shares = [e[1] for e in self.event_list() if e[0] == "share"]
+        self.assertEqual(len(shares), 1)
+        self.assertNotIn("env-old.sh", shares[0])
         self.assertFalse((self.state / "stock/runtime").exists())
 
     def test_output_is_required_unless_checking(self):
