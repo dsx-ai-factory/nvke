@@ -244,7 +244,7 @@ Check the stored resource and the workload cluster together:
 | Condition freshness | Each relevant condition's `observedGeneration` matches `metadata.generation`. Channel edits do not change the cluster's generation, so also check the resolved release. |
 | `status.currentRelease` | Names the intended control-plane release and Kubernetes version. This records backend configuration, not completed node replacement. |
 | `status.conditions` | Current `Synced`, `ControlPlaneReady` and `Ready` observations are `True`; inspect their reasons and messages if not. |
-| Backend operation | `NVKEControllerProvisioned` is `True`; provisioning, control-plane upgrading and node recycling have finished, with no reported `NVKEControllerUpdateFailed`. Missing observations do not establish completion. |
+| Backend operation | `NVKEControllerProvisioned=True` and `NVKEControllerProvisioning=False`. For requested upgrades or recycling, also confirm those operations finish and inspect any `NVKEControllerUpdateFailed` error. |
 
 Use the [workload cluster access procedure](../../docs/workload-clusters/access.md)
 to obtain its kubeconfig. Set `WORKLOAD_KUBECONFIG` to that file and inspect nodes:
