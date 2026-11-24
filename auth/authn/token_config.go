@@ -14,17 +14,17 @@ const (
 	// than deployment choices in the first TLS/JWT implementation.
 	NodeAgentIssuerName = "dsx-identity"
 	NodeAgentAudience   = "nvke-controller"
-	// NodeAgentAudienceLegacy is the audience agents request, so the controller
-	// accepts it beside NodeAgentAudience.
+	// NodeAgentAudienceLegacy is the audience bootstrapped agents request, so
+	// the controller accepts it beside NodeAgentAudience.
 	//
 	// It stays: no release removes it. The agent picks its audience with
 	// --controller-audience, which defaults to this constant and falls back to
-	// it when empty (agent/cmd/agent/main.go), and nodeAgentBootstrapFiles
-	// never passes the flag (controller/internal/temporal/activities). So every
-	// TLS/JWT agent requests the legacy audience whatever version it reports.
-	// Moving agents off it (#2039) was dropped. Removed without that move,
-	// every TLS/JWT node fails closed in controller/internal/agent/tlsjwt.go,
-	// which is enforcing-only.
+	// it when empty (agent/cmd/agent/main.go). nodeAgentBootstrapFiles never
+	// passes the flag (controller/internal/temporal/activities), so agents it
+	// bootstraps request the legacy audience whatever version they report.
+	// Moving them off it (#2039) was dropped. Removed without that move, those
+	// nodes fail closed in controller/internal/agent/tlsjwt.go, which is
+	// enforcing-only.
 	NodeAgentAudienceLegacy = "nke-controller"
 )
 
