@@ -11,6 +11,9 @@ nodePools:
   create:
     id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+    observedNodeCount: 0
+    readyNodeCount: 0
+    updatedNodeCount: 0
     conditions:
       provisioned:
         status: "False"
@@ -48,6 +51,9 @@ nodePools:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     name: workers-sibling
     desiredNodeCount: 1
+    observedNodeCount: 1
+    readyNodeCount: 1
+    updatedNodeCount: 1
     conditions:
       provisioned:
         status: "True"

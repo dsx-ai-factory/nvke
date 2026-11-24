@@ -149,6 +149,9 @@ items:
         version: 1.36.1
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers-remove
+      readyReplicas: 1
+      replicas: 3
+      updatedReplicas: 2
     - conditions:
       - message: ""
         observedGeneration: 2
@@ -175,5 +178,8 @@ items:
         version: 1.36.1
       id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
       name: workers-keep
+      readyReplicas: 2
+      replicas: 2
+      updatedReplicas: 2
     observedGeneration: 2
 metadata: {}

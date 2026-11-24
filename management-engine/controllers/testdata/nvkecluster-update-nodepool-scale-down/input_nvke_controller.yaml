@@ -35,6 +35,9 @@ nodePools:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     name: workers
     desiredNodeCount: 3
+    observedNodeCount: 4
+    readyNodeCount: 3
+    updatedNodeCount: 4
     conditions:
       provisioned:
         status: "True"
