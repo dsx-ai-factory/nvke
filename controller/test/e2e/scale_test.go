@@ -30,9 +30,14 @@ const drainProbeLabel = "e2e.nvidia.com/drain-probe"
 
 // validateNodePoolScale scales the worker pool up by one node and back down. The
 // control plane has no pool; the cp-controller entries scale it instead.
-func validateNodePoolScale(test *tenantTest) {
-	It("scales the node pools up and down", func(ctx context.Context) {
-		pools := []api.NodePool{expectWorkerPool(ctx, test)}
+// whileScaledUp, if not nil, adds specs that run between the two, while the
+// node the scale-up added is in the cluster.
+func validateNodePoolScale(test *tenantTest, whileScaledUp func()) {
+	var pools []api.NodePool
+	var newNodes []api.Node
+
+	It("scales the node pools up", func(ctx context.Context) {
+		pools = []api.NodePool{expectWorkerPool(ctx, test)}
 		originalNodes := make([]map[openapi_types.UUID]struct{}, len(pools))
 		for i, pool := range pools {
 			originalNodes[i] = expectNodeIDs(ctx, test, pool.ID)
@@ -45,13 +50,22 @@ func validateNodePoolScale(test *tenantTest) {
 
 		By("Waiting for each node pool to reach the new desired count")
 		waitForPoolCountsInParallel(ctx, test, poolScales(pools, 1)...)
-		newNodes := make([]api.Node, len(pools))
+		added := make([]api.Node, len(pools))
 		newNodeNames := make([]string, len(pools))
 		for i, pool := range pools {
-			newNodes[i] = expectNewNode(ctx, test, pool.ID, originalNodes[i])
-			newNodeNames[i] = newNodes[i].Name
+			added[i] = expectNewNode(ctx, test, pool.ID, originalNodes[i])
+			newNodeNames[i] = added[i].Name
 		}
+		newNodes = added
 		validateOVNLifecycleTraffic(ctx, test, "scale-up", newNodeNames...)
+	}, Label("lifecycle", "scale"), NodeTimeout(2*time.Hour))
+
+	if whileScaledUp != nil {
+		whileScaledUp()
+	}
+
+	It("scales the node pools back down", func(ctx context.Context) {
+		Expect(newNodes).NotTo(BeEmpty(), "the scale-up did not add a node to scale back down")
 
 		By("Restoring the original desired count of each node pool")
 		for _, pool := range pools {

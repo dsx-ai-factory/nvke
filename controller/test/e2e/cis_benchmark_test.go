@@ -65,17 +65,19 @@ var _ = Describe("CIS benchmark, site", Label(cisSiteLabel), func() {
 	}, NodeTimeout(cisBenchmarkTimeout))
 })
 
-// validateCISBenchmarkPostCreate scans the tenant cluster with kube-bench and
-// fails on any finding the exception register does not cover, or any entry it
-// no longer needs. It never skips: a runtime skip fails the CAPD lane.
-func validateCISBenchmarkPostCreate(test *tenantTest) {
-	It("passes the CIS benchmark scan", func(ctx context.Context) {
+// validateCISBenchmark scans the tenant cluster with kube-bench and fails on any
+// finding the exception register does not cover, or any entry for a check
+// kube-bench did not report. when says where in the cluster's life the scan
+// runs, such as "after creation"; it names the spec and the scan's artifacts
+// directory. It never skips: a runtime skip fails the lane.
+func validateCISBenchmark(test *tenantTest, when string) {
+	It("passes the CIS benchmark scan "+when, func(ctx context.Context) {
 		restConfig := expectSucceed(test.tenantClients.AdminRESTConfig(ctx, test.cluster.Name))
 		clientset := expectSucceed(kubernetes.NewForConfig(restConfig))
 
 		outDir := ""
 		if artifactsDir != "" {
-			outDir = filepath.Join(artifactsDir, "kube-bench", test.cluster.Name)
+			outDir = filepath.Join(artifactsDir, "kube-bench", test.cluster.Name, strings.ReplaceAll(when, " ", "-"))
 		}
 		scanner := kubebench.Scanner{Clientset: clientset, Timeout: cisTenantScanTimeout}
 		expectCISBenchmarkPasses(ctx, scanner, kubebench.ClusterTenant, outDir)
