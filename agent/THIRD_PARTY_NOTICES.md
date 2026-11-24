@@ -68,9 +68,9 @@ commands are not listed, because they are not distributed.
 | [github.com/spiffe/go-spiffe/v2](https://pkg.go.dev/github.com/spiffe/go-spiffe/v2@v2.9.0) | Apache-2.0 | github.com/spiffe/go-spiffe/v2@v2.9.0 |
 | [github.com/sqids/sqids-go](https://pkg.go.dev/github.com/sqids/sqids-go@v0.4.1) | MIT | github.com/sqids/sqids-go@v0.4.1 |
 | [github.com/x448/float16](https://pkg.go.dev/github.com/x448/float16@v0.8.4) | MIT | github.com/x448/float16@v0.8.4 |
-| [go.etcd.io/etcd/api/v3](https://pkg.go.dev/go.etcd.io/etcd/api/v3@v3.7.3) | Apache-2.0 | go.etcd.io/etcd/api/v3@v3.7.3 |
-| [go.etcd.io/etcd/client/pkg/v3](https://pkg.go.dev/go.etcd.io/etcd/client/pkg/v3@v3.7.3) | Apache-2.0 | go.etcd.io/etcd/client/pkg/v3@v3.7.3 |
-| [go.etcd.io/etcd/client/v3](https://pkg.go.dev/go.etcd.io/etcd/client/v3@v3.7.3) | Apache-2.0 | go.etcd.io/etcd/client/v3@v3.7.3 |
+| [go.etcd.io/etcd/api/v3](https://pkg.go.dev/go.etcd.io/etcd/api/v3@v3.7.4) | Apache-2.0 | go.etcd.io/etcd/api/v3@v3.7.4 |
+| [go.etcd.io/etcd/client/pkg/v3](https://pkg.go.dev/go.etcd.io/etcd/client/pkg/v3@v3.7.4) | Apache-2.0 | go.etcd.io/etcd/client/pkg/v3@v3.7.4 |
+| [go.etcd.io/etcd/client/v3](https://pkg.go.dev/go.etcd.io/etcd/client/v3@v3.7.4) | Apache-2.0 | go.etcd.io/etcd/client/v3@v3.7.4 |
 | [go.opentelemetry.io/auto/sdk](https://pkg.go.dev/go.opentelemetry.io/auto/sdk@v1.2.1) | Apache-2.0 | go.opentelemetry.io/auto/sdk@v1.2.1 |
 | [go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc](https://pkg.go.dev/go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.72.0) | Apache-2.0 / BSD-3-Clause | go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc@v0.72.0 |
 | [go.opentelemetry.io/otel](https://pkg.go.dev/go.opentelemetry.io/otel@v1.47.0) | Apache-2.0 / BSD-3-Clause | go.opentelemetry.io/otel@v1.47.0 |
@@ -81,15 +81,15 @@ commands are not listed, because they are not distributed.
 | [go.uber.org/zap](https://pkg.go.dev/go.uber.org/zap@v1.28.0) | MIT | go.uber.org/zap@v1.28.0 |
 | [go.yaml.in/yaml/v2](https://pkg.go.dev/go.yaml.in/yaml/v2@v2.4.5) | Apache-2.0 | go.yaml.in/yaml/v2@v2.4.5 |
 | [go.yaml.in/yaml/v3](https://pkg.go.dev/go.yaml.in/yaml/v3@v3.0.5) | MIT | go.yaml.in/yaml/v3@v3.0.5 |
-| [golang.org/x/net](https://pkg.go.dev/golang.org/x/net@v0.62.0) | BSD-3-Clause | golang.org/x/net@v0.62.0 |
+| [golang.org/x/net](https://pkg.go.dev/golang.org/x/net@v0.63.0) | BSD-3-Clause | golang.org/x/net@v0.63.0 |
 | [golang.org/x/oauth2](https://pkg.go.dev/golang.org/x/oauth2@v0.38.0) | BSD-3-Clause | golang.org/x/oauth2@v0.38.0 |
 | [golang.org/x/sync](https://pkg.go.dev/golang.org/x/sync@v0.25.0) | BSD-3-Clause | golang.org/x/sync@v0.25.0 |
 | [golang.org/x/sys/unix](https://pkg.go.dev/golang.org/x/sys@v0.50.0) | BSD-3-Clause | golang.org/x/sys@v0.50.0 |
 | [golang.org/x/term](https://pkg.go.dev/golang.org/x/term@v0.48.0) | BSD-3-Clause | golang.org/x/term@v0.48.0 |
 | [golang.org/x/text](https://pkg.go.dev/golang.org/x/text@v0.44.0) | BSD-3-Clause | golang.org/x/text@v0.44.0 |
 | [golang.org/x/time/rate](https://pkg.go.dev/golang.org/x/time@v0.16.0) | BSD-3-Clause | golang.org/x/time@v0.16.0 |
-| [google.golang.org/genproto/googleapis/api](https://pkg.go.dev/google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-4341edf3f941) | Apache-2.0 | google.golang.org/genproto/googleapis/api@v0.0.0-20261012220534-4341edf3f941 |
-| [google.golang.org/genproto/googleapis/rpc/status](https://pkg.go.dev/google.golang.org/genproto/googleapis/rpc@v0.0.0-20261104224025-d1e00e9f33ab) | Apache-2.0 | google.golang.org/genproto/googleapis/rpc@v0.0.0-20261104224025-d1e00e9f33ab |
+| [google.golang.org/genproto/googleapis/api](https://pkg.go.dev/google.golang.org/genproto/googleapis/api@v0.0.0-20261110000943-09e21b237f2c) | Apache-2.0 | google.golang.org/genproto/googleapis/api@v0.0.0-20261110000943-09e21b237f2c |
+| [google.golang.org/genproto/googleapis/rpc/status](https://pkg.go.dev/google.golang.org/genproto/googleapis/rpc@v0.0.0-20261110000943-09e21b237f2c) | Apache-2.0 | google.golang.org/genproto/googleapis/rpc@v0.0.0-20261110000943-09e21b237f2c |
 | [google.golang.org/grpc](https://pkg.go.dev/google.golang.org/grpc@v1.85.0) | Apache-2.0 | google.golang.org/grpc@v1.85.0 |
 | [google.golang.org/protobuf](https://pkg.go.dev/google.golang.org/protobuf@v1.36.12) | BSD-3-Clause | google.golang.org/protobuf@v1.36.12 |
 | [gopkg.in/evanphx/json-patch.v4](https://pkg.go.dev/gopkg.in/evanphx/json-patch.v4@v4.13.0) | BSD-3-Clause | gopkg.in/evanphx/json-patch.v4@v4.13.0 |
