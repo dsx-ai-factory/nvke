@@ -247,7 +247,9 @@ Check the stored resource and the workload cluster together:
 | Backend operation | `NVKEControllerProvisioned=True` and `NVKEControllerProvisioning=False`. For requested upgrades or recycling, also confirm those operations finish and inspect any `NVKEControllerUpdateFailed` error. |
 
 Use the [workload cluster access procedure](../../docs/workload-clusters/access.md)
-to obtain its kubeconfig. Set `WORKLOAD_KUBECONFIG` to that file and inspect nodes:
+to obtain its kubeconfig and arrange a route or approved proxy to the workload
+API. Access to the management cluster alone does not provide that connection.
+Set `WORKLOAD_KUBECONFIG` to the resulting file and inspect nodes:
 
 ```sh
 kubectl --kubeconfig "${WORKLOAD_KUBECONFIG:?}" get nodes -o wide
