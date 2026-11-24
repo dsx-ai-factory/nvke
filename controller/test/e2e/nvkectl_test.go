@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvkectl"
 )
@@ -89,6 +90,11 @@ func (t *tenantTest) closeNvkectl() {
 // cluster. initCluster already drove the create, list and provisioning wait
 // through nvkectl; these are the commands left over.
 func validateNvkectlPostCreate(test *tenantTest) {
+	// test.cfg is only assigned inside "creates the cluster", which runs after the
+	// tree is built. The reuse setting is read from the config file here instead.
+	cfg, err := config.Load(cfgPath)
+	Expect(err).NotTo(HaveOccurred(), "load e2e configuration")
+
 	Describe("nvkectl against the provisioned cluster", Label("nvkectl"), func() {
 		BeforeEach(func() {
 			// Assert rather than Skip: a missing runner here is a bug in this
@@ -134,7 +140,7 @@ func validateNvkectlPostCreate(test *tenantTest) {
 		// A reused cluster was not created by this run, so its create-time flag is
 		// unknown. The spec is left out of the tree rather than skipped at run time:
 		// a runtime skip from this file would trip e2e_assert_no_new_skips.
-		if test.cfg.Lifecycle.ReuseCluster == "" {
+		if cfg.Lifecycle.ReuseCluster == "" {
 			It("stores enableCPNodeRecycling set at create", func(ctx context.Context) {
 				cluster, err := test.lifecycle.GetByName(ctx, test.cluster.Name)
 				Expect(err).NotTo(HaveOccurred(), "should read the created cluster")
