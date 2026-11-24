@@ -131,6 +131,9 @@ func validateNvkectlPostCreate(test *tenantTest) {
 		// `nvkectl create cluster`. Checking the stored value proves the create-time
 		// flag reaches the controller. This spec must run before the patch below.
 		It("stores enableCPNodeRecycling set at create", func(ctx context.Context) {
+			if test.cfg.Lifecycle.ReuseCluster != "" {
+				Skip("a reused cluster was not created by this run, so its create-time flag is unknown")
+			}
 			cluster, err := test.lifecycle.GetByName(ctx, test.cluster.Name)
 			Expect(err).NotTo(HaveOccurred(), "should read the created cluster")
 
