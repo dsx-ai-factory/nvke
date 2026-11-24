@@ -26,28 +26,33 @@ while (($#)); do
 done
 if [[ "$check" == 0 ]]; then : "${artifacts:?--output is required}"; fi
 
+caller_umask=$(umask)
 umask 077
 state=${NKE_BUILDER_STATE_DIR:-${XDG_CACHE_HOME:-$HOME/.cache}/nke/builders/$arch}/stock
 mkdir -p "$state/keys"
 chmod 700 "$state"
-state=$(cd "$state" && pwd -P)
+# Paths are compared as strings below. realpath gives the case stored on disk;
+# bash's own pwd keeps the case typed, and macOS file systems ignore case.
+state=$(realpath -- "$state")
 exec 8>"$state/build.lock"
 flock -n 8 || { echo "Builder state is already in use: $state" >&2; exit 1; }
 
 # The guest is nixpkgs' own, changed only on the host side, so it is fetched
-# from the binary cache; a Mac has no Linux builder to build it.
-vm=$(nix build --no-link --print-out-paths "$vm_drv^out") || {
+# from the binary cache; a Mac has no Linux builder to build it. The link is a
+# GC root, so a garbage collection cannot delete the guest during a run.
+vm=$(nix build --out-link "$state/vm" --print-out-paths "$vm_drv^out") || {
   echo "nixpkgs' Linux builder guest is not in the binary cache for this nixpkgs pin, and a Mac cannot build it. See os-image/nix/README.md." >&2
   exit 1
 }
 if [[ "$check" == 1 ]]; then exit 0; fi
 
 repo=$(git -C "$source_dir" rev-parse --show-toplevel)
-mkdir -p "$artifacts"
-artifacts=$(cd "$artifacts" && pwd -P)
+repo=$(realpath -- "$repo")
+(umask "$caller_umask" && mkdir -p -- "$artifacts")
+artifacts=$(realpath -- "$artifacts")
 # The runtime directory is deleted at exit, and the rest belongs to the VM.
 case "$artifacts/" in
-  "$state/"*) echo "--output must be outside the builder state directory, $state" >&2; exit 2 ;;
+  "$state/"*) echo "--output must be outside the stock builder's state directory, $state" >&2; exit 2 ;;
 esac
 version=${VERSION:-$(git -C "$repo" describe --tags --always --dirty --match 'v*')}
 disk=$state/root.qcow2
@@ -107,6 +112,8 @@ stage() {
   # The list is written first, so a git failure stops the run.
   git -C "$repo" ls-files -z --cached --others --exclude-standard >"$runtime/files"
   while IFS= read -r -d '' file; do
+    # The builder's own state and output are not source, even inside the checkout.
+    case "$repo/$file" in "$state/"* | "$artifacts/"*) continue ;; esac
     if [[ -e "$repo/$file" || -L "$repo/$file" ]]; then printf '%s\0' "$file"; fi
   done <"$runtime/files" |
     # Git lists an untracked repository, such as a worktree kept in the checkout,
@@ -160,6 +167,11 @@ boot() {
   ready=1
 }
 
+# see_logs names this run's build log, if the guest wrote one, and the console log.
+see_logs() {
+  if [[ -e "$build_log" ]]; then echo "see $build_log and $console"; else echo "see $console"; fi
+}
+
 # run_build <attempt> returns once the artifacts are in place, or with
 # retry_reason set when the VM did not boot or the guest's Nix database is
 # corrupt; it exits on any other failure. Its callers run it as a plain
@@ -196,7 +208,7 @@ run_build() {
   stop_vm
   if [[ -e "$xchg/log-$id" ]]; then cp "$xchg/log-$id" "$build_log"; fi
   if [[ ! -e "$xchg/status-$id" ]]; then
-    echo "The guest powered off with no status; see $build_log and $console" >&2
+    echo "The guest powered off with no status; $(see_logs)" >&2
     exit 1
   fi
   status=$(<"$xchg/status-$id")
@@ -205,18 +217,18 @@ run_build() {
       retry_reason="The guest's Nix database is corrupt; see $build_log"
       return 0
     fi
-    echo "The package build failed in the guest (status $status); see $build_log" >&2
+    echo "The package build failed in the guest (status $status); $(see_logs)" >&2
     exit 1
   fi
   if [[ ! -s "$xchg/out-$id.tar" ]]; then
-    echo "The guest returned no artifacts; see $build_log" >&2
+    echo "The guest returned no artifacts; $(see_logs)" >&2
     exit 1
   fi
   local out=$runtime/out
   mkdir -p "$out"
   tar -xpf "$xchg/out-$id.tar" -C "$out"
   for expected in nvke-agent.deb debs/Packages; do
-    [[ -e "$out/$expected" ]] || { echo "The guest returned no $expected; see $build_log" >&2; exit 1; }
+    [[ -e "$out/$expected" ]] || { echo "The guest returned no $expected; $(see_logs)" >&2; exit 1; }
   done
   # debs/ is the builder's own tree, so stale debs are deleted there; the output
   # directory itself belongs to the caller and keeps whatever else is in it.

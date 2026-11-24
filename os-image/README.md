@@ -124,9 +124,10 @@ check: the value reaches a shell command in the autoinstall late-commands.
 
 Image baking uses the existing package Make targets.
 `NKE_PACKAGE_BUILDER=auto|host|nix` picks the package builder: `auto` builds on
-a matching Linux host and otherwise uses the
-[NixOS package-builder VM](nix/README.md), which returns the packages to the
-host before Packer uploads them to its separate Ubuntu guest.
+a matching Linux host and otherwise uses the [Nix path](nix/README.md): nixpkgs'
+stock Linux builder on Apple Silicon macOS, and the NixOS package-builder VM on
+other Linux hosts. Either returns the packages to the host before Packer uploads
+them to its separate Ubuntu guest.
 
 `image-native` requires usable KVM. The generic `image` target and the existing
 `packer/` targets allow `ACCELERATOR=tcg` for development. Emulated builds are
@@ -167,7 +168,7 @@ particular Mac/QEMU combination still needs live validation. Apple Silicon macOS
 host Packer/ISO tools. The boot scripts also need `cloud-localds`, SSH and, for
 smoke tests, `timeout`.
 Run `make -C os-image test-qemu` for the selection and build-entrypoint tests
-without booting a VM.
+and the macOS package-build driver tests, none of which boots a VM.
 
 The build checks package-builder prerequisites before starting Packer — Go for
 host builds, Nix for VM builds; `make -C os-image/packer check-deps ARCH=arm64`

@@ -61,6 +61,9 @@ NKE_TARGET_UBUNTU_SERIES=26.04 nix run ./os-image#build-packages-arm64 -- --outp
 Open vSwitch build. Use `build-packages-amd64` for x86 packages. The command starts the VM, copies
 in your checkout's tracked and untracked files (not ignored ones), builds the
 packages, copies the results to your output directory, and shuts down the VM.
+On macOS, an untracked repository inside the checkout, such as a git worktree,
+arrives as an empty directory, and the builder's own state and output
+directories are left out.
 The first build takes longer; later builds reuse a persistent disk containing
 the Nix store and compiler/download caches.
 The builder copies top-level artifacts, replacing same-named files such as
@@ -108,11 +111,12 @@ user does not need to be trusted.
   powers the VM off. The guest's log streams to your terminal.
 - **State** lives in `stock/` under the builder state directory, by default
   `~/.cache/nke/builders/<arch>/stock`: the persistent disk `root.qcow2`, which
-  holds the guest's Nix store and build caches, plus `console.log` and the
-  last `build.log`. The disk does not shrink when the guest deletes files, so
+  holds the guest's Nix store and build caches, plus `console.log`, the last
+  `build.log`, and `vm`, a link that keeps the guest from Nix garbage
+  collection. The disk does not shrink when the guest deletes files, so
   expect it to grow to most of its 32 GiB over a few builds. Delete `stock/` to
   start again from a fresh disk. The build refuses an `--output` directory
-  inside the builder state directory. If this Mac ran the package VM before,
+  inside `stock/`. If this Mac ran the package VM before,
   everything else in the builder state directory is that VM's disk and keys,
   which are no longer used and can be deleted.
 - **One run at a time** can use that state; a second fails with "already in

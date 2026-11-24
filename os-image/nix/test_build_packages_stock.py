@@ -11,6 +11,7 @@ import select
 import shutil
 import signal
 import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -209,8 +210,10 @@ fcntl.flock(int(sys.argv[-1]), fcntl.LOCK_EX | fcntl.LOCK_NB)
     def test_check_realizes_the_vm_without_booting(self):
         result = self.run_driver("--check")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.event_list(), [["nix", "build", "--no-link", "--print-out-paths",
-                                              "/nix/store/stock-vm.drv^out"]])
+        # The link is a GC root, so a garbage collection during a run cannot
+        # delete the guest.
+        self.assertEqual(self.event_list(), [["nix", "build", "--out-link", str(self.state / "stock/vm"),
+                                              "--print-out-paths", "/nix/store/stock-vm.drv^out"]])
 
     def test_uncached_guest_fails_with_guidance(self):
         result = self.run_driver(NIX_FAIL="1")
@@ -429,8 +432,46 @@ exec {shutil.which("git")} "$@"
         output = self.state / "stock/runtime/artifacts"
         result = self.run_driver("--source", str(self.repo), "--output", str(output))
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("outside the builder state", result.stderr)
+        self.assertIn("outside the stock builder's state", result.stderr)
         self.assertEqual(self.boots(), [])
+
+    @unittest.skipUnless(sys.platform == "darwin", "macOS file systems ignore case by default")
+    def test_output_inside_the_builder_state_in_other_case_is_refused(self):
+        (self.state / "stock").mkdir(parents=True)
+        output = Path(str(self.state).upper()) / "STOCK/runtime/artifacts"
+        if not output.parent.parent.exists():
+            self.skipTest("this file system is case-sensitive")
+        result = self.run_driver("--source", str(self.repo), "--output", str(output))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("outside the stock builder's state", result.stderr)
+        self.assertEqual(self.boots(), [])
+
+    def test_builder_directories_inside_the_checkout_are_not_archived(self):
+        # The README's example writes its output inside the checkout.
+        output = self.repo / "artifacts/arm64"
+        output.mkdir(parents=True)
+        (output / "previous.deb").write_text("previous")
+        result = self.run_driver("--source", str(self.repo), "--output", str(output),
+                                 NKE_BUILDER_STATE_DIR=str(self.repo / "builder-state"))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        src = [e[1] for e in self.event_list() if e[0] == "src"][0]
+        self.assertEqual(src, [".gitignore", "tracked.txt", "untracked.txt"])
+
+    def test_output_parents_follow_the_callers_umask(self):
+        output = self.root / "fresh/parent/out"
+        result = subprocess.run([shutil.which("bash"), str(SCRIPT), "--source", str(self.repo),
+                                 "--output", str(output)], env=self.env, text=True, capture_output=True,
+                                timeout=60, preexec_fn=lambda: os.umask(0o022))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertEqual((self.root / "fresh").stat().st_mode & 0o777, 0o755)
+        self.assertEqual((self.root / "fresh/parent").stat().st_mode & 0o777, 0o755)
+
+    def test_a_guest_without_a_log_points_at_the_console_only(self):
+        result = self.run_driver(NO_LOG="1", GUEST_NO_STATUS="1")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("no status", result.stderr)
+        self.assertIn(str(self.state / "stock/console.log"), result.stderr)
+        self.assertNotIn("build.log", result.stderr)
 
     def test_stale_build_log_is_not_blamed_for_this_run(self):
         # A guest that fails before writing its log; an older log says "corrupt".
@@ -444,6 +485,8 @@ exec {shutil.which("git")} "$@"
         self.assertTrue(disk.exists())
         self.assertNotIn("corrupt", result.stderr)
         self.assertFalse((self.state / "stock/build.log").exists())
+        self.assertNotIn("build.log", result.stderr)
+        self.assertIn(str(self.state / "stock/console.log"), result.stderr)
 
     def test_concurrent_run_fails_fast(self):
         lock_path = self.state / "stock/build.lock"
