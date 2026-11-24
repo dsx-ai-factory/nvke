@@ -45,16 +45,16 @@ spec:
         #   - key: workload
         #     value: gpu
         #     effect: NoSchedule
-      # Enforcing rollout budgets and schedules requires downstream support.
+      # Budgets limit new recycle selections.
       rollout:
         strategy:
           type: RollingUpdate
           disruption:
             budgets:
               - nodes: 10%
-              - schedule: "0 9 * * mon-fri"
-                duration: 8h
-                nodes: "0"
+              # - schedule: "0 9 * * mon-fri"
+              #   duration: 8h
+              #   nodes: "0"
 
   # Accelerated runtime selection requires downstream support.
   # All pools must match the bundle's accelerator family and OS. Core runtime follows the cluster release.

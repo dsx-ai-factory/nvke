@@ -104,7 +104,7 @@ nodePools:
   nodeNamePrefix: ""
   nodeTaints: null
   provisioningMonitorDisabled: false
-  recycleBudget: 0
+  recycleBudget: 1
 - autoModeDisabled: false
   autoProvisionDisabled: false
   clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
@@ -271,6 +271,7 @@ requests:
               vpcID: 22222222-2222-4222-8222-222222222222
       preKubeadmCommands:
       - echo worker-b-release
+    recycleBudget: 0
 - method: PATCH
   path: /api/nodePools/cccccccc-cccc-4ccc-8ccc-cccccccccccc
   updateNodePool:

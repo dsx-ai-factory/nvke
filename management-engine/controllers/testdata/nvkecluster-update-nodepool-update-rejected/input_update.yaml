@@ -24,6 +24,12 @@ spec:
       replicas: 1
       vpcSubnetID: 44444444-4444-4444-8444-444444444444
       nodeProfile: "example:1.36.2"
+      rollout:
+        strategy:
+          type: RollingUpdate
+          disruption:
+            budgets:
+              - nodes: "0"
     - name: workers-unresolved
       instanceType: 33333333-3333-4333-8333-333333333333
       replicas: 2

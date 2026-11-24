@@ -41,6 +41,9 @@ nodePools:
     clusterID: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
     name: workers-move
     desiredNodeCount: 1
+    recycleBudget: 1
+    autoModeDisabled: false
+    maxSurge: 0
     conditions:
       provisioned:
         status: "True"
