@@ -4,6 +4,7 @@
 package container
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -286,18 +287,25 @@ func (s *Service) execInContainerOutput(ctx context.Context, containerID string,
 	return out, nil
 }
 
+// runDocker returns the engine CLI's standard output. Its standard error is
+// kept apart: a warning from the engine, or from the sudo in front of it, would
+// otherwise become part of a container ID or of the IDs `ps` lists.
 func (s *Service) runDocker(ctx context.Context, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, s.cfg.DockerBinary, args...)
-	output, err := cmd.CombinedOutput()
-	trimmed := strings.TrimSpace(string(output))
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	trimmed := strings.TrimSpace(stdout.String())
 	if err != nil {
-		if trimmed == "" {
-			trimmed = err.Error()
+		message := strings.TrimSpace(stderr.String() + "\n" + stdout.String())
+		if message == "" {
+			message = err.Error()
 		}
 		if errors.Is(err, exec.ErrNotFound) {
-			return "", fmt.Errorf("%w: %s", apierr.ErrUnavailable, trimmed)
+			return "", fmt.Errorf("%w: %s", apierr.ErrUnavailable, message)
 		}
-		return "", fmt.Errorf("%s %s: %s", s.cfg.DockerBinary, strings.Join(args, " "), trimmed)
+		return "", fmt.Errorf("%s %s: %s", s.cfg.DockerBinary, strings.Join(args, " "), message)
 	}
 	return trimmed, nil
 }

@@ -15,23 +15,27 @@
 
 set -euo pipefail
 CONTAINER_NAME="${CONTAINER_NAME:-bgp-containers}"
+# shellcheck source=../container-engine/lib.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../container-engine/lib.sh"
+ce_init || exit 1
+ENGINE="$(ce_cli)"
 
-if ! docker ps --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
+if ! "${ENGINE}" ps --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
   echo "FRR container '${CONTAINER_NAME}' is not running. Run up.sh first." >&2
   exit 1
 fi
 
 echo "=== BGP peer summary ==="
 status=0
-docker exec "${CONTAINER_NAME}" vtysh -c 'show bgp summary' || status=$?
+"${ENGINE}" exec "${CONTAINER_NAME}" vtysh -c 'show bgp summary' || status=$?
 
 echo
 echo "=== BGP ipv4 unicast (received routes) ==="
-docker exec "${CONTAINER_NAME}" vtysh -c 'show bgp ipv4 unicast' || status=$?
+"${ENGINE}" exec "${CONTAINER_NAME}" vtysh -c 'show bgp ipv4 unicast' || status=$?
 
 echo
 echo "=== Detailed peer info ==="
-docker exec "${CONTAINER_NAME}" vtysh -c 'show bgp neighbors' 2>/dev/null \
+"${ENGINE}" exec "${CONTAINER_NAME}" vtysh -c 'show bgp neighbors' 2>/dev/null \
   | grep -E "^BGP neighbor|BGP state|Last reset|Local host|Foreign host|Update source" || status=$?
 
 exit "${status}"

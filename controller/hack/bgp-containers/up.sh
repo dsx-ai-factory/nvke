@@ -31,13 +31,17 @@ CONTAINER_NAME="${CONTAINER_NAME:-bgp-containers}"
 NETWORK_NAME="${NETWORK_NAME:-kind}"
 FRR_IMAGE="${FRR_IMAGE:-quay.io/frrouting/frr:9.1.0}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=../container-engine/lib.sh
+source "${HERE}/../container-engine/lib.sh"
+ce_init || exit 1
+ENGINE="$(ce_cli)"
 TMP_DIR="$(mktemp -d)"
 started=false
 
 cleanup() {
   rm -rf "${TMP_DIR}"
   if [[ "${started}" != true ]]; then
-    docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+    "${ENGINE}" rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup EXIT
@@ -48,20 +52,20 @@ die()   { echo "[bgp-containers:up] ERROR: $*" >&2; exit 1; }
 # Resolve the kind bridge gateway. In host mode this is also FRR's effective
 # bind address (FRR binds 0.0.0.0:179, but the gateway is what kube-vip will
 # auto-detect and dial).
-if ! docker network inspect "${NETWORK_NAME}" &>/dev/null; then
-  die "Docker network '${NETWORK_NAME}' not found. Start the kind management cluster first."
+if ! "${ENGINE}" network inspect "${NETWORK_NAME}" &>/dev/null; then
+  die "${ENGINE} network '${NETWORK_NAME}' not found. Start the kind management cluster first."
 fi
 # Match an IPv4 address rather than "anything without a colon". A newer Docker
 # CLI renders an absent Gateway as the string "invalid IP" (Go's zero netip.Addr),
 # and the kind network lists its IPv6 subnet, which has no gateway, first. The
 # old test then picked the word "invalid".
-KIND_GW="$(docker network inspect "${NETWORK_NAME}" -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+(\.[0-9]+){3}$/) {print $i; exit}}')"
-KIND_SUBNET="$(docker network inspect "${NETWORK_NAME}" -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+(\.[0-9]+){3}\/[0-9]+$/) {print $i; exit}}')"
+KIND_GW="$("${ENGINE}" network inspect "${NETWORK_NAME}" -f '{{range .IPAM.Config}}{{.Gateway}} {{end}}' | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+(\.[0-9]+){3}$/) {print $i; exit}}')"
+KIND_SUBNET="$("${ENGINE}" network inspect "${NETWORK_NAME}" -f '{{range .IPAM.Config}}{{.Subnet}} {{end}}' | awk '{for (i = 1; i <= NF; i++) if ($i ~ /^[0-9]+(\.[0-9]+){3}\/[0-9]+$/) {print $i; exit}}')"
 [[ -n "${KIND_GW}" ]] || die "Could not detect kind network gateway."
 [[ -n "${KIND_SUBNET}" ]] || die "Could not detect kind network subnet."
 info "kind network: subnet=${KIND_SUBNET} gateway=${KIND_GW}"
 
-if docker ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
+if "${ENGINE}" ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
   info "Replacing existing FRR container '${CONTAINER_NAME}'."
   CONTAINER_NAME="${CONTAINER_NAME}" "${HERE}/down.sh"
 fi
@@ -75,9 +79,9 @@ sed -e "s|@ROUTER_ID@|${KIND_GW}|g" \
 
 # Pull first, with a retry: quay.io sits outside the Docker Hub mirror, and one
 # 502 on a blob GET during `docker create` took a whole lane down.
-if ! docker image inspect "${FRR_IMAGE}" >/dev/null 2>&1; then
+if ! "${ENGINE}" image inspect "${FRR_IMAGE}" >/dev/null 2>&1; then
   for attempt in 1 2 3; do
-    docker pull "${FRR_IMAGE}" >/dev/null && break
+    "${ENGINE}" pull "${FRR_IMAGE}" >/dev/null && break
     [[ ${attempt} -lt 3 ]] || die "Could not pull ${FRR_IMAGE} after 3 attempts."
     info "Pull of ${FRR_IMAGE} failed (attempt ${attempt}/3); retrying in 10 s."
     sleep 10
@@ -85,24 +89,24 @@ if ! docker image inspect "${FRR_IMAGE}" >/dev/null 2>&1; then
 fi
 
 info "Starting FRR in host network mode (routes install on colima/host kernel)..."
-docker create \
+"${ENGINE}" create \
   --name "${CONTAINER_NAME}" \
   --network host \
   --cap-add NET_ADMIN \
   --cap-add SYS_ADMIN \
   --cap-add NET_BIND_SERVICE \
   "${FRR_IMAGE}" >/dev/null
-docker cp "${RENDERED_CONF}" "${CONTAINER_NAME}:/etc/frr/frr.conf"
-docker cp "${HERE}/vtysh.conf" "${CONTAINER_NAME}:/etc/frr/vtysh.conf"
-docker cp "${HERE}/daemons" "${CONTAINER_NAME}:/etc/frr/daemons"
-docker start "${CONTAINER_NAME}" >/dev/null
+"${ENGINE}" cp "${RENDERED_CONF}" "${CONTAINER_NAME}:/etc/frr/frr.conf"
+"${ENGINE}" cp "${HERE}/vtysh.conf" "${CONTAINER_NAME}:/etc/frr/vtysh.conf"
+"${ENGINE}" cp "${HERE}/daemons" "${CONTAINER_NAME}:/etc/frr/daemons"
+"${ENGINE}" start "${CONTAINER_NAME}" >/dev/null
 info "kube-vip will auto-detect ${KIND_GW} as its BGP peer (default gateway)."
 info "No manifest patching required; the stock configure-kube-vip runbook works as-is."
 
 info "Waiting for bgpd to start..."
 ready=0
 for _ in $(seq 1 30); do
-  if docker exec "${CONTAINER_NAME}" vtysh -c 'show version' &>/dev/null; then
+  if "${ENGINE}" exec "${CONTAINER_NAME}" vtysh -c 'show version' &>/dev/null; then
     info "FRR is up."
     ready=1
     break
@@ -112,14 +116,15 @@ done
 
 (( ready == 1 )) || die "FRR did not become ready within 30s."
 started=true
+ce_allow_same_bridge_forwarding "${NETWORK_NAME}" || die "could not allow forwarding on the ${NETWORK_NAME} bridge."
 
 info "Useful commands:"
-echo "  docker exec ${CONTAINER_NAME} vtysh -c 'show bgp summary'"
-echo "  docker exec ${CONTAINER_NAME} vtysh -c 'show bgp ipv4 unicast'"
-echo "  docker exec -it ${CONTAINER_NAME} vtysh"
+echo "  ${ENGINE} exec ${CONTAINER_NAME} vtysh -c 'show bgp summary'"
+echo "  ${ENGINE} exec ${CONTAINER_NAME} vtysh -c 'show bgp ipv4 unicast'"
+echo "  ${ENGINE} exec -it ${CONTAINER_NAME} vtysh"
 
 if (( VERIFY == 1 )); then
   info "Sleeping 10s before peer summary..."
   sleep 10
-  docker exec "${CONTAINER_NAME}" vtysh -c 'show bgp summary' || true
+  "${ENGINE}" exec "${CONTAINER_NAME}" vtysh -c 'show bgp summary' || true
 fi

@@ -91,12 +91,13 @@ def register(ctx):
     """Register nico-sim component resources.
 
     Args:
-        ctx: struct with main_dir, cfg, kind_host_ip, provider_dir.
+        ctx: struct with main_dir, cfg, kind_host_ip, provider_dir, container_cli.
 
     Returns:
         struct with controller_resource_deps and controller_env_overrides.
     """
     provider_dir = ctx.provider_dir
+    _container_cli = getattr(ctx, "container_cli", "docker")
     _deploy = os.path.join(provider_dir, "deploy")
     _dev = os.path.join(provider_dir, ".dev")
     _log_dir = os.path.join(_dev, "logs")
@@ -322,6 +323,10 @@ def register(ctx):
         nico_sim_env["NICO_VMS_BGP_VIP_CIDRS"] = _vip_cidr
     if _container_backend_enabled:
         nico_sim_env["NICO_CONTAINERS_ENABLED"] = "true"
+        # nico-sim runs the engine CLI itself, as the user Tilt runs as; the
+        # nerdctl shim is what reaches the rootful containerd (hack/container-engine).
+        if _container_cli != "docker":
+            nico_sim_env["NICO_CONTAINERS_DOCKER_BINARY"] = os.path.join(ctx.main_dir, "hack", "container-engine", "shim", _container_cli)
     if not _vm_backend_enabled:
         nico_sim_env.update({
             "NICO_VMS_VM_BACKEND": "mock",
@@ -494,6 +499,8 @@ def register(ctx):
 
     # Host Promtail: ships nico-vms + VM console logs to Loki in K8s via port-forward.
     if _observability:
+        if _container_cli != "docker":
+            fail("The nico-sim log shipper runs Promtail with docker. Set \"nico_vms_observability\": false in tilt_config.json, or unset CONTAINER_CLI.")
         local_resource(
             "nico-sim-log-shipper",
             serve_cmd=" ".join([

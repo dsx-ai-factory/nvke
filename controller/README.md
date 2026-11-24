@@ -120,7 +120,9 @@ Full nico-vms (real libvirt VMs / amd64 releases) usually needs an x86_64 Linux 
 ### First Run
 
 1. Prepare the Docker host. On macOS this starts Colima. On Linux it loads the
-   vTPM proxy module on the host kernel:
+   vTPM proxy module on the host kernel. (To run on containerd with nerdctl
+   instead of Docker, see [Running the local flow on containerd with
+   nerdctl](#running-the-local-flow-on-containerd-with-nerdctl).)
 
 ```bash
 make host-up
@@ -249,7 +251,7 @@ Relative paths resolve against `controller/`; `CAPNICO_SOURCE_DIR` overrides the
 config for a one-off run. Source mode builds `cluster-api-provider-nico:local`,
 loads it into Kind, stages the checkout's chart with the local reboot-annotation
 overlay, and still installs CAPNICo through Helm. It does not use `NGC_API_KEY`
-or an image-pull Secret. Docker BuildKit is required, and Tilt watches the
+or an image-pull Secret. Docker BuildKit (or nerdctl with buildkitd) is required, and Tilt watches the
 checkout so source changes retrigger the provider installation.
 
 Leave `capnico_source_dir` unset to return to the released chart flow.
@@ -309,6 +311,157 @@ controller's attestation method, `nodeAgent.dsxImds.operatorTenant` and
 Setting only the attestation method is not enough: the chart refuses to render
 without `operatorTenant`. See
 [hack/dsx-imds-attestation/README.md](hack/dsx-imds-attestation/README.md).
+
+### Running the local flow on containerd with nerdctl
+
+The flow runs on a host with no Docker daemon when `CONTAINER_CLI=nerdctl` is
+set in the environment of both `make` and `tilt up`. Unset, or `docker`, it
+runs on Docker as described above. It covers the flow in [CAPNICo
+simulation](#capnico-simulation-nico-vms-and-nico-containers): the Kind
+management cluster, the images Tilt builds, the `bgp-containers` FRR peer,
+nico-sim with its container backend, and CAPNICo.
+
+`CONTAINER_CLI` is also what `hack/capd-kindest-node/build-image.sh` reads. It
+selects the engine for the Tiltfile, `Makefile.dev`, the hack scripts, kind
+(`KIND_EXPERIMENTAL_PROVIDER=nerdctl`) and nico-sim
+(`NICO_CONTAINERS_DOCKER_BINARY`). Only `docker` and `nerdctl` are accepted.
+
+**Prerequisites.** `make host-up` and Tilt's `check-management-cluster` run
+`hack/container-engine/check.sh`, which reports what is missing:
+
+- A rootful containerd, and nerdctl 1.7 or later (kind's floor for its nerdctl
+  provider). `make/tool-versions.mk` pins nerdctl `NERDCTL_VERSION`.
+- Passwordless `sudo`. Only root can talk to the system containerd, and Tilt,
+  kind and nico-sim run as you. `make` and Tilt put
+  `hack/container-engine/shim/nerdctl` first on `PATH`: it runs the real nerdctl
+  through `sudo -n`, keeping `CONTAINERD_ADDRESS`, `CONTAINERD_NAMESPACE`,
+  `BUILDKIT_HOST`, `NETCONFPATH`, `CNI_PATH`, `NERDCTL_TOML` and the proxy
+  variables. Run directly as root it runs nerdctl itself.
+- The CNI plugins `bridge`, `portmap`, `firewall`, `tuning`, `host-local` and
+  `loopback`, where nerdctl looks for them (for example `/usr/libexec/cni`).
+- `buildctl` on root's `PATH` and a running `buildkitd`. `nerdctl build` needs
+  both, and they are not part of every nerdctl install. Run buildkitd with the
+  containerd worker in nerdctl's `default` namespace, so that builds land in the
+  store nerdctl and kind read. The binaries in the `nerdctl-full` archive the
+  repository pins work, and installing only those two leaves the host's
+  containerd, runc and nerdctl alone:
+
+  ```bash
+  version="$(make --no-print-directory print-NERDCTL_VERSION)"
+  sha256="$(make --no-print-directory print-NERDCTL_FULL_SHA256_ARM64)"  # _AMD64 on amd64
+  curl -fsSLo /tmp/nerdctl-full.tar.gz "https://github.com/containerd/nerdctl/releases/download/v${version}/nerdctl-full-${version}-linux-arm64.tar.gz"
+  echo "${sha256}  /tmp/nerdctl-full.tar.gz" | sha256sum -c -
+  sudo tar -C /usr/local -xzf /tmp/nerdctl-full.tar.gz bin/buildkitd bin/buildctl
+  ```
+
+  ```ini
+  # /etc/systemd/system/buildkit.service
+  [Unit]
+  Description=buildkitd on the system containerd
+  After=containerd.service
+  Requires=containerd.service
+
+  [Service]
+  ExecStart=/usr/local/bin/buildkitd --oci-worker=false --containerd-worker=true --containerd-worker-addr /run/containerd/containerd.sock --containerd-worker-namespace default
+  Restart=on-failure
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+  Then `sudo systemctl daemon-reload && sudo systemctl enable --now buildkit`.
+- `tar` (`nerdctl cp`), `iptables` and `ip`.
+- nerdctl's data root (`/var/lib/nerdctl`, or `data_root` in
+  `/etc/nerdctl/nerdctl.toml`) on a filesystem other than overlayfs. The nodes'
+  volumes, and so their containerd, live there.
+
+**Run it.** `make capd-up` installs Cluster API's Docker provider, so use
+`capi-core-up`, and select the NICo provider as in the section above:
+
+```bash
+export CONTAINER_CLI=nerdctl
+make host-up
+make capi-core-up
+tilt up
+```
+
+Then create and delete a cluster as usual, for example
+`nvkectl create cluster -f cli/examples/nico-mock-cluster.yaml`.
+
+**Not supported.** The `capd`, `capd-reboot-controller`, `capi-syscmp`,
+`dsx-identity-exchange`, `dsx-imds-attestation`, `launchlayer` and
+`management-engine` providers need Docker: Tilt stops at startup naming the
+provider. So do `make capd-up`, `capd-create-cluster`, `capd-upgrade`,
+`capd-kubeconfig` and `bundle-mirror` (and with it `INSTALL_CNI_AFTER_INIT=false`).
+nico-sim's VM backend with its log shipper runs Promtail with Docker: set
+`"nico_vms_observability": false`, or leave the VM backend off. `make run-local`
+and `make dev-start-local` still start PostgreSQL in Docker. macOS and Colima
+are not covered.
+
+**What differs from Docker.**
+
+- Images are built in containerd's `default` namespace, which Docker's
+  (`moby`) images are not in. Tilt does not load them: the build commands run
+  `nerdctl save` and `kind load image-archive` (`kind load docker-image` runs
+  `docker`), and tell Tilt the image is not in a Docker store
+  (`skips_local_docker`).
+- The controller image has no live update. Tilt's restart-on-sync step is a
+  Docker build, so each change to `bin/controller` rebuilds the image and
+  reloads it into Kind.
+- The management cluster uses `.local/kind-nerdctl.yaml`, generated from
+  `hack/controller-capi-kind.yaml` without its `/var/run/docker.sock` mount.
+- nerdctl has no `network connect`: `make registry-mirror` starts the caches on
+  the `kind` network. A cache created earlier, off that network, is not
+  connected; remove it and run the target again.
+- kind creates the `kind` network through nerdctl, so its IPv4 subnet comes from
+  nerdctl's pool rather than Docker's `172.18.0.0/16` that [nico-sim's
+  README](nico-sim/README.md) describes. Tilt reads the gateway from the
+  network when it starts, so start Tilt after `make capi-core-up`.
+- A worker reaches the control-plane VIP through the host's BGP route, so the
+  packet enters the `kind` bridge and leaves it again. The nvkectl bootstrap lane
+  has to allow that forwarding itself under nerdctl, and so does
+  `hack/bgp-containers/up.sh`: it inserts
+  `iptables -I FORWARD 1 -i <bridge> -o <bridge> -j ACCEPT` for the `kind`
+  bridge, and `make bgp-containers-down` removes it. Nothing changes INPUT
+  rules: the nodes reach SPIRE (30440, 30443), nico-sim (18080) and the FRR
+  peer (179) on the Kind gateway address, so a host firewall that drops traffic
+  from the bridge has to allow it.
+- nerdctl writes its network configuration to `/etc/cni/net.d` unless
+  `NETCONFPATH` says otherwise.
+- `nerdctl inspect` returns nerdctl's and containerd's own labels beside the
+  container's, so instances nico-sim reports carry `nerdctl/*` labels, and
+  containerd rejects any one label whose key and value total over 4096 bytes.
+- nico-sim reads the engine's standard output only; standard error, where
+  nerdctl and sudo print warnings, is kept out of container IDs.
+
+**Troubleshooting.**
+
+- A host that ran Docker before: `nerdctl network create` for `kind` fails with
+  "subnet fc00:f853:ccd:e793::/64 overlaps with other one". kind always asks for
+  that IPv6 subnet, and the bridge of Docker's own `kind` network keeps the
+  address after Docker stops, with the interface down. `make host-up` reports the
+  interface when no nerdctl `kind` network exists yet. If nothing needs it,
+  remove it yourself, with the name it printed: `sudo ip link delete br-<id>`.
+  Nothing in the flow deletes interfaces.
+- Image pulls in the Kind nodes fail with `dial tcp [2600:...]:443: connect:
+  network is unreachable`. nerdctl has no embedded DNS: containers get the
+  host's uplink resolvers directly (on a systemd-resolved host, those in
+  `/run/systemd/resolve/resolv.conf`), and its CNI configuration for `kind` gives
+  nodes an IPv6 address but only an IPv4 default route, so there is no IPv6
+  egress. A router that answers EDNS0 queries with malformed replies makes Go's
+  resolver (containerd, kubelet) drop the A record and keep only the AAAA. Set
+  resolvers nerdctl gives every container, a global setting since nerdctl 2.1:
+  `dns = ["1.1.1.1", "8.8.8.8"]` in `/etc/nerdctl/nerdctl.toml`; containers
+  created before that keep the old resolvers.
+
+**Clean up.**
+
+```bash
+make kind-down
+make bgp-containers-down
+sudo nerdctl rm -f registry-mirror registry-k8s-mirror
+sudo nerdctl network rm kind
+```
 
 ### TPM support in Docker
 
