@@ -130,11 +130,14 @@ spec:
     # monitoring node, kept for the benchmark's Prometheus, and the suite
     # may run for 260 minutes, which the timeouts around it are derived from.
     # Its results go to their own TestGrid group, nvke-scale.
-    # Of those minutes, 215 are the stream's own and up to 45 run kaps-bench's
-    # smoke-prometheus run spec, within which kaps-bench installs Prometheus.
+    # Of those minutes, up to 45 run kaps-bench's smoke-prometheus run spec,
+    # within which kaps-bench installs Prometheus, and up to 30 its
+    # cluster-density-v2 run spec, leaving 185 for the stream's own steps.
+    # smoke-prometheus stays first, because it installs the Prometheus that
+    # cluster-density-v2 reads.
     - name: forge-cpu-amd64-ubuntu-24.04-kube-1.36-perf
       capabilities: {provider: forge, machineType: cpu, arch: amd64, ubuntu: "24.04", kube: "1.36", profile: perf}
-      parameters: {environment: forge-perf, tenantWorkers: 3, monitoringWorkers: 1, suiteTimeoutMinutes: 260, testGridGroup: nvke-scale, kapsBenchRunSpecs: [smoke/smoke-prometheus.yaml]}
+      parameters: {environment: forge-perf, tenantWorkers: 3, monitoringWorkers: 1, suiteTimeoutMinutes: 260, testGridGroup: nvke-scale, kapsBenchRunSpecs: [smoke/smoke-prometheus.yaml, baseline/cluster-density-v2.yaml]}
 
     # The DSX datahall, which is amd64 throughout, on L40S. The gpu is matched
     # against the model the datahall's instance type provides in dsx.yaml.

@@ -614,7 +614,8 @@ func TestRunDerivesTheTimeoutsAndPassesTheWorkers(t *testing.T) {
 }
 
 // TestRunMasksTheHostOfAWithheldURL checks that on Actions the run step masks
-// a DSX API host alone, which GitHub's masking of the secret does not cover.
+// a DSX API host alone, which GitHub's masking of the secret does not cover,
+// and masks no fragment of the OpenSearch password.
 func TestRunMasksTheHostOfAWithheldURL(t *testing.T) {
 	copied := copiedScript(t)
 	for _, tc := range []struct{ api, host string }{
@@ -631,6 +632,19 @@ func TestRunMasksTheHostOfAWithheldURL(t *testing.T) {
 			if !strings.Contains(out, "::add-mask::"+tc.host+"\n") {
 				t.Errorf("%s run with %q: output = %q, want %s masked", sh, tc.api, out, tc.host)
 			}
+		}
+	}
+	for _, sh := range shells(t) {
+		out, err := dryRun(t, sh, copied, "", "", "false", "GITHUB_ACTIONS=true",
+			"KB_OPENSEARCH_URL=https://opensearch.example:9200", "KB_OPENSEARCH_PASS=p/ass")
+		if err != nil {
+			t.Fatalf("%s run: %v\n%s", sh, err, out)
+		}
+		if !strings.Contains(out, "::add-mask::opensearch.example\n") {
+			t.Errorf("%s run: output = %q, want opensearch.example masked", sh, out)
+		}
+		if strings.Contains(out, "::add-mask::p\n") {
+			t.Errorf("%s run: output = %q, want no fragment of the password masked", sh, out)
 		}
 	}
 }
@@ -814,6 +828,88 @@ func TestWithholdScrubsTheDSXAPIHosts(t *testing.T) {
 	}
 }
 
+func TestWithholdScrubsTheOpenSearchEndpoint(t *testing.T) {
+	for _, sh := range shells(t) {
+		dir := t.TempDir()
+		text := "ping opensearch: Get \"https://opensearch.example:9200\": dial tcp: lookup opensearch.example: no such host\nuser kaps kept\n"
+		if err := os.WriteFile(filepath.Join(dir, "qualify-e2e.log"), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		l := newSteps(t, sh, map[string]string{
+			"KB_OPENSEARCH_URL":  "https://opensearch.example:9200",
+			"KB_OPENSEARCH_USER": "kaps",
+		})
+		l.step(true, "withhold", dir)
+		want := "ping opensearch: Get \"[withheld]\": dial tcp: lookup [withheld]: no such host\nuser kaps kept\n"
+		got, err := os.ReadFile(filepath.Join(dir, "qualify-e2e.log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != want {
+			t.Errorf("%s: scrubbed to %q, want %q", sh, got, want)
+		}
+	}
+}
+
+// A password is scrubbed as the whole value, and text matching only its host or trimmed form stays.
+func TestWithholdScrubsTheOpenSearchPassword(t *testing.T) {
+	for _, tc := range []struct{ pass, kept string }{
+		{`p/a&s|s\w.o*r[d]^$`, "p kept"},
+		{"x@y", "y"},
+		{"pw:1234", "pw"},
+	} {
+		for _, sh := range shells(t) {
+			dir := t.TempDir()
+			text := "basic auth " + tc.pass + " refused\n" + tc.kept + "\n"
+			if err := os.WriteFile(filepath.Join(dir, "qualify-e2e.log"), []byte(text), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			l := newSteps(t, sh, map[string]string{"KB_OPENSEARCH_PASS": tc.pass})
+			l.step(true, "withhold", dir)
+			want := "basic auth [withheld] refused\n" + tc.kept + "\n"
+			got, err := os.ReadFile(filepath.Join(dir, "qualify-e2e.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != want {
+				t.Errorf("%s with %q: scrubbed to %q, want %q", sh, tc.pass, got, want)
+			}
+		}
+	}
+}
+
+// A password holding a newline is scrubbed line by line, and the values withheld after it still are.
+func TestWithholdScrubsThePasswordLineByLine(t *testing.T) {
+	for _, tc := range []struct{ name, pass, text, want string }{
+		{"a trailing newline", "s3cr3t-value\n", "basic auth s3cr3t-value refused\n", "basic auth [withheld] refused\n"},
+		{"a newline in the middle", "first-half\nsecond-half", "basic auth first-half\nsecond-half refused\n", "basic auth [withheld]\n[withheld] refused\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, sh := range shells(t) {
+				dir := t.TempDir()
+				text := tc.text + "ping Get \"https://opensearch.example:9200\": lookup opensearch.example: no such host\nissuer https://issuer.example/\n"
+				if err := os.WriteFile(filepath.Join(dir, "qualify-e2e.log"), []byte(text), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				l := newSteps(t, sh, map[string]string{
+					"KB_OPENSEARCH_PASS": tc.pass,
+					"KB_OPENSEARCH_URL":  "https://opensearch.example:9200",
+					"SSA_ISSUER":         "https://issuer.example/",
+				})
+				l.step(true, "withhold", dir)
+				want := tc.want + "ping Get \"[withheld]\": lookup [withheld]: no such host\nissuer [withheld]\n"
+				got, err := os.ReadFile(filepath.Join(dir, "qualify-e2e.log"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if string(got) != want {
+					t.Errorf("%s with %q: scrubbed to %q, want %q", sh, tc.pass, got, want)
+				}
+			}
+		})
+	}
+}
+
 // The host alone is taken from the URL as the provider reads it: trimmed, and
 // without an IPv6 address's brackets.
 func TestWithholdScrubsThePaddedOrBracketedAPIHost(t *testing.T) {
@@ -827,6 +923,11 @@ func TestWithholdScrubsThePaddedOrBracketedAPIHost(t *testing.T) {
 			"https://[fd00::3]:443",
 			"Post \"https://[fd00::3]:443/realms/r/token\": x509: certificate is valid for other.example, not fd00::3\n",
 			"Post \"[withheld]/realms/r/token\": x509: certificate is valid for other.example, not [withheld]\n",
+		},
+		{
+			"https://kaps:hunter2@api.hall3.example:443",
+			"Post \"https://kaps:hunter2@api.hall3.example:443/realms/r/token\": dial tcp: lookup api.hall3.example: no such host\n",
+			"Post \"[withheld]/realms/r/token\": dial tcp: lookup [withheld]: no such host\n",
 		},
 	} {
 		for _, sh := range shells(t) {

@@ -989,7 +989,10 @@ jobs:
         with:
           version: ${{ steps.oras.outputs.version }}
 
+      # Outputs the image digest and the copied binary's version for
+      # run-inputs.txt, since the image tag floats.
       - name: Stage kaps-bench
+        id: kaps-bench
         if: env.E2E_KAPS_BENCH_RUN_SPECS != ''
         shell: bash
         run: |
@@ -997,13 +1000,19 @@ jobs:
           image="$(make --no-print-directory print-KAPS_BENCH_IMAGE)"
           echo "kaps-bench image: ${image}"
           container="$(docker create --pull always --platform linux/amd64 "${image}")"
-          echo "kaps-bench digest: $(docker image inspect --format '{{index .RepoDigests 0}}' "${image}")"
           trap 'docker rm "${container}" >/dev/null' EXIT
+          digest="$(docker image inspect --format '{{index .RepoDigests 0}}' "${image}")"
+          echo "kaps-bench digest: ${digest}"
           rm -rf "${E2E_KAPS_BENCH_DIR}"
           docker cp "${container}:/kaps-bench" "${E2E_KAPS_BENCH_DIR}"
           docker cp "${container}:/usr/local/bin/kaps-bench" "${E2E_KAPS_BENCH_DIR}/kaps-bench"
           cd "${E2E_KAPS_BENCH_DIR}"
           ./kaps-bench list-run-specs
+          version="$(./kaps-bench --version | head -n1)"
+          {
+            echo "digest=${digest}"
+            echo "version=${version}"
+          } >> "${GITHUB_OUTPUT}"
 
       # Probed here, after the logins, because the GHCR package is private,
       # so a missing tag fails before a machine is taken.
@@ -1265,6 +1274,8 @@ jobs:
           SCOPE: ${{ needs.plan.outputs.scope }}
           STREAM: ${{ matrix.stream }}
           COMBINATION: ${{ matrix.combination }}
+          KAPS_BENCH_DIGEST: ${{ steps.kaps-bench.outputs.digest }}
+          KAPS_BENCH_VERSION: ${{ steps.kaps-bench.outputs.version }}
           VAR_TELEPORT_PROXY: ${{ vars.FORGE_TELEPORT_PROXY }}
           VAR_TELEPORT_JOIN_TOKEN: ${{ vars.FORGE_TELEPORT_JOIN_TOKEN }}
         run: |
@@ -1366,6 +1377,8 @@ jobs:
             "monitoring workers|E2E_MONITORING_WORKERS|||"
             "suite timeout minutes|SUITE_TIMEOUT_MINUTES|||"
             "kaps-bench run specs|E2E_KAPS_BENCH_RUN_SPECS|||"
+            "kaps-bench digest|KAPS_BENCH_DIGEST|||"
+            "kaps-bench version|KAPS_BENCH_VERSION|||"
           )
 
           # A row nobody remembers to add is the whole failure mode: the
@@ -1485,6 +1498,11 @@ jobs:
                  { [ "${resolved}" = "CLI_VERSION" ] && [ "${SITE_CLI_BUILD}" = "1" ]; }; then
                 source="built from this checkout"
               fi
+              # Stage kaps-bench reads these from the image it pulled, so neither arm above named them.
+              if { [ "${resolved}" = "KAPS_BENCH_DIGEST" ] || [ "${resolved}" = "KAPS_BENCH_VERSION" ]; } &&
+                 [ "${value}" != "<unset>" ]; then
+                source="pulled kaps-bench image"
+              fi
               printf '  %-22s = %s\n' "${label}" "${value}"
               printf '  %-22s   [%s]\n' "" "${source}${note}"
             done
@@ -1512,6 +1530,10 @@ jobs:
           # suite reads it for a stream that runs against that environment and
           # ignores it for the others.
           FORGE_PERF_API_KEY: ${{ secrets.FORGE_PERF_API_KEY }}
+          # Only a stream with kaps-bench run specs gets the OpenSearch endpoint and credential.
+          KB_OPENSEARCH_URL: ${{ matrix.kaps_bench_run_specs != '' && secrets.KB_OPENSEARCH_URL || '' }}
+          KB_OPENSEARCH_USER: ${{ matrix.kaps_bench_run_specs != '' && secrets.KB_OPENSEARCH_USER || '' }}
+          KB_OPENSEARCH_PASS: ${{ matrix.kaps_bench_run_specs != '' && secrets.KB_OPENSEARCH_PASS || '' }}
           # The DSX credential, scoped here for the same reason the Forge key
           # is: this is the only step that reads it, and a job-level secret is
           # one every step sees -- checkout, setup-go, docker login, the
@@ -1542,6 +1564,8 @@ jobs:
         shell: bash
         env:
           SSA_ISSUER: ${{ secrets.SSA_ISSUER }}
+          KB_OPENSEARCH_URL: ${{ matrix.kaps_bench_run_specs != '' && secrets.KB_OPENSEARCH_URL || '' }}
+          KB_OPENSEARCH_PASS: ${{ matrix.kaps_bench_run_specs != '' && secrets.KB_OPENSEARCH_PASS || '' }}
         run: release/hack/qualify-e2e.sh withhold
 
       # Writes qualify-result.json from this leg's plan entry and Ginkgo
