@@ -19,7 +19,7 @@ xchg=${NKE_XCHG:-/tmp/xchg}
   . "$env_file"
   # It can hold credentials such as NGC_API_KEY.
   rm -f -- "$env_file"
-  work=$HOME/nke-build
+  work=$HOME/nvke-build
   rm -rf -- "$work"
   mkdir -p "$work/src" "$work/artifacts"
   tar -xf "$xchg/src-$id.tar" -C "$work/src"

@@ -103,7 +103,7 @@ echo "build $ARCH" >> "$TEST_EVENTS"
         self.run_guest()
         nix = self.events_lines()[0]
         self.assertIn("--extra-experimental-features nix-command flakes develop", nix)
-        self.assertIn(f"{self.home}/nke-build/src/os-image#package-build", nix)
+        self.assertIn(f"{self.home}/nvke-build/src/os-image#package-build", nix)
 
     def test_env_file_is_read_then_deleted(self):
         self.run_guest()
@@ -120,7 +120,7 @@ echo "build $ARCH" >> "$TEST_EVENTS"
         self.assertIn(f"CC={self.root}/devshell-bin/nke-ubuntu-cc", seen)
         # GNU tar keeps archive modes by default only for root.
         self.assertIn("TAR_OPTIONS=--same-permissions", seen)
-        self.assertIn(f"REPO_ROOT={self.home}/nke-build/src", seen)
+        self.assertIn(f"REPO_ROOT={self.home}/nvke-build/src", seen)
         self.assertIn('unqualified-search-registries = ["docker.io"]', seen)
         self.assertIn('"insecureAcceptAnything"', seen)
 
@@ -141,7 +141,7 @@ echo "build $ARCH" >> "$TEST_EVENTS"
         self.assertEqual(self.events_lines()[-1], "systemctl poweroff")
 
     def test_previous_build_tree_is_replaced(self):
-        stale = self.home / "nke-build/artifacts/debs/stale.deb"
+        stale = self.home / "nvke-build/artifacts/debs/stale.deb"
         stale.parent.mkdir(parents=True)
         stale.write_text("old")
         self.run_guest()
