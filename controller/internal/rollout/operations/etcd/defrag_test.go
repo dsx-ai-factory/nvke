@@ -41,6 +41,14 @@ type fakeDefragClient struct {
 	// attempt and let the retry through.
 	startErrs []error
 	startReqs []*nvkeproto.StartEtcdDefragRequest
+	// recordBeforeStartErr records the operation before a failing start
+	// returns, which is the lost-reply case: the agent accepted and published
+	// it, and only the response did not arrive.
+	recordBeforeStartErr bool
+	// startsAccepted counts starts that created a record, as opposed to
+	// returning one the agent already held. It is what separates a retry
+	// resuming from a retry defragmenting a second time.
+	startsAccepted int
 
 	// recorded mirrors the agent holding a record under the operation ID.
 	// Until a start publishes one, GetEtcdDefragStatus answers NotFound the way
@@ -78,10 +86,23 @@ func (c *fakeDefragClient) StartEtcdDefrag(
 ) (*nvkeproto.StartEtcdDefragResponse, error) {
 	c.startReqs = append(c.startReqs, req)
 	if i := len(c.startReqs) - 1; i < len(c.startErrs) && c.startErrs[i] != nil {
+		if c.recordBeforeStartErr {
+			c.record()
+		}
 		return nil, c.startErrs[i]
 	}
-	c.recorded = true
+	c.record()
 	return &nvkeproto.StartEtcdDefragResponse{}, nil
+}
+
+// record mirrors startNodeAgentOperation: an ID the agent already holds is
+// returned as it stands rather than run a second time.
+func (c *fakeDefragClient) record() {
+	if c.recorded {
+		return
+	}
+	c.recorded = true
+	c.startsAccepted++
 }
 
 func (c *fakeDefragClient) GetEtcdDefragStatus(
@@ -429,6 +450,53 @@ func TestDefragOperationNonTerminalResolveKeepsPolling(t *testing.T) {
 	assert.Empty(t, client.startReqs)
 }
 
+// interruptedOperationErr is what the agent returns for a record left
+// non-terminal with no worker behind it, which is an agent restart mid-attempt.
+func interruptedOperationErr() error {
+	return status.Error(codes.FailedPrecondition,
+		"operation base/cp-0 (etcd-defrag) is non-terminal in persisted state, but no worker is active; agent may have restarted during the operation")
+}
+
+// StartEtcdDefrag is the only caller of resetInterruptedEtcdDefrag, so an
+// interrupted record has to be answered by starting again. Reporting unreadable
+// state instead would wedge the node: every retry resolves to the same error
+// and nothing ever clears the record.
+func TestDefragOperationRecoversFromAnInterruptedAttempt(t *testing.T) {
+	client := &fakeDefragClient{
+		etcdStatus:  fragmentedStatus(),
+		resolveErr:  interruptedOperationErr(),
+		statusQueue: []*nvkeproto.GetEtcdDefragStatusResponse{terminal(nvkeproto.GetEtcdDefragStatusResponse_OUTCOME_RECLAIMED)},
+	}
+	op := newDefragOperationForTest(client)
+
+	outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+	require.NoError(t, err)
+	assert.Equal(t, rollout.OutcomeApplied, outcome)
+	assert.Len(t, client.startReqs, 1, "recovery is a fresh start, which is what clears the stale record")
+}
+
+// Recovery is not a blind restart. The interrupted attempt may have got as far
+// as restarting etcd, in which case the member is already compact and the
+// eligibility check leaves it alone.
+func TestDefragOperationInterruptedAttemptThatAlreadyShrankTheMemberIsUnchanged(t *testing.T) {
+	client := &fakeDefragClient{
+		etcdStatus: &nvkeproto.GetEtcdStatusResponse{
+			BootstrapDefragThresholdBytes: testDefragThresholdBytes,
+			ReclaimableBytes:              1,
+			Healthy:                       true,
+		},
+		resolveErr: interruptedOperationErr(),
+	}
+	op := newDefragOperationForTest(client)
+
+	outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+	require.NoError(t, err)
+	assert.Equal(t, rollout.OutcomeUnchanged, outcome)
+	assert.Empty(t, client.startReqs, "a member that no longer needs restarting must not be restarted")
+}
+
 // A dial happens before the operation can be resolved, so it cannot tell a
 // first attempt from a retry whose earlier attempt has the member down. The
 // agent also listens independently of etcd and kube-apiserver, so failing to
@@ -663,6 +731,29 @@ func TestDefragOperationStartFailureIsClassifiedByStartingAgain(t *testing.T) {
 		assert.Contains(t, err.Error(), "state could not be established")
 		assert.Len(t, client.startReqs, 2)
 		assert.Len(t, client.defragReqs, 1, "only the resolve probe runs; a dead agent is not polled")
+	})
+
+	// The case the retry exists for: the agent accepted and published the
+	// operation and only the reply was lost. The second start must be answered
+	// with the record the first one created rather than defragment again.
+	t.Run("a lost reply retries into the operation the agent already holds", func(t *testing.T) {
+		client := &fakeDefragClient{
+			etcdStatus:           fragmentedStatus(),
+			startErrs:            []error{unavailable},
+			recordBeforeStartErr: true,
+			statusQueue:          []*nvkeproto.GetEtcdDefragStatusResponse{terminal(nvkeproto.GetEtcdDefragStatusResponse_OUTCOME_RECLAIMED)},
+		}
+		op := newDefragOperationForTest(client)
+
+		outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+		require.NoError(t, err)
+		assert.Equal(t, rollout.OutcomeApplied, outcome)
+		require.Len(t, client.startReqs, 2)
+		assert.Equal(t, client.startReqs[0].GetOperationId(), client.startReqs[1].GetOperationId(),
+			"the retry must address the key the lost attempt used")
+		assert.Equal(t, 1, client.startsAccepted,
+			"the retry must be answered with the existing operation, not defragment a second time")
 	})
 
 	// The retry reaching an agent that authored a refusal is the same clean

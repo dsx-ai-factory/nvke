@@ -195,6 +195,15 @@ func (op *DefragOperation) ApplyToNode(ctx context.Context, node rollout.Node, p
 	case probeErr == nil:
 		slog.InfoContext(ctx, "resuming an etcd defragmentation already recorded by the agent", "node", node.Name(), "operationID", operationID)
 		return op.awaitDefrag(ctx, client, node, operationID)
+	case status.Code(probeErr) == codes.FailedPrecondition:
+		// An agent restart left the record non-terminal with no worker behind
+		// it. The agent put back whatever that attempt parked before it began
+		// serving, so the node is already restored, and StartEtcdDefrag is the
+		// only thing that clears the stale record. Falling through to start
+		// again is the recovery; returning here would wedge the node, because
+		// every retry would be answered the same way.
+		slog.WarnContext(ctx, "an earlier etcd defragmentation was interrupted by an agent restart; starting again",
+			"node", node.Name(), "operationID", operationID, "err", probeErr)
 	case status.Code(probeErr) != codes.NotFound:
 		return rollout.OutcomeFailedNotRestored, fmt.Errorf("read etcd defragmentation state for node %s: %w", node.Name(), probeErr)
 	}
