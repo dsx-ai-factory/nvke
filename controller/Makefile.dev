@@ -33,15 +33,17 @@ export COLIMA_PROFILE ?= default
 export COLIMA_DOCKER_HOST ?= unix://$(HOME)/.colima/$(COLIMA_PROFILE)/docker.sock
 export KIND_CLUSTER_NAME ?= controller-capi
 export KIND_CLUSTER_CONFIG ?= hack/controller-capi-kind.yaml
-# The container engine CLI the local flow drives: docker, or nerdctl on containerd
-# with no Docker daemon. Tilt, the hack scripts and nico-sim read the same
-# variable; hack/container-engine/lib.sh says what nerdctl changes.
+# The container engine CLI the local flow drives: docker, nerdctl on containerd
+# with no Docker daemon, or ctrd on containerd alone. Tilt, the hack scripts and
+# nico-sim read the same variable; hack/container-engine/lib.sh says what the
+# other two change.
 export CONTAINER_CLI ?= docker
 ifneq ($(CONTAINER_CLI),docker)
-# shim/nerdctl runs nerdctl as root, which the rootful containerd needs; kind
-# execs a bare `nerdctl`, so it has to be first on PATH.
-export PATH := $(CURDIR)/hack/container-engine/shim:$(PATH)
-export KIND_EXPERIMENTAL_PROVIDER := $(CONTAINER_CLI)
+# The shims run the engine as root, which the rootful containerd needs; kind
+# execs a bare `nerdctl`, so the directory has to be first on PATH. For ctrd that
+# directory also holds the `nerdctl` that kind runs, which is ctrd.
+export PATH := $(CURDIR)/hack/container-engine/shim$(if $(filter ctrd,$(CONTAINER_CLI)),/ctrd):$(PATH)
+export KIND_EXPERIMENTAL_PROVIDER := $(if $(filter ctrd,$(CONTAINER_CLI)),nerdctl,$(CONTAINER_CLI))
 export OCI_BIN ?= $(CONTAINER_CLI)
 endif
 # The image `make registry-mirror` runs. The host daemon pulls it anonymously,
@@ -399,7 +401,7 @@ dev-clusters: ## List available clusters via Teleport
 	@tsh kube ls
 
 .PHONY: host-up
-host-up: ## Prepare the Docker host for local clusters (Colima on macOS, vTPM proxy on Linux)
+host-up: $(if $(filter ctrd,$(CONTAINER_CLI)),ctrd) ## Prepare the Docker host for local clusters (Colima on macOS, vTPM proxy on Linux)
 	@case "$$(uname -s)" in \
 		Darwin) $(MAKE) colima-up ;; \
 		Linux) sudo ./hack/ensure-vtpm-proxy.sh$(if $(filter-out docker,$(CONTAINER_CLI)), && ./hack/container-engine/check.sh) ;; \
@@ -431,8 +433,8 @@ clusterctl-os = $(shell uname -s | tr '[:upper:]' '[:lower:]')
 clusterctl-arch = $(if $(filter aarch64 arm64,$(shell uname -m)),arm64,amd64)
 
 # The management cluster config mounts the Docker socket for CAPD's controller.
-# Under nerdctl there is none, and nerdctl would create the missing source as a
-# directory on the host, so the nerdctl config is the same one without that mount.
+# Under nerdctl and ctrd there is none, and they would create the missing source as
+# a directory on the host, so this config is the same one without that mount.
 KIND_NERDCTL_CONFIG := $(CURDIR)/.local/kind-nerdctl.yaml
 kind-cluster-config = $(if $(filter docker,$(CONTAINER_CLI)),$(KIND_CLUSTER_CONFIG),$(KIND_NERDCTL_CONFIG))
 
@@ -441,7 +443,7 @@ $(KIND_NERDCTL_CONFIG): $(KIND_CLUSTER_CONFIG)
 	@sed '/\/var\/run\/docker\.sock/d' $< > $@
 
 # The name of the node arch for the bundle builds: the Docker daemon's, or under
-# nerdctl this host's, since nerdctl's `version` has no Server.Arch.
+# nerdctl and ctrd this host's, since nerdctl's `version` has no Server.Arch.
 container-server-arch = $(if $(filter docker,$(CONTAINER_CLI)),$(kind-docker-host) docker version --format '{{.Server.Arch}}',uname -m)
 
 # CAPD is Cluster API's Docker provider, which needs a Docker daemon, and the
@@ -451,11 +453,17 @@ docker-engine-only := $(if $(filter docker,$(CONTAINER_CLI)),,needs-docker-engin
 
 .PHONY: needs-docker-engine
 needs-docker-engine:
-	@echo "This target needs Docker (CAPD, or the bundle mirror) and CONTAINER_CLI=$(CONTAINER_CLI) is set. Unset it, or use capi-core-up, which runs on nerdctl." >&2
+	@echo "This target needs Docker (CAPD, or the bundle mirror) and CONTAINER_CLI=$(CONTAINER_CLI) is set. Unset it, or use capi-core-up, which runs on nerdctl and ctrd." >&2
 	@exit 1
 
+# ctrd is built from this repository: hack/container-engine/ctrd. Everything that
+# runs it, kind included, needs it built.
+.PHONY: ctrd
+ctrd: ## Build bin/ctrd, the container engine CLI that CONTAINER_CLI=ctrd runs
+	CGO_ENABLED=0 go build -buildvcs=false -trimpath -o ./bin/ctrd ./hack/container-engine/ctrd
+
 .PHONY: kind-up
-kind-up: $(if $(filter docker,$(CONTAINER_CLI)),,$(KIND_NERDCTL_CONFIG)) ## Create the local Kind management cluster for CAPD
+kind-up: $(if $(filter docker,$(CONTAINER_CLI)),,$(KIND_NERDCTL_CONFIG)) $(if $(filter ctrd,$(CONTAINER_CLI)),ctrd) ## Create the local Kind management cluster for CAPD
 	@echo "Ensuring Kind management cluster '$(KIND_CLUSTER_NAME)' exists..."
 # The default cluster was cwe-capi, with trust domain cwe-capi.nke.local. After
 # the rename, kind-down deletes only the new name, so stop here rather than
@@ -521,15 +529,15 @@ bundle-mirror: $(docker-engine-only) kind-up ## Serve the CAPD bundle, built fro
 
 .PHONY: bundle-mirror-down
 bundle-mirror-down: ## Remove the CAPD bundle mirror and its volume
-# Nothing to remove under nerdctl: bundle-mirror does not run there.
+# Nothing to remove under nerdctl or ctrd: bundle-mirror does not run there.
 ifeq ($(CONTAINER_CLI),docker)
 	@$(kind-docker-host) bash -c '. hack/backend-e2e-lib.sh; \
 		e2e_stop_bundle_mirror $(BUNDLE_MIRROR_NAME) $(BUNDLE_MIRROR_VOLUME)'
 	@echo "✅ Bundle mirror removed"
 endif
 
-# nerdctl has no `network connect`, so a cache it starts joins the kind network
-# when it is created. One that was created apart from it is not connected.
+# nerdctl and ctrd have no `network connect`, so a cache they start joins the kind
+# network when it is created. One that was created apart from it is not connected.
 registry-mirror-network = $(if $(filter docker,$(CONTAINER_CLI)),,--network kind)
 registry-mirror-connect = $(if $(filter docker,$(CONTAINER_CLI)),@$(kind-docker-host) $(CONTAINER_CLI) network connect kind $(1) 2>/dev/null || true)
 

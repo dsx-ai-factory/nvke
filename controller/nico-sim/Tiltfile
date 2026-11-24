@@ -324,8 +324,10 @@ def register(ctx):
     if _container_backend_enabled:
         nico_sim_env["NICO_CONTAINERS_ENABLED"] = "true"
         # nico-sim runs the engine CLI itself, as the user Tilt runs as; the
-        # nerdctl shim is what reaches the rootful containerd (hack/container-engine).
-        if _container_cli != "docker":
+        # shim is what reaches the rootful containerd (hack/container-engine).
+        if _container_cli == "ctrd":
+            nico_sim_env["NICO_CONTAINERS_DOCKER_BINARY"] = os.path.join(ctx.main_dir, "hack", "container-engine", "shim", "ctrd", "ctrd")
+        elif _container_cli != "docker":
             nico_sim_env["NICO_CONTAINERS_DOCKER_BINARY"] = os.path.join(ctx.main_dir, "hack", "container-engine", "shim", _container_cli)
     if not _vm_backend_enabled:
         nico_sim_env.update({

@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # Checks that the host can run the local dev flow on nerdctl and containerd
-# (CONTAINER_CLI=nerdctl; see lib.sh). It reports every problem it finds, not
-# just the first, and exits non-zero if there is one. Nothing to check, and
-# silent, for docker: Tilt's own preflight looks for the docker binary.
+# (CONTAINER_CLI=nerdctl; see lib.sh), or on containerd alone (CONTAINER_CLI=ctrd:
+# check-ctrd.sh). It reports every problem it finds, not just the first, and
+# exits non-zero if there is one. Nothing to check, and silent, for docker:
+# Tilt's own preflight looks for the docker binary.
 #
 # Run by `make host-up` and by Tilt's check-management-cluster resource.
 
@@ -14,7 +15,11 @@ set -uo pipefail
 # shellcheck source=lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 ce_init || exit 1
-[[ "$(ce_cli)" == nerdctl ]] || exit 0
+case "$(ce_cli)" in
+  nerdctl) ;;
+  ctrd) exec bash "${CE_DIR}/check-ctrd.sh" ;;
+  *) exit 0 ;;
+esac
 
 # Where nerdctl looks for CNI plugins, in its order (pkg/defaults), and the
 # plugins its default bridge network and kind's need.

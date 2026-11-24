@@ -41,7 +41,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   ctx.spire_trust_domain (string) Trust domain configured for the local SPIRE server.
 #   ctx.site_controller_vip (string) Address reachable from local tenant nodes.
 #   ctx.provider_dir  (string)  Absolute path to the provider's root directory.
-#   ctx.container_cli (string)  The container engine CLI: docker, or nerdctl (CONTAINER_CLI).
+#   ctx.container_cli (string)  The container engine CLI: docker, nerdctl, or ctrd (CONTAINER_CLI).
 #
 # Output — returned struct with:
 #   controller_resource_deps (list[string])     Tilt resource names the controller should depend on.
@@ -98,20 +98,24 @@ def _provider_entry_name(entry):
 _provider_names = [_provider_entry_name(_entry) for _entry in _provider_entries]
 DSX_IDENTITY_EXCHANGE_ENABLED = "dsx-identity-exchange" in _provider_names
 
-# The container engine CLI for the whole flow: docker, or nerdctl on containerd
-# with no Docker daemon. hack/container-engine/lib.sh says what nerdctl changes;
-# the Makefile, the hack scripts and nico-sim read the same CONTAINER_CLI.
+# The container engine CLI for the whole flow: docker, nerdctl on containerd
+# with no Docker daemon, or ctrd on containerd alone. hack/container-engine/lib.sh
+# says what the other two change; the Makefile, the hack scripts and nico-sim
+# read the same CONTAINER_CLI.
 CONTAINER_CLI = os.getenv("CONTAINER_CLI", "") or "docker"
-if CONTAINER_CLI not in ["docker", "nerdctl"]:
-    fail("CONTAINER_CLI=%s is not supported; use docker (the default) or nerdctl." % CONTAINER_CLI)
+if CONTAINER_CLI not in ["docker", "nerdctl", "ctrd"]:
+    fail("CONTAINER_CLI=%s is not supported; use docker (the default), nerdctl or ctrd." % CONTAINER_CLI)
 CONTAINER_ENGINE_DIR = os.path.join(config.main_dir, "hack", "container-engine")
 if CONTAINER_CLI != "docker":
-    # Every command Tilt starts inherits this PATH: put the sudo-wrapped nerdctl
-    # first, so kind, make and the scripts reach the rootful containerd.
+    # Every command Tilt starts inherits this PATH: put the sudo-wrapped engine
+    # first, so kind, make and the scripts reach the rootful containerd. For ctrd
+    # the directory also holds the `nerdctl` that kind runs, which is ctrd.
     _shim_dir = os.path.join(CONTAINER_ENGINE_DIR, "shim")
+    if CONTAINER_CLI == "ctrd":
+        _shim_dir = os.path.join(_shim_dir, "ctrd")
     if not os.getenv("PATH", "").startswith(_shim_dir + ":"):
         os.putenv("PATH", _shim_dir + ":" + os.getenv("PATH", ""))
-    os.putenv("KIND_EXPERIMENTAL_PROVIDER", CONTAINER_CLI)
+    os.putenv("KIND_EXPERIMENTAL_PROVIDER", "nerdctl" if CONTAINER_CLI == "ctrd" else CONTAINER_CLI)
 
     # These build images with Tilt's Docker client or with docker itself.
     for _provider_needing_docker in [
@@ -245,6 +249,7 @@ def normalize_arch(arch):
 
 def local_arch():
     # nerdctl's `version` has no Server.Arch, and its containerd is on this host.
+    # The same goes for ctrd.
     if CONTAINER_CLI == "docker":
         docker_arch = str(local("docker version --format '{{.Server.Arch}}' 2>/dev/null || true", quiet=True, echo_off=True)).strip()
         if docker_arch != "":
@@ -1222,7 +1227,7 @@ _controller_compile_script = """
 """ % _controller_tilt_goarch
 
 # Tilt builds and loads images with its Docker client, which needs a Docker
-# daemon. Under nerdctl the build commands below do both themselves: they build
+# daemon. Under nerdctl and ctrd the build commands below do both themselves: they build
 # with the engine and load the image into Kind (skips_local_docker tells Tilt the
 # image is never in a Docker store, and so is not Tilt's to push), and the
 # restart-on-sync live update of custom_build_with_restart is dropped, because

@@ -324,7 +324,9 @@ nico-sim with its container backend, and CAPNICo.
 `CONTAINER_CLI` is also what `hack/capd-kindest-node/build-image.sh` reads. It
 selects the engine for the Tiltfile, `Makefile.dev`, the hack scripts, kind
 (`KIND_EXPERIMENTAL_PROVIDER=nerdctl`) and nico-sim
-(`NICO_CONTAINERS_DOCKER_BINARY`). Only `docker` and `nerdctl` are accepted.
+(`NICO_CONTAINERS_DOCKER_BINARY`). `docker`, `nerdctl` and `ctrd` are accepted; for
+`ctrd`, which needs no nerdctl, see [Running the local flow on containerd
+alone](#running-the-local-flow-on-containerd-alone).
 
 **Prerequisites.** `make host-up` and Tilt's `check-management-cluster` run
 `hack/container-engine/check.sh`, which reports what is missing:
@@ -461,6 +463,278 @@ make kind-down
 make bgp-containers-down
 sudo nerdctl rm -f registry-mirror registry-k8s-mirror
 sudo nerdctl network rm kind
+```
+
+### Running the local flow on containerd alone
+
+`CONTAINER_CLI=ctrd` runs the same flow as the nerdctl section above on a host
+that has containerd and its own tooling and has **neither Docker nor nerdctl**:
+`make host-up`, `make capi-core-up`, `tilt up` with the `capi_core`,
+`bgp-containers` and `nico` providers and nico-sim's container backend, then
+`nvkectl create cluster` and `nvkectl delete cluster`. Unset, `docker` or
+`nerdctl` behave exactly as before.
+
+`ctrd` is a small docker-compatible CLI that lives in this repository
+([`hack/container-engine/ctrd`](hack/container-engine/ctrd), Go standard library
+only). The flow already routes every container command through `CONTAINER_CLI`;
+`ctrd` answers the ones the flow and kind use, implemented with `ctr`, the CNI
+plugins and `buildctl`, and refuses any other command or flag with "not
+supported by this engine". `make ctrd` builds it into `bin/ctrd`, and `make
+host-up` and `make kind-up` do that for you.
+
+> **`ctr` is a debugging client.** containerd documents `ctr` as a tool whose
+> command line is not a stable interface. Every `ctr` invocation `ctrd` makes is
+> in one file, [`ctrd/ctr.go`](hack/container-engine/ctrd/ctr.go), so that a
+> containerd release that changes one is one fix.
+
+**Kind is still the cluster tool, and it runs its nerdctl provider.** Kind has
+providers for docker, podman and nerdctl only, and runs a binary it looks up by
+the name `nerdctl` on `PATH`. `hack/container-engine/shim/ctrd` is first on
+`PATH` and holds `ctrd` and, beside it, `nerdctl`, a link to the same script that
+runs `bin/ctrd` through `sudo -n`. **No nerdctl is installed or executed:
+`nerdctl` is the name Kind looks up, and what runs under it is `ctrd`.** `make`
+and Tilt put the directory on `PATH` and set `KIND_EXPERIMENTAL_PROVIDER=nerdctl`.
+
+**Prerequisites.** `make host-up` and Tilt's `check-management-cluster` run
+`hack/container-engine/check-ctrd.sh`, which reports every one that is missing:
+
+- A rootful containerd with `ctr` on root's `PATH`, and cgroup v2. The flow was
+  run on containerd 2.4.2, runc 1.5.3 and BuildKit 0.34.1; other versions are
+  untested.
+- Passwordless `sudo`: containerd, network namespaces and CNI interfaces need
+  root, and Tilt, kind and nico-sim run as you.
+- The CNI plugins `bridge`, `portmap`, `firewall`, `host-local` and `loopback`,
+  looked up in `CNI_PATH` or in `/opt/cni/bin`, `/usr/local/libexec/cni`,
+  `/usr/local/lib/cni`, `/usr/libexec/cni` and `/usr/lib/cni`. Distributions
+  package them as `containernetworking-plugins`; the upstream release is
+  [containernetworking/plugins](https://github.com/containernetworking/plugins/releases).
+- `buildctl` on root's `PATH` and a running `buildkitd` whose **containerd worker
+  uses the `ctrd` namespace** (`CTRD_NAMESPACE`), so that what `ctrd build`
+  builds is in the namespace `ctrd` runs containers from. BuildKit is its own
+  project; its releases
+  ([moby/buildkit](https://github.com/moby/buildkit/releases), v0.34.1 when this
+  was written) hold `buildctl` and `buildkitd`:
+
+  ```bash
+  sudo tar -C /usr/local -xzf buildkit-v0.34.1.linux-arm64.tar.gz bin/buildkitd bin/buildctl
+  ```
+
+  ```ini
+  # /etc/systemd/system/buildkit.service
+  [Unit]
+  Description=buildkitd on the system containerd
+  After=containerd.service
+  Requires=containerd.service
+
+  [Service]
+  ExecStart=/usr/local/bin/buildkitd --oci-worker=false --containerd-worker=true --containerd-worker-addr /run/containerd/containerd.sock --containerd-worker-namespace ctrd
+  Restart=on-failure
+
+  [Install]
+  WantedBy=multi-user.target
+  ```
+
+  Then `sudo systemctl daemon-reload && sudo systemctl enable --now buildkit`.
+- `ip`, `iptables`, `mount`, `umount` and `cp`, and a state directory
+  (`/var/lib/ctrd`) on a filesystem other than overlayfs: the nodes' volumes, and
+  so their containerd, live there.
+- To rebuild the node image's OVN packages (`make capd-image` when
+  `.local/cni` has no current `nvke-cni-ovn-*.deb`): `dpkg-deb` and
+  `dpkg-scanpackages` (Debian's `dpkg-dev`; a host without them needs wrappers
+  that do not call Docker), network access to GitHub for the pinned
+  ovn-kubernetes source, and the same BuildKit. The OVN image is built by
+  `ctrd build` (`OCI_BIN` follows `CONTAINER_CLI`); the build took about three
+  minutes on a 20-core arm64 host.
+- For GPUs (`NICO_CONTAINERS_NODE_GPUS`): `nvidia-ctk` and a CDI specification
+  that names them: `sudo nvidia-ctk cdi generate --output=/var/run/cdi/nvidia.yaml`.
+- `kind`, `kubectl`, `helm`, `clusterctl`, `tilt` and Go, as for every other
+  path.
+
+**Settings.** Each has one variable; `make` and Tilt pass them through `sudo`, and
+the `ctrd` shim keeps the ones that are set. `ctrd` reads them from the
+environment of **every invocation**, so the `ctrd` you run in a shell reads the
+shell's, not Tilt's or nico-sim's. What follows is when each takes effect.
+
+| Variable | Default | Meaning | Read |
+|---|---|---|---|
+| `CONTAINER_CLI` | `docker` | `ctrd` selects this engine | by `make` and the scripts |
+| `CTRD_DNS` | the host's upstream resolvers | Name servers for the containers `ctrd` **creates**, comma or space separated | at `create` and `run` only; recorded in the container |
+| `CTRD_ROOT` | `/var/lib/ctrd` | State directory, root-owned | host-wide, every invocation |
+| `CTRD_NAMESPACE` | `ctrd` | containerd namespace of every container and image | host-wide, every invocation |
+| `CONTAINERD_ADDRESS` | `/run/containerd/containerd.sock` | containerd's socket | host-wide, every invocation |
+| `CNI_PATH` | the directories above | Where the CNI plugins are | host-wide, at `start` and `stop`, which run the plugins |
+| `BUILDKIT_HOST` | `unix:///run/buildkit/buildkitd.sock` | buildkitd's address | by `build` only |
+| `CTRD_REAL` | `bin/ctrd` | The binary the shim runs | by the shim, at every call |
+
+Two kinds of setting:
+
+- **Per container, fixed at create.** `CTRD_DNS` (or the host's resolvers when it is
+  unset) decides the container's `/etc/resolv.conf` when the container is
+  created, and `ctrd` records the file in the container's state. Every later
+  `start` and `restart` writes that same file, whatever the environment of the
+  shell that runs them, as Docker and nerdctl do with `--dns`. A change of
+  `CTRD_DNS`, or of the host's resolvers, reaches the containers created after
+  it; to change one that exists, recreate it. A container created by a `ctrd`
+  from before this was recorded has no record and takes the environment of each
+  start, as that `ctrd` did: set `CTRD_DNS` for its restarts, or recreate it.
+  `-e NAME` without a value is read from the environment at `create` too, and
+  recorded.
+- **Host-wide, the same for every invocation.** `CTRD_ROOT`, `CTRD_NAMESPACE`,
+  `CONTAINERD_ADDRESS` and `CNI_PATH` say which containerd, which of its
+  namespaces and which state directory the engine is; nothing records them in a
+  container. The state directory holds the files containerd mounts into the
+  containers by absolute path, so a container belongs to the `CTRD_ROOT` it was
+  created under and to its `CTRD_NAMESPACE`: with another root `ps` does not list
+  it, and with another namespace `ps -a` lists it as `Exited (0)` while it runs,
+  because containerd of that namespace has no task for it, and `start` and `stop`
+  would act on a container they cannot see. Set them once for the
+  host (the shell profile of the user that runs Tilt, and of anyone who runs `ctrd`
+  by hand) and leave them; changing one means recreating every container.
+  `CNI_PATH` only has to find the same plugins at `start` and at `stop`.
+
+**Run it.**
+
+```bash
+export CONTAINER_CLI=ctrd
+make host-up
+make capi-core-up
+tilt up
+```
+
+Then `nvkectl create cluster -f cli/examples/nico-mock-cluster.yaml`, and so on,
+as in the nerdctl section. Out of scope are the same things: the CAPD providers,
+macOS, and the nico-sim VM backend's log shipper. `nvkectl bootstrap` and its
+end-to-end lane keep using nerdctl.
+
+**Working with the nodes.** `ctrd` answers the docker commands, so the usual ones
+work through the shim directory (`export PATH="$PWD/hack/container-engine/shim/ctrd:$PATH"`):
+
+```bash
+ctrd ps                                   # containers, with --format and --filter label=...
+ctrd exec -i <node> ctr -n k8s.io images import --all-platforms --digests -
+ctrd exec <node> nvidia-smi
+ctrd save -o /tmp/image.tar <image> && kind load image-archive /tmp/image.tar --name controller-capi
+ctrd restart <node>                       # a reboot: the disk stays
+```
+
+`ctrd save` writes an archive a node's `ctr images import --all-platforms`
+reads: an image that is stored as a multi-platform index is written as the one
+manifest of this host's platform. For a tenant node, pipe the archive in:
+`ctrd exec -i <node> ctr -n k8s.io images import --all-platforms --digests - < /tmp/image.tar`.
+
+**What `ctrd` runs underneath.**
+
+| Command | Runs |
+|---|---|
+| `create`, `run -d` | `ctr containers create` (privileged, tty, mounts, capabilities, CDI devices, a cgroup namespace, a network namespace), a copy of the image's content into each anonymous volume, an image pull if the image is missing |
+| `start`, `restart` | `ip netns`, the CNI plugins, then a supervisor that runs `ctr tasks start` on a pseudo-terminal |
+| `stop`, `rm` | `ctr tasks kill` with the image's stop signal (`SIGRTMIN+3` for the kind node image), then SIGKILL after `--time`; the CNI plugins' DEL; `ctr tasks delete`, `ctr containers delete` |
+| `exec` | `ctr tasks exec` (`-e` goes through `env`) |
+| `cp` | `ctr snapshots mounts` and a copy into the mounted root file system, of a container that is not running |
+| `ps`, `inspect`, `logs`, `wait`, `update` | the engine's own state, and `ctr tasks list` |
+| `network create`, `inspect`, `rm` | a CNI configuration and a bridge, see below |
+| `pull`, `image inspect`, `save`, `load` | `ctr images pull`, `list`, `export`, `import` |
+| `build` | `buildctl build` with the Dockerfile frontend, `--output type=image,unpack=true` unless `--output` is given |
+| `info`, `version` | `ctr version`, and the cgroup version of the host |
+
+**What differs from nerdctl and Docker.**
+
+- **State.** Containers are containerd containers in the `ctrd` namespace. What
+  containerd does not hold (the attachment to the network, published ports, the
+  console log, anonymous volumes, hosts files) is under `CTRD_ROOT`, and
+  removing a container removes its directory. Changes to it are serialized by a
+  lock file.
+- **Reboots of a node.** `stop` then `start`, and `restart`, keep the
+  container's snapshot, so the disk survives, and ask the address manager for
+  the addresses the container had: nico-sim's reboot keeps its node's address when
+  it is free.
+- **Restart policy.** `--restart` (and `update --restart`) is honoured by the
+  container's supervisor, which is what runs while the container does:
+  `always` and `unless-stopped` start the container again whenever its task
+  ends, `on-failure[:N]` after a non-zero exit (at most N times), `no` never.
+  That is what brings a node back after a reboot from inside it (the node agent's
+  soft reboot runs `reboot`, which ends the node's init). The container is
+  attached to its network again with the address it had. `ctrd stop`, `restart`
+  and `rm` are not undone, and a container that cannot be started stays down. The wait before a
+  restart is 1s and doubles for each restart in a row, up to a minute; a run of 10s
+  or more starts the count again. **Nothing is restarted after a host reboot, or
+  when the supervisor itself is killed**: start the containers again (`ctrd start`,
+  or recreate them). A container started by an earlier `ctrd` has the old
+  supervisor until its next start, and so no restart policy.
+- **Networks.** A named bridge network is a CNI configuration `ctrd` owns,
+  under `CTRD_ROOT/networks` rather than `/etc/cni/net.d`, with a network
+  namespace per container and the plugins called directly: `bridge` with
+  `host-local` addressing (`10.4.0.0/16` is the pool for IPv4, a `/24` each; leases are in
+  `CTRD_ROOT/ipam`), `portmap` for `--publish` and `firewall`. Kind's IPv6 subnet is
+  configured on the bridge, so a dual-stack node gets both addresses; the default
+  route is IPv4 only, as under nerdctl. The bridge exists once a container has
+  attached. `ctrd network rm` removes it. A subnet that a host interface already
+  holds is refused in Docker's words, which makes kind try another IPv6 subnet:
+  the leftover-bridge failure of the nerdctl section does not occur here.
+  Traffic that enters and leaves the `kind` bridge needs the same FORWARD rule as
+  under nerdctl; `hack/bgp-containers/up.sh` adds it.
+- **Names.** Containers do not have a DNS server. Each container's `/etc/hosts`
+  lists every container on its network that is running, by name and hostname,
+  and is rewritten when one starts or stops, which is what nerdctl does too.
+  nico-sim's nodes reach the registry caches this way.
+- **DNS.** A container's `/etc/resolv.conf` is decided at create and written
+  unchanged at every start. It has `CTRD_DNS` when that is set in the
+  environment of `ctrd create` (or `run`). Without it, it has the host's upstream
+  resolvers as they are at create: those in
+  `/run/systemd/resolve/resolv.conf` on a systemd-resolved host, otherwise in
+  `/etc/resolv.conf`, without loopback stubs such as `127.0.0.53` and without
+  IPv6 servers, plus the file's `search` and `options` lines. With no usable
+  resolver `ctrd` refuses to create the container and says to set `CTRD_DNS`.
+  A router that answers EDNS0 queries with malformed replies makes Go's resolver
+  drop the A record: `CTRD_DNS=1.1.1.1,8.8.8.8`. Under Tilt the environment of the
+  creator is Tilt's (nico-sim creates the nodes), so set `CTRD_DNS` before `tilt up`
+  and `make kind-up`; see Settings for what a later `restart` does and does not read.
+- **GPUs.** `--gpus all`, `--gpus N` and `--gpus device=0,1` become the CDI
+  devices `nvidia.com/gpu=all`, `=0`, `=1` of the specification
+  `nvidia-ctk cdi generate` wrote. Driver capabilities in the value are refused.
+- **Images** are built by BuildKit into the `ctrd` namespace, and pulled for
+  this host's platform. Image `VOLUME` declarations are not turned into volumes,
+  so the registry caches keep their data in the container's writable layer.
+- **`/run`.** `ctr` mounts an empty tmpfs on `/run`; Docker mounts nothing, and
+  daemons such as FRR keep their pid files in the image's `/run`. A container
+  that does not ask for a `/run` of its own (`--tmpfs /run`, as the nodes do)
+  gets a volume there that starts with the image's content.
+- **Console.** `logs` reads the container's console, which a supervisor process
+  of the container (this binary, `_supervise`) appends to `CTRD_ROOT/containers/<id>/log`. It
+  moves into its own cgroup, so restarting Tilt does not take the console
+  away. The log is not rotated.
+- **Not implemented:** anything the flow does not call, among them `images`,
+  `rmi`, `tag`, `push`, `network connect` and `ls`, named volumes, `--device`,
+  `--security-opt` other than the two unconfined ones kind passes (seccomp and
+  AppArmor are not applied at all), a command without `--entrypoint` (it would
+  need the image's entrypoint), `exec` of a tty without a terminal, `cp` out of
+  a container or into a running one, and rootless operation.
+
+**Troubleshooting.**
+
+- `not supported by this engine`: the flow, or you, called something `ctrd` does
+  not implement. The message names the flag.
+- `container ... exited before it was running:` is followed by the last lines of
+  the console. `ctr`'s own error, for example from runc, is the last.
+- Builds fail with `failed to prepare ... parent snapshot` or `content digest ...
+  not found` after buildkitd was pointed at a different namespace: its cache
+  records snapshots of the old one. Stop buildkitd, move its root aside
+  (`sudo mv /var/lib/buildkit /var/lib/buildkit.old`) and start it again.
+- `buildkitd ... has no containerd worker in the 'ctrd' namespace`: the unit above
+  needs `--containerd-worker-namespace ctrd`, or set `CTRD_NAMESPACE` to the
+  namespace it uses.
+- Image pulls in the Kind nodes fail with `dial tcp [2600:...]:443: connect:
+  network is unreachable`, or names do not resolve: see DNS above.
+- `ctr` prints `connection error ... permission denied` when run as yourself: use
+  `ctrd`, or `sudo ctr -n ctrd ...`.
+
+**Clean up.**
+
+```bash
+make kind-down
+make bgp-containers-down
+ctrd rm -f registry-mirror registry-k8s-mirror
+ctrd network rm kind
 ```
 
 ### TPM support in Docker

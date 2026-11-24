@@ -393,7 +393,7 @@ container report a new boot ID like a real machine.
 | `NICO_CONTAINERS_REQUIRE_HEALTHY` | `false` | Fail startup when Docker is unavailable |
 | `NICO_CONTAINERS_NODE_NETWORK` | `kind` | Docker network for container nodes |
 | `NICO_CONTAINERS_NODE_IMAGE` | `cwe-capd-kindest-node:local` | Container node image |
-| `NICO_CONTAINERS_DOCKER_BINARY` | `docker` | Container engine CLI path: `docker`, or `nerdctl` on containerd with no Docker daemon. Tilt sets it from `CONTAINER_CLI` ([controller README](../README.md#running-the-local-flow-on-containerd-with-nerdctl)) |
+| `NICO_CONTAINERS_DOCKER_BINARY` | `docker` | Container engine CLI path: `docker`, `nerdctl` on containerd with no Docker daemon, or `ctrd` on containerd alone. Tilt sets it from `CONTAINER_CLI` ([nerdctl](../README.md#running-the-local-flow-on-containerd-with-nerdctl), [ctrd](../README.md#running-the-local-flow-on-containerd-alone)) |
 
 The default seed includes one container site. A custom seed without a container
 site must set `NICO_CONTAINERS_ENABLED=false`.

@@ -85,6 +85,7 @@ func TestCEInit(t *testing.T) {
 		{name: "unset means docker and changes nothing", cli: "", wantPathHead: "/usr/bin", wantProvider: ""},
 		{name: "docker changes nothing", cli: "docker", wantPathHead: "/usr/bin", wantProvider: ""},
 		{name: "nerdctl puts the root shim first and selects kind's provider", cli: "nerdctl", wantPathHead: shim, wantProvider: "nerdctl"},
+		{name: "ctrd puts its own shim directory first and has kind run its nerdctl", cli: "ctrd", wantPathHead: shim + "/ctrd", wantProvider: "nerdctl"},
 		{name: "podman is not supported", cli: "podman", wantError: "CONTAINER_CLI=podman is not supported"},
 		{name: "a path is not supported", cli: "/usr/bin/docker", wantError: "is not supported"},
 	}
@@ -105,7 +106,7 @@ func TestCEInit(t *testing.T) {
 			assert.Contains(t, out, "PROVIDER="+tt.wantProvider+"\n")
 			// ce_init ran twice above: the shim directory is on PATH once.
 			wantShimEntries := 0
-			if tt.cli == "nerdctl" {
+			if tt.cli == "nerdctl" || tt.cli == "ctrd" {
 				wantShimEntries = 1
 			}
 			pathLine := strings.SplitN(strings.SplitN(out, "PATH=", 2)[1], "\n", 2)[0]
@@ -124,11 +125,12 @@ func TestCEBuild(t *testing.T) {
 		{name: "docker builds with BuildKit as before", cli: "docker", want: "docker[DOCKER_BUILDKIT=1] build -t img -f Dockerfile ctx"},
 		{name: "unset is docker", cli: "", want: "docker[DOCKER_BUILDKIT=1] build -t img -f Dockerfile ctx"},
 		{name: "nerdctl builds with the engine", cli: "nerdctl", want: "nerdctl[] build -t img -f Dockerfile ctx"},
+		{name: "ctrd builds with the engine", cli: "ctrd", want: "ctrd[] build -t img -f Dockerfile ctx"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			bin := t.TempDir()
-			for _, name := range []string{"docker", "nerdctl"} {
+			for _, name := range []string{"docker", "nerdctl", "ctrd"} {
 				fakeBin(t, bin, name, `echo "`+name+`[${DOCKER_BUILDKIT:+DOCKER_BUILDKIT=${DOCKER_BUILDKIT}}] $*"`+"\n")
 			}
 			env := baseEnv("PATH="+bin+":/usr/bin:/bin", "CONTAINER_CLI="+tt.cli)
@@ -183,6 +185,25 @@ case "$1" in save) : > "$3" ;; esac
 		// caller has no use for it.
 		assert.NoFileExists(t, archive)
 		assert.NoDirExists(t, filepath.Dir(archive))
+	})
+
+	t.Run("ctrd saves an archive and loads that, with kind's provider selected", func(t *testing.T) {
+		bin := t.TempDir()
+		log := filepath.Join(t.TempDir(), "calls")
+		fakeSudo(t, bin, filepath.Join(t.TempDir(), "sudo"))
+		fakeBin(t, bin, "kind", `echo "kind provider=${KIND_EXPERIMENTAL_PROVIDER} $*" >> '`+log+`'`+"\n")
+		engineBin := fakeBin(t, bin, "bin-ctrd", `echo "ctrd $*" >> '`+log+`'
+case "$1" in save) : > "$3" ;; esac
+`)
+		env := baseEnv("PATH="+bin+":/usr/bin:/bin", "CONTAINER_CLI=ctrd", "CTRD_REAL="+engineBin, "TMPDIR="+t.TempDir())
+		out, err := runBash(t, env, `source "$1"; ce_init && ce_kind_load img:tag my-cluster`, lib)
+		require.NoError(t, err, out)
+		got, err := os.ReadFile(log)
+		require.NoError(t, err)
+		lines := strings.Split(strings.TrimSpace(string(got)), "\n")
+		require.Len(t, lines, 2, string(got))
+		assert.Regexp(t, `^ctrd save -o \S+/image.tar img:tag$`, lines[0])
+		assert.Regexp(t, `^kind provider=nerdctl load image-archive \S+/image.tar --name my-cluster$`, lines[1])
 	})
 
 	t.Run("a failed save loads nothing and fails", func(t *testing.T) {
@@ -247,6 +268,17 @@ case "$1" in -C) `+check+` ;; esac
 		out, err := runBash(t, env, `source "$1"; ce_init && ce_remove_same_bridge_forwarding kind`, lib)
 		require.NoError(t, err, out)
 		assert.NoFileExists(t, log)
+	})
+
+	t.Run("ctrd needs the rule too", func(t *testing.T) {
+		env, log, bin := setup(t, false)
+		engineBin := fakeBin(t, bin, "bin-ctrd", `case "$1 $2" in "network inspect") echo `+networkID+` ;; *) exit 1 ;; esac`+"\n")
+		env = append(env, "CONTAINER_CLI=ctrd", "CTRD_REAL="+engineBin)
+		out, err := runBash(t, env, `source "$1"; ce_init && ce_allow_same_bridge_forwarding kind && ce_remove_same_bridge_forwarding kind`, lib)
+		require.NoError(t, err, out)
+		got, err := os.ReadFile(log)
+		require.NoError(t, err)
+		assert.Equal(t, "-C FORWARD -i "+bridge+" -o "+bridge+" -j ACCEPT\n-I FORWARD 1 -i "+bridge+" -o "+bridge+" -j ACCEPT\n-D FORWARD -i "+bridge+" -o "+bridge+" -j ACCEPT\n", string(got))
 	})
 
 	t.Run("docker does nothing", func(t *testing.T) {
@@ -480,5 +512,198 @@ echo '[{"labels":{`+worker+`}}]'
 		out, err := run(t, host{ociWorker: true})
 		require.NoError(t, err, out)
 		assert.Contains(t, out, "buildkitd is not running a containerd worker")
+	})
+}
+
+func TestCtrdShim(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("the shim runs ctrd directly as root; this covers the sudo path")
+	}
+	dir := filepath.Join(shimDir(t), "ctrd")
+
+	for _, name := range []string{"ctrd", "nerdctl"} {
+		t.Run(name+" runs ctrd through sudo -n with its settings", func(t *testing.T) {
+			bin := t.TempDir()
+			sudoLog := filepath.Join(t.TempDir(), "sudo")
+			fakeSudo(t, bin, sudoLog)
+			engineBin := fakeBin(t, bin, "bin-ctrd", `echo "ctrd $*"`+"\n")
+			cmd := exec.CommandContext(t.Context(), filepath.Join(dir, name), "ps", "-a")
+			cmd.Env = baseEnv("PATH="+bin+":/usr/bin:/bin", "CTRD_REAL="+engineBin, "CTRD_DNS=1.1.1.1,8.8.8.8", "CNI_PATH=/opt/cni/bin", "CTRD_ROOT=/var/lib/ctrd", "UNRELATED=1")
+			out, err := cmd.CombinedOutput()
+			require.NoError(t, err, string(out))
+			assert.Equal(t, "ctrd ps -a\n", string(out))
+			got, err := os.ReadFile(sudoLog)
+			require.NoError(t, err)
+			assert.Equal(t, "-n --preserve-env=CTRD_ROOT,CTRD_DNS,CNI_PATH "+engineBin+" ps -a\n", string(got))
+		})
+	}
+
+	t.Run("asks sudo to preserve nothing when nothing is set", func(t *testing.T) {
+		bin := t.TempDir()
+		sudoLog := filepath.Join(t.TempDir(), "sudo")
+		fakeSudo(t, bin, sudoLog)
+		engineBin := fakeBin(t, bin, "bin-ctrd", "true\n")
+		cmd := exec.CommandContext(t.Context(), filepath.Join(dir, "ctrd"), "info")
+		cmd.Env = baseEnv("PATH="+bin+":/usr/bin:/bin", "CTRD_REAL="+engineBin)
+		out, err := cmd.CombinedOutput()
+		require.NoError(t, err, string(out))
+		got, err := os.ReadFile(sudoLog)
+		require.NoError(t, err)
+		assert.Equal(t, "-n "+engineBin+" info\n", string(got))
+	})
+
+	t.Run("passes the exit status and standard input through", func(t *testing.T) {
+		bin := t.TempDir()
+		fakeSudo(t, bin, filepath.Join(t.TempDir(), "sudo"))
+		engineBin := fakeBin(t, bin, "bin-ctrd", "cat; exit 7\n")
+		cmd := exec.CommandContext(t.Context(), filepath.Join(dir, "nerdctl"), "exec", "-i", "c")
+		cmd.Env = baseEnv("PATH="+bin+":/usr/bin:/bin", "CTRD_REAL="+engineBin)
+		cmd.Stdin = strings.NewReader("payload")
+		out, err := cmd.CombinedOutput()
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr)
+		assert.Equal(t, 7, exitErr.ExitCode())
+		assert.Equal(t, "payload", string(out))
+	})
+
+	t.Run("a ctrd that is not built is an error that says what to run", func(t *testing.T) {
+		cmd := exec.CommandContext(t.Context(), filepath.Join(dir, "ctrd"), "version")
+		cmd.Env = baseEnv("PATH=/usr/bin:/bin", "CTRD_REAL=/nonexistent/ctrd")
+		out, err := cmd.CombinedOutput()
+		var exitErr *exec.ExitError
+		require.ErrorAs(t, err, &exitErr)
+		assert.Equal(t, 127, exitErr.ExitCode())
+		assert.Contains(t, string(out), "make -C controller ctrd")
+	})
+
+	t.Run("nerdctl in this directory is ctrd, not a nerdctl", func(t *testing.T) {
+		target, err := os.Readlink(filepath.Join(dir, "nerdctl"))
+		require.NoError(t, err)
+		assert.Equal(t, "ctrd", target)
+	})
+}
+
+func TestCheckCtrd(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("check-ctrd.sh skips the sudo probe as root; this covers the sudo path")
+	}
+	check, err := filepath.Abs("check.sh")
+	require.NoError(t, err)
+
+	type host struct {
+		sudoFails      bool
+		noCtrd         bool
+		containerdDown bool
+		missingPlugins []string
+		noBuildctl     bool
+		noBuildkitd    bool
+		workerNS       string
+		gpus           string
+		noNvidiaCtk    bool
+		cdiLacksGPU    bool
+	}
+	run := func(t *testing.T, h host) (string, error) {
+		t.Helper()
+		bin := t.TempDir()
+		cni := t.TempDir()
+		if h.sudoFails {
+			fakeBin(t, bin, "sudo", "echo 'sudo: a password is required' >&2; exit 1\n")
+		} else {
+			fakeSudo(t, bin, filepath.Join(t.TempDir(), "sudo"))
+		}
+		engineBin := filepath.Join(bin, "bin-ctrd")
+		if !h.noCtrd {
+			version := `echo v2.4.2`
+			if h.containerdDown {
+				version = `echo 'ctr: connection refused' >&2; exit 1`
+			}
+			fakeBin(t, bin, "bin-ctrd", `case "$1" in version) `+version+` ;; esac`+"\n")
+		}
+		plugins := map[string]bool{"bridge": true, "portmap": true, "firewall": true, "host-local": true, "loopback": true}
+		for _, p := range h.missingPlugins {
+			delete(plugins, p)
+		}
+		for p := range plugins {
+			fakeBin(t, cni, p, "true\n")
+		}
+		if !h.noBuildctl {
+			namespace := h.workerNS
+			if namespace == "" {
+				namespace = "ctrd"
+			}
+			listening := "yes"
+			if h.noBuildkitd {
+				listening = "no"
+			}
+			fakeBin(t, bin, "buildctl", `if [ "`+listening+`" = no ]; then echo 'connection refused' >&2; exit 1; fi
+echo '[{"labels":{"org.mobyproject.buildkit.worker.executor":"containerd","org.mobyproject.buildkit.worker.containerd.namespace":"`+namespace+`"}}]'
+`)
+		}
+		for _, tool := range []string{"iptables", "ip", "mount", "umount", "cp"} {
+			fakeBin(t, bin, tool, "true\n")
+		}
+		if h.gpus != "" && !h.noNvidiaCtk {
+			list := "echo nvidia.com/gpu=all"
+			if h.cdiLacksGPU {
+				list = "echo vendor.example/other=x"
+			}
+			fakeBin(t, bin, "nvidia-ctk", list+"\n")
+		}
+		tools := toolsDir(t, "bash", "sh", "sed", "sort", "head", "stat", "dirname", "env", "true", "awk", "cat", "tr", "grep")
+		env := baseEnv("PATH="+bin+":"+tools, "CONTAINER_CLI=ctrd", "CNI_PATH="+cni, "CTRD_REAL="+engineBin, "CTRD_DNS=1.1.1.1", "CTRD_ROOT="+t.TempDir())
+		if h.gpus != "" {
+			env = append(env, "NICO_CONTAINERS_NODE_GPUS="+h.gpus)
+		}
+		return runBash(t, env, `exec bash "$1"`, check)
+	}
+	// Whether the machine running the test has cgroup v2, and a disk for /tmp,
+	// is not what these cases are about.
+	onlyHostLimits := func(out string) bool {
+		for _, line := range strings.Split(out, "\n") {
+			if strings.Contains(line, "FAIL") && !strings.Contains(line, "cgroup v2") && !strings.Contains(line, "state directory") {
+				return false
+			}
+		}
+		return true
+	}
+
+	t.Run("a host that is ready passes the checks of the engine", func(t *testing.T) {
+		out, _ := run(t, host{gpus: "all"})
+		assert.True(t, onlyHostLimits(out), out)
+		for _, want := range []string{"ok: containerd v2.4.2 answers", "ok: CNI plugins", "ok: buildkitd answers", "with a containerd worker in the 'ctrd' namespace", "ok: containers use the resolvers in CTRD_DNS: 1.1.1.1", "ok: CDI specification names the GPUs"} {
+			assert.Contains(t, out, want)
+		}
+	})
+
+	failures := map[string]struct {
+		host host
+		want []string
+	}{
+		"sudo needs a password":   {host{sudoFails: true}, []string{"passwordless sudo is required"}},
+		"ctrd is not built":       {host{noCtrd: true}, []string{"is not built. Run: make -C controller ctrd"}},
+		"containerd is down":      {host{containerdDown: true}, []string{"ctrd cannot reach containerd", "connection refused"}},
+		"CNI plugins are missing": {host{missingPlugins: []string{"firewall", "bridge"}}, []string{"CNI plugins missing", "firewall", "bridge"}},
+		"buildctl is missing":     {host{noBuildctl: true}, []string{"buildctl is not on root's PATH"}},
+		"buildkitd is down":       {host{noBuildkitd: true}, []string{"buildkitd does not answer"}},
+		"buildkitd builds into another namespace": {
+			host{workerNS: "default"}, []string{"no containerd worker in the 'ctrd' namespace", "--containerd-worker-namespace ctrd"},
+		},
+		"GPUs asked for and nvidia-ctk missing":      {host{gpus: "all", noNvidiaCtk: true}, []string{"nvidia-ctk is not installed"}},
+		"GPUs asked for and a CDI spec without them": {host{gpus: "all", cdiLacksGPU: true}, []string{"the CDI specification names no GPU", "nvidia-ctk cdi generate"}},
+	}
+	for name, tt := range failures {
+		t.Run(name, func(t *testing.T) {
+			out, err := run(t, tt.host)
+			require.Error(t, err, out)
+			for _, want := range tt.want {
+				assert.Contains(t, out, want)
+			}
+		})
+	}
+
+	t.Run("GPUs are not checked unless nico-sim is asked for them", func(t *testing.T) {
+		out, _ := run(t, host{})
+		assert.NotContains(t, out, "CDI")
+		assert.NotContains(t, out, "nvidia-ctk")
 	})
 }

@@ -7,20 +7,26 @@
 # functions only.
 #
 # CONTAINER_CLI selects the engine CLI, in the environment of both `make` and
-# `tilt up`: docker, which is what an unset value means, or nerdctl. nerdctl
-# runs the flow on containerd with no Docker daemon. It is the same variable
+# `tilt up`: docker, which is what an unset value means, nerdctl, or ctrd.
+# nerdctl runs the flow on containerd with no Docker daemon. ctrd runs it on
+# containerd alone: it is this repository's own docker-compatible CLI over ctr,
+# the CNI plugins and buildctl (hack/container-engine/ctrd), and there is no
+# nerdctl on the host. It is the same variable
 # hack/capd-kindest-node/build-image.sh already reads; OCI_BIN, which the CNI
 # bundle builds read, and KIND_EXPERIMENTAL_PROVIDER follow it.
 #
-# What nerdctl changes, all of it here or in the callers' one-line uses of it:
+# What nerdctl and ctrd change, all of it here or in the callers' one-line uses of it:
 #   - shim/nerdctl runs the real nerdctl through `sudo -n`, because containerd is
-#     rootful. ce_init puts it first on PATH.
+#     rootful. ce_init puts it first on PATH. shim/ctrd/ctrd does the same for
+#     bin/ctrd, and shim/ctrd/nerdctl is the same script under the name kind
+#     looks up: kind has providers for docker, podman and nerdctl only, and
+#     runs a binary called nerdctl. No nerdctl is installed or executed.
 #   - kind runs on its nerdctl provider, which has no `kind load docker-image`.
 #     ce_kind_load saves the image and loads the archive, the way nvkectl does.
 #   - nerdctl has no `network connect` and no `{{.Server.Arch}}`; the callers
 #     that used either do something else under nerdctl.
 #   - Docker accepts forwarded traffic that enters and leaves one bridge, which
-#     is the path to the control-plane VIP. nerdctl does not add that rule, and
+#     is the path to the control-plane VIP. nerdctl and ctrd do not add that rule, and
 #     the nvkectl bootstrap lane (cli/e2e/bootstrap/run-nico.sh) adds it itself:
 #     ce_allow_same_bridge_forwarding.
 
@@ -30,7 +36,7 @@ CE_SHIM_DIR="${CE_DIR}/shim"
 ce_cli() { printf '%s\n' "${CONTAINER_CLI:-docker}"; }
 
 # ce_init rejects an unsupported engine and prepares the environment for
-# nerdctl. It changes nothing for docker. Idempotent.
+# nerdctl or ctrd. It changes nothing for docker. Idempotent.
 ce_init() {
   case "$(ce_cli)" in
     docker) ;;
@@ -41,8 +47,17 @@ ce_init() {
       esac
       export KIND_EXPERIMENTAL_PROVIDER=nerdctl
       ;;
+    ctrd)
+      case ":${PATH}:" in
+        ":${CE_SHIM_DIR}/ctrd:"*) ;;
+        *) export PATH="${CE_SHIM_DIR}/ctrd:${PATH}" ;;
+      esac
+      # kind's provider for this engine is its nerdctl one, and the shim directory
+      # holds the binary of that name that kind runs.
+      export KIND_EXPERIMENTAL_PROVIDER=nerdctl
+      ;;
     *)
-      echo "CONTAINER_CLI=$(ce_cli) is not supported; use docker (the default) or nerdctl" >&2
+      echo "CONTAINER_CLI=$(ce_cli) is not supported; use docker (the default), nerdctl or ctrd" >&2
       return 1
       ;;
   esac
@@ -89,7 +104,7 @@ ce_as_root() {
   fi
 }
 
-# ce_bridge_of NETWORK prints the host interface nerdctl gives NETWORK's bridge.
+# ce_bridge_of NETWORK prints the host interface nerdctl or ctrd gives NETWORK's bridge: br- and the first 12 digits of its ID.
 ce_bridge_of() {
   local id
   id="$("$(ce_cli)" network inspect --format '{{.Id}}' "$1")" || return 1
@@ -101,7 +116,7 @@ ce_bridge_of() {
 # host's BGP route, so a worker's packet comes in on the bridge and goes back
 # out of it. A no-op for docker, which allows it already.
 ce_allow_same_bridge_forwarding() {
-  [[ "$(ce_cli)" == nerdctl ]] || return 0
+  [[ "$(ce_cli)" != docker ]] || return 0
   local bridge
   bridge="$(ce_bridge_of "$1")" || return 1
   ce_as_root iptables -C FORWARD -i "${bridge}" -o "${bridge}" -j ACCEPT 2>/dev/null ||
@@ -111,7 +126,7 @@ ce_allow_same_bridge_forwarding() {
 # ce_remove_same_bridge_forwarding NETWORK undoes it. Nothing to undo when the
 # network is already gone.
 ce_remove_same_bridge_forwarding() {
-  [[ "$(ce_cli)" == nerdctl ]] || return 0
+  [[ "$(ce_cli)" != docker ]] || return 0
   local bridge
   bridge="$(ce_bridge_of "$1" 2>/dev/null)" || return 0
   ce_as_root iptables -D FORWARD -i "${bridge}" -o "${bridge}" -j ACCEPT 2>/dev/null || true
