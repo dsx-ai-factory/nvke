@@ -149,3 +149,4 @@ test-qemu: ## Test QEMU architecture, firmware, and accelerator selection withou
 	bash ./packer/scripts/qemu-arch-test.sh
 	python3 ./packer/scripts/test_build_entrypoint.py
 	python3 ./nix/test_stock_guest.py
+	python3 ./nix/test_build_packages_stock.py

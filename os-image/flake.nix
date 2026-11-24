@@ -78,7 +78,7 @@
               -machine ${machine},accel="$accel" -cpu "$cpu" "$@"
           '';
         };
-      mkPackageApp =
+      mkPackageRunner =
         hostSystem: arch:
         let
           pkgs = import nixpkgs { system = hostSystem; };
@@ -115,6 +115,69 @@
           ''
           + builtins.readFile ./nix/build-packages.sh;
         };
+      # nixpkgs' stock darwin.linux-builder, changed only on the host side: no port
+      # forward, since build-packages-stock.sh drives it over the serial console,
+      # and the package VM's disk, memory and cores.
+      mkStockBuilder =
+        hostSystem: arch:
+        let
+          hostPkgs = import nixpkgs { system = hostSystem; };
+          # Preserve the upstream guest exactly so a fresh host can substitute it.
+          stockPkgs = import nixpkgs { system = "aarch64-darwin"; };
+          stock =
+            if arch == "arm64" then stockPkgs.darwin.linux-builder else stockPkgs.darwin.linux-builder-x86_64;
+          runtime = stock.override {
+            modules = [
+              (
+                { lib, ... }:
+                {
+                  nixpkgs.hostPlatform = guests.${arch};
+                  virtualisation.host.pkgs = lib.mkForce hostPkgs;
+                  virtualisation.forwardPorts = lib.mkForce [ ];
+                  virtualisation.darwin-builder.diskSize = 32768;
+                  virtualisation.darwin-builder.memorySize = 4096;
+                  virtualisation.cores = 4;
+                }
+              )
+            ];
+          };
+        in
+        assert
+          stock.nixosConfig.system.build.toplevel.drvPath
+          == runtime.nixosConfig.system.build.toplevel.drvPath;
+        runtime.nixosConfig.system.build.vm;
+      # On macOS the package build runs in that stock builder, which the binary
+      # cache provides, rather than in the package VM, which a Mac cannot build.
+      mkPackageApp =
+        hostSystem: arch:
+        let
+          pkgs = import nixpkgs { system = hostSystem; };
+          vm = mkStockBuilder hostSystem arch;
+        in
+        if !pkgs.stdenv.hostPlatform.isDarwin then
+          mkPackageRunner hostSystem arch
+        else
+          pkgs.writeShellApplication {
+            name = "build-packages-${arch}";
+            # nix comes from the caller's PATH, so it matches their daemon.
+            runtimeInputs = with pkgs; [
+              coreutils
+              flock
+              gitMinimal
+              gnugrep
+              gnutar
+              rsync
+            ];
+            # The VM is a deferred reference: building this app never fetches it,
+            # and the driver can say what to do when the cache lacks it.
+            text = ''
+              arch=${arch}
+              vm_drv=${builtins.unsafeDiscardOutputDependency vm.drvPath}
+              vm_program=${vm.meta.mainProgram}
+              guest_script=${./nix/stock-guest.sh}
+            ''
+            + builtins.readFile ./nix/build-packages-stock.sh;
+          };
     in
     {
       # The package build's tools, for working on it on a Linux host and for the
