@@ -16,6 +16,13 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
+const (
+	// spireServerUpdateMetadataServiceChangeID gates skipping nodes that take
+	// their identity from the metadata service. Histories recorded before it
+	// scheduled ReconfigureNodeSpireAgent on every SPIFFE-enabled node.
+	spireServerUpdateMetadataServiceChangeID = "spire-server-update-skip-metadata-service"
+)
+
 // UpdateSpireServerInput is the input the PATCH /clusters/{clusterID}/spire-server
 // handler enqueues.
 type UpdateSpireServerInput struct {
@@ -67,6 +74,15 @@ func updateSpireServer(ctx workflow.Context, input UpdateSpireServerInput) error
 		},
 	})
 
+	// GetVersion checks workflow history, not the node's identity. A workflow
+	// that recorded a schedule for a metadata-service node must replay it.
+	skipMetadataServiceNodes := workflow.GetVersion(
+		ctx,
+		spireServerUpdateMetadataServiceChangeID,
+		workflow.DefaultVersion,
+		1,
+	) >= 1
+
 	type pending struct {
 		node   db.Node
 		future workflow.Future
@@ -78,13 +94,13 @@ func updateSpireServer(ctx workflow.Context, input UpdateSpireServerInput) error
 			logger.Info("skipping SPIRE server update on node without SPIFFE", "node", node.Name)
 			continue
 		}
-		if node.UsesMetadataServiceIdentity() {
+		if skipMetadataServiceNodes && node.UsesMetadataServiceIdentity() {
 			logger.Info("skipping SPIRE server update on node without a SPIRE agent", "node", node.Name)
 			continue
 		}
-		if node.IP == "" {
+		if node.AgentDialHost() == "" {
 			// It cannot be reached yet, so it still points at the old server.
-			logger.Error("SPIRE server update failed on node without an IP", "node", node.Name)
+			logger.Error("SPIRE server update failed on node without an address", "node", node.Name)
 			failed = append(failed, node.Name)
 			continue
 		}
