@@ -32,10 +32,11 @@ const (
 	// ConfigAPIVersionLegacy is the spelling existing sites still mount, read
 	// beside ConfigAPIVersion.
 	//
-	// Removed in v0.25.0. Gate: no site's nke-auth-config ConfigMap still
-	// carries this apiVersion, confirmed by a fleet kubectl get cm sweep. A
-	// site that still mounts it after removal fails startup with the
-	// unsupported-apiVersion error below, which names what this build accepts.
+	// No release is scheduled to remove it. Gate: no site's nke-auth-config
+	// ConfigMap still carries this apiVersion, confirmed by a fleet kubectl get
+	// cm sweep, and nothing else passes it to Load. A site that still mounts it
+	// after removal fails startup with the unsupported-apiVersion error below,
+	// which names what this build accepts.
 	ConfigAPIVersionLegacy = "auth.nke.nvidia.com/v1alpha1"
 	ConfigKind             = "AuthenticationConfiguration"
 )

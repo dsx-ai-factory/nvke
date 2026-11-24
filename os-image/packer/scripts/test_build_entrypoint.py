@@ -266,7 +266,7 @@ class GuestUpdaterTest(unittest.TestCase):
                     tool.write_text("#!/bin/sh\nexit 0\n")
                     tool.chmod(0o755)
                 make = tools / "make"
-                make.write_text('#!/bin/sh\nprintf "%s\\n" "$*" >> "$TEST_MAKE_LOG"\n')
+                make.write_text('#!/bin/sh\nprintf "%s OCI_BIN=%s\\n" "$*" "${OCI_BIN:-unset}" >> "$TEST_MAKE_LOG"\n')
                 make.chmod(0o755)
                 log = root / "make.log"
                 env = os.environ | {"PATH": f"{tools}:{os.environ['PATH']}",
@@ -291,6 +291,10 @@ class GuestUpdaterTest(unittest.TestCase):
                 self.assertIn("IMDS_AGENT_FILE=/guest/materials/imds", calls[4])
                 self.assertIn("IMDS_AGENT_SHA256=" + "a" * 64, calls[4])
                 self.assertIn("IMDS_AGENT_ARCH=arm64", calls[4])
+                # The guest has podman, not docker; cni-ovn builds its image with it.
+                ovn = [call for call in calls if "/os-image/packages/cni-ovn debs" in call]
+                self.assertEqual(len(ovn), 1, calls)
+                self.assertIn("OCI_BIN=podman", ovn[0])
                 self.assertTrue((artifacts / "00-dhcp-all.yaml").is_file())
                 self.assertTrue((artifacts / "99-disable-network-config.cfg").is_file())
                 self.assertTrue((artifacts / "nvke-agent-spire.conf").is_file())

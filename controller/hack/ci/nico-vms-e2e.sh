@@ -710,7 +710,9 @@ ginkgo_minutes="$(echo "${GINKGO_TIMEOUT}" | sed 's/m$//')"
 test_timeout="$((ginkgo_minutes + 15))m"
 
 # fail-fast: a failed entry keeps its 4-6 VMs; a second entry would not fit and
-# would ask for the same control-plane VIP.
+# would ask for the same control-plane VIP. Specs write files such as kube-bench
+# scan results under -e2e.artifacts-dir, inside the state directory that
+# redact_diagnostics searches and the workflow uploads.
 log "running E2E specs matching ${LABEL_FILTER} (ginkgo timeout ${GINKGO_TIMEOUT})"
 start_state_monitor
 set +e
@@ -727,6 +729,7 @@ env NVKE_CONTROLLER_RELEASES_DIR="${CONTROLLER_ROOT}/test/fixtures/fleet-release
   -ginkgo.timeout="${GINKGO_TIMEOUT}" \
   "-ginkgo.label-filter=${LABEL_FILTER}" \
   "-ginkgo.junit-report=${STATE_DIR}/junit.xml" \
+  -e2e.artifacts-dir="${STATE_DIR}/artifacts" \
   2>&1 | tee "${STATE_DIR}/e2e.log"
 e2e_rc=${PIPESTATUS[0]}
 set -e

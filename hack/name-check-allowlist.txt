@@ -86,8 +86,7 @@ token:(^|[/:-])nke-controller($|[:@.])
 # refuses to take such a cluster over, and the reference dashboards' selectors.
 # Also the node-agent audience the controller and the agent accept beside
 # nvke-controller, and the NVKR release fixtures' artifact name. The audience
-# half goes in v0.25.0 (authn.NodeAgentAudienceLegacy names its gate); the
-# entry stays for the artifact name.
+# half stays indefinitely (see authn.NodeAgentAudienceLegacy).
 token:^nke-controller[.]?$
 
 # The legacy managed-by value.
@@ -125,9 +124,9 @@ token:nke-rbac
 # The nke: identity prefix the tenant apiserver reserves in its CEL
 # user-validation rules, and the nke:cwe objects an earlier release applied,
 # which tenantaccess prunes by name. The two are unrelated mechanisms that
-# share a spelling. The reserved prefix goes in v0.25.0
-# (controllerconfig.ReservedIdentityPrefixes names its gate); the entry stays
-# for the pruned object names.
+# share a spelling. The entry stays for the pruned object names whether or not
+# the reserved prefix is ever removed (controllerconfig.ReservedIdentityPrefixes
+# names its gate).
 token:^nke:
 
 # SPIFFE caller paths and the ClusterSPIFFEID, the client identities, and the
@@ -148,9 +147,10 @@ token:^svc-nke-ngc
 # does not publish.
 token:^nvcr\.io/nvidian/nke/
 
-# The old metric names, queried beside the new ones (D9). Removed in v0.25.0
-# with the legacy half of the two reference dashboards' queries, once Mimir
-# retention has aged the series out. Nothing in the tree emits them.
+# The old metric names, queried beside the new ones (D9). Removable with the
+# legacy half of the two reference dashboards' queries once Mimir retention has
+# aged the series out; no release is scheduled to do it. Nothing in the tree
+# emits them.
 token:^nke_controller_|^nke_auth_
 
 # The nke-<uid> names the management engine gives CWE clusters, and the
@@ -167,7 +167,7 @@ token:^nke$
 
 # The site spec constant for the reserved OIDC prefix "nke:". The prefix
 # string is already covered by ^nke:; this is the Go identifier that names it.
-# Removed in v0.25.0 with the prefix it names.
+# Goes with the prefix it names.
 token:^oidcPrefixNKE$
 
 # ---- Development scaffolding (not site-persisted) ----

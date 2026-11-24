@@ -83,6 +83,11 @@ in
 
   # Execute downloaded Linux tools such as kubeadm when they use an FHS loader.
   programs.nix-ld.enable = true;
+  # cni-ovn builds the ovnkube image from source; build-guest.sh sets OCI_BIN=podman.
+  virtualisation.podman.enable = true;
+  # Upstream Dockerfiles use short names (FROM golang:...). Resolve them as Docker
+  # does; with one search registry, podman uses it without prompting.
+  virtualisation.containers.registries.settings.unqualified-search-registries = [ "docker.io" ];
   # build-guest.sh points CC at this wrapper, which Go honors for cgo builds.
   environment.systemPackages = with pkgs; [
     ubuntuCC

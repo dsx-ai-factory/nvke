@@ -185,6 +185,7 @@ items:
         version: 1.36.2
       id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
       name: workers-deprecated
+      readyReplicas: 0
     - conditions:
       - message: ""
         observedGeneration: 1
@@ -211,5 +212,6 @@ items:
         version: 1.36.3
       id: dddddddd-dddd-4ddd-8ddd-dddddddddddd
       name: workers-unpinned
+      replicas: 2147483647
     observedGeneration: 1
 metadata: {}

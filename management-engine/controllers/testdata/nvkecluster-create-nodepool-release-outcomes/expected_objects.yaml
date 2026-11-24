@@ -198,6 +198,9 @@ items:
         version: 1.36.2
       id: cccccccc-cccc-4ccc-8ccc-cccccccccccc
       name: workers-sibling
+      readyReplicas: 1
+      replicas: 1
+      updatedReplicas: 1
     - conditions:
       - message: |-
           * NVKEControllerProvisioned: Reported
@@ -226,6 +229,9 @@ items:
         version: 1.36.1
       id: bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb
       name: workers-new
+      readyReplicas: 0
+      replicas: 0
+      updatedReplicas: 0
     - name: workers-no-release
     - name: workers-no-image
     - name: workers-deprecated
