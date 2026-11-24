@@ -17,12 +17,12 @@ For validation on one cluster, see [test a release before wider rollout](#test-a
 
 ## Before starting
 
-Confirm the [installation prerequisites](helm-installation.md): compatible pinned
-packages, working API and manager identities, a ready manager and a reachable
-NVKE controller. The image, initialization and infrastructure-provider versions
-must support the intended Kubernetes version and cluster operation.
+You need `curl`, `jq` and `kubectl`, access to the Cluster Service APIs and
+datastore, and a kubeconfig for the workload cluster. Confirm that Cluster Service
+meets the [installation prerequisites](helm-installation.md) and can reach the
+NVKE controller.
 
-Use the site's published Gateway URL for the tenant API and its approved internal
+Use the site's tenant API endpoint and its approved internal
 endpoint for the operator API. Both refer to Cluster Service. Add the authentication
 options required by your deployment to each curl command.
 
@@ -39,10 +39,10 @@ Confirm the active Kubernetes context points to the cluster holding Cluster Serv
 kubectl config current-context
 ```
 
-The operator needs catalog-write access; the tenant needs access to its cluster.
-The API workloads need their canonical [operator](../config/dev/operator-api-rbac.yaml)
-and [tenant](../config/dev/tenant-api-rbac.yaml) datastore permissions. Keep credentials
-out of Git and captured results.
+Use an operator identity with catalog read/write access and a tenant identity
+with read/update access to the target cluster. The `kubectl` checks require read
+access to Cluster Service state and workload nodes. Keep credentials out of Git
+and captured results.
 
 ## Select the release inputs
 
@@ -61,31 +61,19 @@ through the channel; minimum upgrade age controls when a new release is eligible
 | --- | --- |
 | `RELEASE_NAME` | New or existing release to make available. |
 | `MACHINE_IMAGE_NAME` | Existing machine image from the catalog. |
-| `KUBERNETES_VERSION` | Exact Kubernetes version carried by the image. |
+| `KUBERNETES_VERSION` | Exact Kubernetes version the release should boot. |
 | `USER_DATA_TEMPLATE` | Path to the approved cloud-init template from the release artifacts. |
 | `CHANNEL_NAME` | Existing channel to update or select for a cluster. |
-| `VERSION_SELECTOR` | Version selector offered through the channel. |
-| `MINIMUM_UPGRADE_AGE` | Eligibility delay, such as `24h`. |
+| `VERSION_SELECTOR` | Channel selector: `major.minor` allows patch upgrades; `major.minor.patch` selects an exact Kubernetes version. |
+| `MINIMUM_UPGRADE_AGE` | Minimum release age before existing clusters may adopt it, such as `24h`. |
 
 Use the schema from the installed version. The [release definition](../apis/v1/clusterrelease_types.go)
 and [initialization fields](../apis/v1/common_types.go) describe optional settings,
 including additional bootstrap files and commands.
 
-Treat the image, bootloader and initialization as one compatible set. When moving
-from a provider's named boot profile to per-machine boot inputs, include the
-repository, packages and identity setup that profile previously supplied. Preserve
-controller-generated credentials and agent arguments. A placeholder cloud-init
-template alone does not supply these dependencies; check which initialization
-fields the deployed manager actually forwards.
-Check startup order too: moving early boot setup into later commands can change
-when packages and identity services become available. Allow a bounded wait for
-host networking before downloading bootstrap dependencies.
-
-For images carrying [bundled OVN packages](../../os-image/packages/cni-ovn/README.md),
-keep the chart and container images from the same build. If bootstrap installs
-them explicitly, select the files staged in `/usr/lib/nvke/debs`; installing by
-package name can select a different build from a remote repository. Check the
-actual package and container image versions, not just the CNI release number.
+Use an image and initialization configuration tested together for the target
+provider and Kubernetes version. Include the required networking and identity
+setup.
 
 ## Publish or select a release
 
@@ -124,8 +112,8 @@ curl -i -H 'Content-Type: application/json' \
   "${OPERATOR_API_URL:?}/v1/cluster-releases"
 ```
 
-Expect HTTP 201 and the created release. Immutable image or initialization changes
-require a new release name.
+Expect HTTP 201 and the created release. Changing the Kubernetes version, image
+or initialization requires a new release name.
 
 ## Update the channel
 
@@ -227,6 +215,7 @@ cat cluster-update.json
 ## Verify the rollout
 
 For each affected cluster, set `CLUSTER_NAME` and `TENANT_NAMESPACE` to its values.
+Use the context for the Cluster Service datastore:
 
 ```sh
 curl -i "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
@@ -258,7 +247,7 @@ or `Ready=True` alone does not establish that replacement or scaling has finishe
 Record provider health separately: a ready Kubernetes node can coexist with an
 infrastructure health condition that still reports provisioning.
 
-## Diagnose failures and retire old releases
+## Diagnose failures
 
 Inspect the resource's conditions and events:
 
@@ -271,9 +260,7 @@ kubectl -n "${TENANT_NAMESPACE:?}" describe nvkeclusters.service.nvke.nvidia.com
 | API unavailable or HTTP 401/403 | Check the endpoint and workload readiness; confirm the site's caller credentials and permissions before retrying. |
 | HTTP 412 on update | Fetch the resource again, review changes and rebuild the request with its new ETag. |
 | Release not selected | Check the channel/version selection, minimum upgrade age and release lifecycle fields. Correct those inputs before retrying. |
-| Bootstrap downloads cannot resolve hosts | Check host networking and the bounded retry window in the release initialization. Pod CNI is installed later. |
-| Node agent cannot obtain workload identity | Check the NVKE controller's identity configuration and generated Machine annotations. For DSX IMDS, `nvke.nvidia.com/spire-agent-spiffe-id-path` must identify the allocated instance; see the [identity reconciler](../../controller/internal/controllers/capi/launchlayer_spiffe_controller.go). |
-| OVN exits while checking firewalld | Compare the installed chart, container image and package origins. Restore a matching supported package set before changing host firewall services. |
+| Nodes fail to initialize or become Ready | Inspect node bootstrap and agent logs. Check network access, workload identity and compatibility of the image, initialization and CNI packages. |
 | `ClusterReconciled=False` or `NodePoolsReconciled=False` | Read the condition message. Check the referenced catalog resources and tenant infrastructure template; correct the failing input. |
 | `NVKEControllerUpdateFailed=True`, stalled replacement or nodes not Ready | Capture the condition messages, backend cluster ID (`status.id`) and node state. Involve the backend/provider owner before making another version change. |
 
@@ -284,6 +271,8 @@ control-plane and worker operations; recovery from a partially completed upgrade
 needs the backend/provider owner's assessment. For package or datastore problems,
 see [upgrade and state retention](helm-installation.md#crd-ownership-upgrades-and-retention).
 
+## Retire unused releases
+
 Retain previous releases for the agreed recovery period. Set `RETIRED_RELEASE_NAME`
 to the release to remove and inspect it:
 
@@ -291,16 +280,18 @@ to the release to remove and inspect it:
 curl -i "${OPERATOR_API_URL:?}/v1/cluster-releases/${RETIRED_RELEASE_NAME:?}"
 ```
 
-Confirm it is unused and remove any remaining channel references. Copy its `ETag`
-into `RELEASE_ETAG`, keeping the double quotes, then delete the release record:
+Check all channel and cluster references, including any paginated results, and
+confirm the release is no longer in use. Remove remaining channel references.
+Copy its `ETag` into `RELEASE_ETAG`, keeping the double quotes, then delete the
+release record:
 
 ```sh
 curl -i -X DELETE -H "If-Match: ${RELEASE_ETAG:?}" \
   "${OPERATOR_API_URL:?}/v1/cluster-releases/${RETIRED_RELEASE_NAME:?}"
 ```
 
-Expect HTTP 202. Retain shared images, schemas, credentials and namespaces still
-in use.
+Expect HTTP 202, then repeat the GET until it returns HTTP 404. Retain shared
+images and other resources still in use.
 
 Record package and image references, cluster and release identities, API results,
 observed outcome and any recovery actions. Keep the generated response files for
@@ -308,10 +299,9 @@ review according to the site's data-handling rules.
 
 ## Test a release before wider rollout
 
-Start with a working image and bootstrap combination. For a newer OS, publish
-new records and check its package suite, bootloader, agent and identity support
-together. Validate initial provisioning on a fresh cluster before attempting
-upgrades; keep the working baseline available for comparison and recovery.
+Use a test cluster with the same provider and configuration as the intended
+targets. Keep its current release available for comparison and recovery. Validate
+initial provisioning separately if the image or initialization is new.
 
 To validate a candidate on one cluster, [publish or select the release](#publish-or-select-a-release)
 and set `TEST_CHANNEL_NAME` to a new channel reserved for that cluster. Create it
@@ -340,14 +330,8 @@ then [verify the rollout](#verify-the-rollout). Keep other clusters on their exi
 
 After validation, set `CHANNEL_NAME` to the intended rollout channel and follow
 [update the channel](#update-the-channel) to make the same release available there.
-Record the tested package and image versions, release, cluster, and outcome. For
-an isolated internal smoke test, approved localhost forwards to the existing API
-Services can provide access before Gateway registration; record that access path
-and its authentication limits. It does not validate the published endpoint.
-
-Validate publication, channel changes and the resulting rollout on the isolated
-cluster. Record which operations and versions were exercised, alongside the
-initial bootstrap result. Have another operator follow the runbook and correct
-missing steps.
+Record the tested versions, release, cluster and outcome. Distinguish initial
+provisioning from upgrades or node replacement; success in one does not establish
+the others.
 
 Created with AI assistance
