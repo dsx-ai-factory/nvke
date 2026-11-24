@@ -9,6 +9,10 @@ Nix prepares a Linux VM with the tools needed to build NVKE's Debian packages.
 Use this on Apple Silicon macOS or when your Linux host differs from the target
 architecture. Matching Linux hosts use the existing direct package build by default.
 
+On macOS the VM is nixpkgs' stock Linux builder, fetched from the binary cache;
+see [macOS: nixpkgs' Linux builder](#macos-nixpkgs-linux-builder). On a Linux
+host it is the package VM this directory defines.
+
 ## Install Nix
 
 Follow the [official Nix installation instructions](https://nixos.org/download/)
@@ -21,6 +25,16 @@ curl --proto '=https' --tlsv1.2 -L https://nixos.org/nix/install | sh -s -- --da
 Open a new terminal and check `nix --version`. If your system already manages Nix
 through NixOS or nix-darwin, use that installation.
 
+On macOS the installer hooks Nix into `/etc/zshrc` and `/etc/bashrc`, but bash
+reads `/etc/bashrc` only as a login shell. If `nix` is missing in bash, add the
+hook to `~/.bashrc`:
+
+```bash
+if [ -e /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+  . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+fi
+```
+
 Add this line to `~/.config/nix/nix.conf` (create the directory/file if needed),
 or enable the equivalent setting in your existing NixOS/nix-darwin configuration:
 
@@ -28,14 +42,12 @@ or enable the equivalent setting in your existing NixOS/nix-darwin configuration
 experimental-features = nix-command flakes
 ```
 
-**On macOS or a different CPU architecture, one more setup step is required:**
-Nix needs access to a Linux builder matching the target architecture to prepare
-the VM, unless all its build outputs are available in a binary cache. A fresh
-Nix installation alone does not configure that builder. See Nix's
+That is all a Mac needs. **A Linux host whose CPU differs from the target needs
+one more step:** Nix needs a Linux builder matching the target architecture to
+prepare the package VM, unless all its build outputs are in a binary cache. A
+fresh Nix installation does not configure one. See Nix's
 [remote builder setup](https://nix.dev/manual/nix/stable/advanced-topics/distributed-builds).
-On a nix-darwin Mac, `nix.linux-builder` is one way to get a matching
-aarch64-linux builder without a separate machine. QEMU's software emulation
-applies when running the prepared VM.
+QEMU's software emulation applies when running the prepared VM.
 
 ## Build packages
 
@@ -47,15 +59,18 @@ NKE_TARGET_UBUNTU_SERIES=26.04 nix run ./os-image#build-packages-arm64 -- --outp
 
 `NKE_TARGET_UBUNTU_SERIES` is the image's Ubuntu release; it selects the DOCA
 Open vSwitch build. Use `build-packages-amd64` for x86 packages. The command starts the VM, copies
-in your checkout, builds the packages, copies the results to your output
-directory, and shuts down the VM. The first build takes longer; later builds
-reuse a persistent disk containing the Nix store and compiler/download caches.
+in your checkout's tracked and untracked files (not ignored ones), builds the
+packages, copies the results to your output directory, and shuts down the VM.
+The first build takes longer; later builds reuse a persistent disk containing
+the Nix store and compiler/download caches.
 The builder copies top-level artifacts, replacing same-named files such as
 `nvke-agent.deb`, and synchronizes `debs/` with deletion of stale packages.
 Unrelated files outside `debs/` are preserved. See the [module README](../README.md)
 for how this fits into an OS image build and for `check-deps`.
 
 `os-image/flake.nix` is the Nix configuration; `flake.lock` pins its dependencies.
+
+### Linux: the package VM
 
 The persistent disk grows as needed up to 32 GiB and is reused per architecture.
 Set `NKE_BUILDER_STATE_DIR` to choose where the disk, keys, and logs live;
@@ -71,13 +86,53 @@ through a systemd credential; sshd reads it from runtime memory, not the Nix
 store. All SSH and rsync connections require that pinned key, including the
 first boot and boots with a fresh disk. Keep the state directory private.
 
+### macOS: nixpkgs' Linux builder
+
+A Mac cannot build the package VM without a Linux builder, so on macOS the
+build runs in nixpkgs' stock `darwin.linux-builder` from the pinned nixpkgs.
+Its guest comes from the binary cache. The flake changes only the host side:
+no network port, and the package VM's 32 GiB disk, 4 GiB of memory and 4
+cores. Nothing is installed as a service, no Nix setting changes, and your
+user does not need to be trusted.
+
+- **First run** downloads the builder's guest, about 720 MiB for arm64, and
+  then, inside the guest, the build tools, about 2.4 GB, onto its persistent
+  disk. `make -C os-image/packer check-deps` fetches the guest. A nixpkgs pin
+  whose builder guest is not cached cannot be used on a Mac; the build says so.
+- **How it runs.** The VM has no SSH session and no network port. Its serial
+  console logs in its unprivileged `builder` user, and the build types one
+  command there. Files go through the VM's shared directory: your checkout as
+  a tarball, an environment file and the guest script go in; a log, the
+  artifacts and a status come back. In the guest, `builder` runs the build
+  inside `nix develop ./os-image#package-build`, with rootless podman, then
+  powers the VM off. The guest's log streams to your terminal.
+- **State** lives in `stock/` under the builder state directory, by default
+  `~/.cache/nke/builders/<arch>/stock`: the persistent disk `root.qcow2`, which
+  holds the guest's Nix store and build caches, plus `console.log` and the
+  last `build.log`. The disk does not shrink when the guest deletes files, so
+  expect it to take most of its 32 GiB after the first build. The shared
+  directory is created for each run and deleted when it exits. One run at a time can use that state; a second fails with
+  "already in use". Delete `stock/` to start again from a fresh disk.
+- **Credentials** such as `NGC_API_KEY` reach the guest only in the
+  environment file, which the guest deletes once read. Nothing secret is typed
+  on the console, which is logged.
+- **Interrupting** a build with Ctrl-C powers the guest off cleanly from its
+  console.
+- **A damaged disk.** If the VM does not reach its console login, or the
+  guest's Nix database is corrupt, on a disk reused from an earlier run, the
+  build deletes the disk and retries once.
+- **amd64** packages build in nixpkgs' x86_64 builder under emulation, which is
+  much slower. That path has not been tested.
+
 ### Enter the build tools
 
 On a Linux host, `nix develop ./os-image#package-build` opens a shell with the
 build tools the VM installs, for the host's own architecture, and sets `CC` to
 `nke-ubuntu-cc` (described below), so cgo builds such as the agent's do not
-link against the host's glibc. Both lists come from `nix/build-tools.nix`. The
-VM's base system and podman are not part of the shell.
+link against the host's glibc. Both lists come from `nix/build-tools.nix`; the
+shell adds podman, which the VM gets from its podman module. The VM's base
+system is not part of the shell. On macOS this is the shell the stock builder's
+guest runs the build in.
 
 ## How the builder produces Ubuntu-compatible binaries
 

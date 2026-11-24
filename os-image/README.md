@@ -47,9 +47,12 @@ Package-builder prerequisites depend on the selected mode:
 
 - **Host builds:** Linux matching the image architecture, plus
   [Go](https://go.dev/dl/) at the version specified by `go.work`.
-- **Nix VM builds:** Nix with `nix-command` and `flakes` enabled. Preparing the
-  VM requires a matching Linux builder or cached build outputs; see the
-  [Nix setup instructions](nix/README.md). Go is provided inside the VM.
+- **Nix VM builds:** Nix with `nix-command` and `flakes` enabled. On Apple
+  Silicon macOS that is all: the build runs in nixpkgs' stock Linux builder,
+  fetched from the binary cache. On a Linux host whose CPU differs from the
+  target, preparing the package VM requires a matching Linux builder or cached
+  build outputs. See the [Nix setup instructions](nix/README.md). Go is
+  provided inside the VM.
 
 Both variants boot the Ubuntu Server installer (not a prebuilt cloud image),
 so all of the above are needed even for a first build — see
@@ -160,7 +163,7 @@ compatible arm64 image. The production arm64 kernel is
 `linux-nvidia-64k-hwe-26.04` on 26.04 and `linux-nvidia-64k` on 24.04. Neither
 boots under HVF on Apple silicon, which has no 64K page granule; use an image
 baked with `linux-generic` (the HVF bake default). Compatibility with a
-particular Mac/QEMU combination still needs live validation. Apple Silicon macOS package builds use the NixOS VM; image baking still needs the
+particular Mac/QEMU combination still needs live validation. Apple Silicon macOS package builds use nixpkgs' stock Linux builder; image baking still needs the
 host Packer/ISO tools. The boot scripts also need `cloud-localds`, SSH and, for
 smoke tests, `timeout`.
 Run `make -C os-image test-qemu` for the selection and build-entrypoint tests
@@ -209,7 +212,8 @@ make os-image-fde ARCH=arm64
 
 Both variants build for arm64. Host package-builder mode requires an arm64
 Linux host and cgo toolchain. On Apple Silicon macOS and mismatched Linux hosts,
-`auto` selects the NixOS VM, which provides that toolchain. QEMU can emulate
+`auto` selects the Nix path, which provides that toolchain: nixpkgs' stock Linux
+builder on macOS, the NixOS package VM on Linux. QEMU can emulate
 the image guest with `tcg`; package compilation happens separately. `ARCH` picks the right ISO URL,
 QEMU binary (`qemu-system-aarch64`), machine type (`virt`), and UEFI firmware
 (AAVMF instead of OVMF) automatically; nothing else needs to change per-arch.
