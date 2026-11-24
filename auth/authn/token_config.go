@@ -14,23 +14,17 @@ const (
 	// than deployment choices in the first TLS/JWT implementation.
 	NodeAgentIssuerName = "dsx-identity"
 	NodeAgentAudience   = "nvke-controller"
-	// NodeAgentAudienceLegacy is the audience agents request until they move to
-	// NodeAgentAudience, so the controller accepts both whatever the release
-	// order.
+	// NodeAgentAudienceLegacy is the audience agents request, so the controller
+	// accepts it beside NodeAgentAudience.
 	//
-	// Slated for v0.25.0, but nothing has opened the path to it yet. The agent
-	// picks its audience with --controller-audience, which defaults to this
-	// constant and falls back to it when empty (agent/cmd/agent/main.go), and
-	// nodeAgentBootstrapFiles never passes the flag
-	// (controller/internal/temporal/activities). So every TLS/JWT agent
-	// requests the legacy audience whatever version it reports, and
-	// agent_version does not gate this window.
-	//
-	// Gate: the controller selects NodeAgentAudience per node, tracked in
-	// #2039, and the fleet has rolled onto it. Flipping the agent's default
-	// instead is not the path; #1565 rejected that because it imposes a
-	// release order. Removed before the gate, every TLS/JWT node fails closed
-	// in controller/internal/agent/tlsjwt.go, which is enforcing-only.
+	// It stays: no release removes it. The agent picks its audience with
+	// --controller-audience, which defaults to this constant and falls back to
+	// it when empty (agent/cmd/agent/main.go), and nodeAgentBootstrapFiles
+	// never passes the flag (controller/internal/temporal/activities). So every
+	// TLS/JWT agent requests the legacy audience whatever version it reports.
+	// Moving agents off it (#2039) was dropped. Removed without that move,
+	// every TLS/JWT node fails closed in controller/internal/agent/tlsjwt.go,
+	// which is enforcing-only.
 	NodeAgentAudienceLegacy = "nke-controller"
 )
 

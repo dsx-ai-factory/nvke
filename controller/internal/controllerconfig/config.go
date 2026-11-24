@@ -838,12 +838,13 @@ func validateDiscoveryURL(issuerURL, discoveryURL string) error {
 // the tenant apiserver's CEL user-validation rules. Nothing here reserves
 // Role or ClusterRole names.
 //
-// "nke:" is removed in v0.25.0, which relaxes both and regenerates that
-// config. Gate: tenantaccess.pruneLegacyRBAC has run on every site, so that
-// no platform-owned RBAC still carries the nke: name once a fleet-wide
-// provider may mint nke: usernames and groups. cli/internal/bootstrap/sitespec
-// and controller/test/e2e/internal/oidc each keep their own copy of this list,
-// and controller/test/e2e/internal/oidc/testdata/auth-config.yaml pins the
+// No release is scheduled to remove "nke:"; removing it relaxes both and
+// regenerates that config. Gate: tenantaccess.pruneLegacyRBAC has run on every
+// site, so that no platform-owned RBAC still carries the nke: name once a
+// fleet-wide provider may mint nke: usernames and groups.
+// cli/internal/bootstrap/sitespec and controller/test/e2e/internal/oidc each
+// keep their own copy of this list, and
+// controller/test/e2e/internal/oidc/testdata/auth-config.yaml pins the
 // generated rules, so all three move with it.
 func ReservedIdentityPrefixes() []string {
 	return []string{"system:", "kubeadm:", "nke:", "nvke:", "nvidia:"}
