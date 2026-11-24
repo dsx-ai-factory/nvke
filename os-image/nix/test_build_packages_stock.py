@@ -32,6 +32,9 @@ def event(*item):
 boots = root / "boots"
 boot = int(boots.read_text()) + 1 if boots.exists() else 1
 boots.write_text(str(boot))
+mask = os.umask(0)
+os.umask(mask)
+event("umask", oct(mask))
 event("boot", boot, {k: os.environ.get(k) for k in ("KEYS", "NIX_DISK_IMAGE", "USE_TMPDIR", "QEMU_NET_OPTS")},
       Path(os.environ["NIX_DISK_IMAGE"]).exists())
 Path(os.environ["NIX_DISK_IMAGE"]).touch()
@@ -191,6 +194,12 @@ fcntl.flock(int(sys.argv[-1]), fcntl.LOCK_EX | fcntl.LOCK_NB)
         self.assertEqual(boot[2]["USE_TMPDIR"], "1")
         self.assertTrue(Path(boot[2]["KEYS"]).is_dir())
         self.assertEqual(self.console()[0].endswith(" &"), True)
+
+    def test_vm_starts_with_a_umask_the_guest_can_read(self):
+        # The launcher copies the host's CA bundle into a share the guest reads
+        # as another user; the 0700 state directory keeps other host users out.
+        self.run_driver()
+        self.assertEqual([e[1] for e in self.event_list() if e[0] == "umask"], ["0o22"])
 
     def test_check_realizes_the_vm_without_booting(self):
         result = self.run_driver("--check")

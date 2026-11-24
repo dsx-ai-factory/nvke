@@ -127,8 +127,14 @@ boot() {
   # Job control gives the launcher and its QEMU child their own process group.
   set -m
   # QEMU inherits fd 8, so the lock is held until the VM exits, even if this driver is killed.
-  KEYS="$state/keys" NIX_DISK_IMAGE="$disk" TMPDIR="$runtime" USE_TMPDIR=1 \
-    "$vm/bin/$vm_program" <"$state/console.in" >"$console" 2>&1 &
+  # The launcher copies the host's CA bundle into a share the guest reads as
+  # another user, so it runs with umask 022; the 0700 state directory keeps
+  # other host users out.
+  (
+    umask 022
+    KEYS="$state/keys" NIX_DISK_IMAGE="$disk" TMPDIR="$runtime" USE_TMPDIR=1 \
+      exec "$vm/bin/$vm_program"
+  ) <"$state/console.in" >"$console" 2>&1 &
   vm_pid=$!
   local deadline=$((SECONDS + ${NKE_BUILDER_BOOT_TIMEOUT:-900}))
   until grep -q "automatic login" "$console" 2>/dev/null; do
