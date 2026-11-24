@@ -84,22 +84,27 @@ func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcil
 		return reconcile.Result{}, err
 	}
 	probe.cause = probeCause(node, probe.err)
-	previous := node.Conditions.NodeAgentReady
-	if !applyNodeAgentReadiness(&node, probe) {
-		c.logTransition(node, previous, probe)
-		return reconcile.Result{RequeueAfter: c.requeueAfter()}, nil
-	}
+	var previous db.Condition
 
 	// The transition is logged once the transaction commits, from the row
 	// it was applied to.
 	var applied *db.Node
+	var stale bool
 	if err := c.db.RunInTx(ctx, func(ctx context.Context, tx db.Tx) error {
 		applied = nil
+		stale = false
 		lockedNode, err := tx.GetNodeForUpdate(ctx, node.ID)
 		if err != nil {
 			return err
 		}
 		if lockedNode.Conditions.Deleting.Status == db.ConditionStatusTrue {
+			return nil
+		}
+
+		// The endpoint can change while the dial is in flight. Discard that result
+		// rather than writing or logging it against an address/profile we never probed.
+		if lockedNode.IP != node.IP || agent.TransportProfile(lockedNode) != agent.TransportProfile(node) {
+			stale = true
 			return nil
 		}
 
@@ -118,6 +123,9 @@ func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcil
 			return reconcile.Result{}, nil
 		}
 		return reconcile.Result{}, fmt.Errorf("updating node agent health for node %s: %w", node.ID, err)
+	}
+	if stale {
+		return reconcile.Result{RequeueAfter: c.requeueAfter()}, nil
 	}
 	if applied == nil {
 		c.causes.forget(node.ID)

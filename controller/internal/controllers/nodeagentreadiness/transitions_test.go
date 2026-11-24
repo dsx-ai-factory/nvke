@@ -6,6 +6,7 @@ package nodeagentreadiness
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"sync"
 	"testing"
@@ -275,4 +276,41 @@ func TestUnit_NodeAgentReadinessTransitionNotLoggedWithoutCommit(t *testing.T) {
 
 	lines := h.probe(probeErr(agent.ProbeCauseConnectionRefused, "connection refused"))
 	assert.Empty(t, linesAt(lines, slog.LevelInfo))
+}
+
+func TestUnit_NodeAgentReadinessDiscardsProbeForChangedEndpoint(t *testing.T) {
+	for _, unchanged := range []bool{false, true} {
+		for _, field := range []string{"ip", "profile"} {
+			t.Run(fmt.Sprintf("%s/unchanged=%t", field, unchanged), func(t *testing.T) {
+				node := readyNode(time.Now().Add(-time.Minute))
+				lockedNode := node
+				if field == "ip" {
+					lockedNode.IP = "198.51.100.21"
+				} else {
+					lockedNode.SpiffeEnabled = false
+				}
+				database := &testutil.MockDB{}
+				database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
+				database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+				tx := &testutil.MockTx{}
+				database.MockTx = tx
+				tx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(lockedNode, nil).Once()
+				tx.On("GetNode", mock.Anything, node.ID).Return(lockedNode, nil).Maybe()
+				tx.On("UpdateNode", mock.Anything, mock.Anything).Return(lockedNode, nil).Maybe()
+				logs := newCaptureHandler()
+				fakeAgent := &agenttest.FakeClient{AgentVersion: node.AgentVersion}
+				if !unchanged {
+					fakeAgent.AgentVersionErr = errors.New("connection refused")
+				}
+				c := NewAgentReadinessController(config.Config{}, slog.New(logs), dbwrapper.New(database, nil), fakeAgent)
+				result, err := c.Reconcile(t.Context(), dbreconcile.NodeKey(node.ID))
+				require.NoError(t, err)
+				require.Positive(t, result.RequeueAfter)
+				require.Empty(t, logs.take(), "a stale probe must not produce a transition log")
+				tx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+				database.AssertExpectations(t)
+				tx.AssertExpectations(t)
+			})
+		}
+	}
 }
