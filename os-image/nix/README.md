@@ -74,8 +74,10 @@ first boot and boots with a fresh disk. Keep the state directory private.
 ### Enter the build tools
 
 On a Linux host, `nix develop ./os-image#package-build` opens a shell with the
-tools the VM installs, `nke-ubuntu-cc` included. Both come from
-`nix/build-tools.nix`, so the shell and the VM stay in step.
+build tools the VM installs, for the host's own architecture, and sets `CC` to
+`nke-ubuntu-cc` (described below), so cgo builds such as the agent's do not
+link against the host's glibc. Both lists come from `nix/build-tools.nix`. The
+VM's base system and podman are not part of the shell.
 
 ## How the builder produces Ubuntu-compatible binaries
 
