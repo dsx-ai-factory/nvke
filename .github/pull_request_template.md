@@ -78,6 +78,7 @@ make preflight
 
 - [ ] I am familiar with the [Contributing Guidelines](https://github.com/dsx-ai-factory/nvke/blob/main/CONTRIBUTING.md)
 - [ ] Every commit carries a DCO sign-off (`git commit -s`)
+- [ ] Every commit carries a verified signature (see [CONTRIBUTING.md](https://github.com/dsx-ai-factory/nvke/blob/main/CONTRIBUTING.md#verified-signatures))
 - [ ] `make preflight` passes locally
 - [ ] I did not skip/disable tests to make CI green
 - [ ] I added/updated tests for new functionality
