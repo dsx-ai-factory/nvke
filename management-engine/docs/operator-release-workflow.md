@@ -26,6 +26,12 @@ Use the site's published Gateway URL for the tenant API and its approved interna
 endpoint for the operator API. Both refer to Cluster Service. Add the authentication
 options required by your deployment to each curl command.
 
+Match the examples to the installed API and manager versions. This guide uses
+`spec.kubernetes.version` on releases and `nodeProfile` for workers. Older builds
+may require release-version annotations that their operator API cannot publish.
+On those builds, select a prepared release or upgrade the API and manager before
+publishing; a successful POST alone does not prove the release is usable.
+
 | Variable | Value |
 | --- | --- |
 | `TENANT_API_URL` | Published tenant-facing Cluster Service base URL, without a trailing slash or `/v1`. |
@@ -78,7 +84,14 @@ controller-generated credentials and agent arguments. A placeholder cloud-init
 template alone does not supply these dependencies; check which initialization
 fields the deployed manager actually forwards.
 Check startup order too: moving early boot setup into later commands can change
-when packages and identity services become available.
+when packages and identity services become available. Allow a bounded wait for
+host networking before downloading bootstrap dependencies.
+
+For images carrying [bundled OVN packages](../../os-image/packages/cni-ovn/README.md),
+keep the chart and container images from the same build. If bootstrap installs
+them explicitly, select the files staged in `/usr/lib/nvke/debs`; installing by
+package name can select a different build from a remote repository. Check the
+actual package and container image versions, not just the CNI release number.
 
 ## Publish or select a release
 
@@ -108,7 +121,8 @@ jq -n \
 cat release.json
 ```
 
-Publish the reviewed request:
+Include any `machineInit.infra` files and commands required by the image in
+`release.json`, then publish the reviewed request:
 
 ```sh
 curl -i -H 'Content-Type: application/json' \
@@ -229,7 +243,7 @@ Check the stored resource and the workload cluster together:
 
 | Check | Expected result |
 | --- | --- |
-| `status.observedGeneration` | Matches `metadata.generation`. Channel edits do not change the cluster's generation, so also check the resolved release. |
+| Condition freshness | Each relevant condition's `observedGeneration` matches `metadata.generation`. Channel edits do not change the cluster's generation, so also check the resolved release. |
 | `status.currentRelease` | Names the intended control-plane release and Kubernetes version. This records backend configuration, not completed node replacement. |
 | `status.conditions` | Current `Synced`, `ControlPlaneReady` and `Ready` observations are `True`; inspect their reasons and messages if not. |
 | Backend operation | `NVKEControllerProvisioned` is `True`; provisioning, control-plane upgrading and node recycling have finished, with no reported `NVKEControllerUpdateFailed`. Missing observations do not establish completion. |
@@ -245,6 +259,8 @@ All expected nodes must be present and `Ready`. Control-plane nodes must run the
 selected Kubernetes version; worker nodes must match their selected node profiles.
 Compare actual node counts with the requested pools. API success, `currentRelease`
 or `Ready=True` alone does not establish that replacement or scaling has finished.
+Record provider health separately: a ready Kubernetes node can coexist with an
+infrastructure health condition that still reports provisioning.
 
 ## Diagnose failures and retire old releases
 
@@ -259,6 +275,9 @@ kubectl -n "${TENANT_NAMESPACE:?}" describe nvkeclusters.service.nvke.nvidia.com
 | API unavailable or HTTP 401/403 | Check the endpoint and workload readiness; confirm the site's caller credentials and permissions before retrying. |
 | HTTP 412 on update | Fetch the resource again, review changes and rebuild the request with its new ETag. |
 | Release not selected | Check the channel/version selection, minimum upgrade age and release lifecycle fields. Correct those inputs before retrying. |
+| Bootstrap downloads cannot resolve hosts | Check host networking and the bounded retry window in the release initialization. Pod CNI is installed later. |
+| Node agent cannot obtain workload identity | Check the NVKE controller's identity configuration and generated Machine annotations. For DSX IMDS, `nvke.nvidia.com/spire-agent-spiffe-id-path` must identify the allocated instance; see the [identity reconciler](../../controller/internal/controllers/capi/launchlayer_spiffe_controller.go). |
+| OVN exits while checking firewalld | Compare the installed chart, container image and package origins. Restore a matching supported package set before changing host firewall services. |
 | `ClusterReconciled=False` or `NodePoolsReconciled=False` | Read the condition message. Check the referenced catalog resources and tenant infrastructure template; correct the failing input. |
 | `NVKEControllerUpdateFailed=True`, stalled replacement or nodes not Ready | Capture the condition messages, backend cluster ID (`status.id`) and node state. Involve the backend/provider owner before making another version change. |
 
@@ -325,7 +344,14 @@ then [verify the rollout](#verify-the-rollout). Keep other clusters on their exi
 
 After validation, set `CHANNEL_NAME` to the intended rollout channel and follow
 [update the channel](#update-the-channel) to make the same release available there.
-Record the tested package and image versions, release, cluster, and outcome. When
-validating this runbook, have another operator follow it and correct any missing steps.
+Record the tested package and image versions, release, cluster, and outcome. For
+an isolated internal smoke test, approved localhost forwards to the existing API
+Services can provide access before Gateway registration; record that access path
+and its authentication limits. It does not validate the published endpoint.
+
+Validate publication, channel changes and the resulting rollout on the isolated
+cluster. Record which operations and versions were exercised, alongside the
+initial bootstrap result. Have another operator follow the runbook and correct
+missing steps.
 
 Created with AI assistance
