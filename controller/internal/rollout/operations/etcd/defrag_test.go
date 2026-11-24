@@ -756,9 +756,12 @@ func TestDefragOperationStartFailureIsClassifiedByStartingAgain(t *testing.T) {
 			"the retry must be answered with the existing operation, not defragment a second time")
 	})
 
-	// The retry reaching an agent that authored a refusal is the same clean
-	// halt as the first attempt producing one.
-	t.Run("an ambiguous failure retried into a refusal halts cleanly", func(t *testing.T) {
+	// A refusal to the retry proves some handler ran, but not that it was the
+	// first start's: the refusal can come from an unrelated defragmentation
+	// holding the type while the first start waits on the mutex, and that start
+	// can still publish once the other ends. Once the first attempt is
+	// ambiguous, nothing the retry says restores the claim of restoration.
+	t.Run("a refusal to the retry does not restore the claim the first attempt gave up", func(t *testing.T) {
 		client := &fakeDefragClient{
 			etcdStatus: fragmentedStatus(),
 			startErrs:  []error{unavailable, declined},
@@ -767,8 +770,9 @@ func TestDefragOperationStartFailureIsClassifiedByStartingAgain(t *testing.T) {
 
 		outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
 
-		assert.Equal(t, rollout.OutcomeFailedRestored, outcome)
+		assert.Equal(t, rollout.OutcomeFailedNotRestored, outcome)
 		require.Error(t, err)
+		assert.Contains(t, err.Error(), "state could not be established")
 		assert.Len(t, client.startReqs, 2)
 	})
 }

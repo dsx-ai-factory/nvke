@@ -253,14 +253,16 @@ func (op *DefragOperation) startDefrag(
 		"node", node.Name(), "err", err)
 
 	_, retryErr := client.StartEtcdDefrag(ctx, &nvkeproto.StartEtcdDefragRequest{OperationId: operationID})
-	switch {
-	case retryErr == nil:
+	if retryErr == nil {
 		return op.awaitDefrag(ctx, client, node, operationID)
-	case agentDeclined(retryErr):
-		return rollout.OutcomeFailedRestored, fmt.Errorf("start etcd defragmentation on node %s: %w", node.Name(), retryErr)
-	default:
-		return rollout.OutcomeFailedNotRestored, fmt.Errorf("start etcd defragmentation on node %s failed twice and its state could not be established (first attempt: %w): %w", node.Name(), err, retryErr)
 	}
+	// No answer to the retry restores the claim the first attempt gave up.
+	// agentDeclined proves a handler ran, but not that it was the first start's
+	// handler: a refusal can come from an unrelated defragmentation holding the
+	// type, and the first start can still be queued behind the mutex and
+	// publish once that one ends. Only an unambiguous first attempt earns the
+	// clean halt.
+	return rollout.OutcomeFailedNotRestored, fmt.Errorf("start etcd defragmentation on node %s failed twice and its state could not be established (first attempt: %w): %w", node.Name(), err, retryErr)
 }
 
 // agentDeclined reports whether err is a refusal the agent itself produced,
