@@ -249,7 +249,7 @@ class GuestUpdaterTest(unittest.TestCase):
                     tool.write_text("#!/bin/sh\nexit 0\n")
                     tool.chmod(0o755)
                 make = tools / "make"
-                make.write_text('#!/bin/sh\nprintf "%s OCI_BIN=%s\\n" "$*" "${OCI_BIN:-unset}" >> "$TEST_MAKE_LOG"\n')
+                make.write_text('#!/bin/sh\nprintf "%s OCI_BIN=%s CC=%s\\n" "$*" "${OCI_BIN:-unset}" "${CC:-unset}" >> "$TEST_MAKE_LOG"\n')
                 make.chmod(0o755)
                 log = root / "make.log"
                 env = os.environ | {"PATH": f"{tools}:{os.environ['PATH']}",
@@ -273,6 +273,8 @@ class GuestUpdaterTest(unittest.TestCase):
                 ovn = [call for call in calls if "/os-image/packages/cni-ovn debs" in call]
                 self.assertEqual(len(ovn), 1, calls)
                 self.assertIn("OCI_BIN=podman", ovn[0])
+                # Today's package VM installs the compiler system-wide.
+                self.assertIn("CC=/run/current-system/sw/bin/nke-ubuntu-cc", calls[0])
                 self.assertTrue((artifacts / "00-dhcp-all.yaml").is_file())
                 self.assertTrue((artifacts / "99-disable-network-config.cfg").is_file())
                 self.assertTrue((artifacts / "nvke-agent-spire.conf").is_file())
@@ -286,6 +288,39 @@ class GuestUpdaterTest(unittest.TestCase):
                     self.assertEqual(stat.S_IMODE(staged.stat().st_mode), mode, name)
                     self.assertEqual(staged.read_bytes(), (files / name).read_bytes(), name)
 
+
+    def test_guest_compiler_and_cache_follow_the_environment(self):
+        """The stock builder runs the guest as a normal user, inside a devShell."""
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp).resolve()
+            repo = root / "checkout"
+            scripts = repo / "os-image/packer/scripts"
+            scripts.mkdir(parents=True)
+            (scripts / "fetch-artifacts.sh").write_text('printf "CC=%s\\n" "$CC" > "$TEST_LOG"\n')
+            for package in ("kubeadm-distro", "cni-calico", "cni-ovn", "spire-agent", "doca-ovs"):
+                (repo / "os-image/packages" / package).mkdir(parents=True)
+            updater = repo / "agent/bin/linux_arm64/nvke-agent-updater"
+            updater.parent.mkdir(parents=True)
+            updater.touch()
+            tools = root / "tools"
+            tools.mkdir()
+            for name in ("check-ubuntu-elf", "readelf"):
+                (tools / name).write_text("#!/bin/sh\nexit 0\n")
+                (tools / name).chmod(0o755)
+            home = root / "home"
+            log = root / "cc.log"
+            env = os.environ | {"PATH": f"{tools}:{os.environ['PATH']}", "HOME": str(home),
+                                "REPO_ROOT": str(repo), "ARCH": "arm64", "TEST_LOG": str(log),
+                                "NKE_UBUNTU_CC": "/nix/store/shell-nke-ubuntu-cc/bin/nke-ubuntu-cc"}
+            result = subprocess.run([shutil.which("bash"), str(PACKER_DIR.parent / "nix/build-guest.sh")],
+                                    env=env, text=True, capture_output=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(log.read_text().strip(), "CC=/nix/store/shell-nke-ubuntu-cc/bin/nke-ubuntu-cc")
+            # Each package's bin/ and dist/ persist in the user's cache, as /root's do today.
+            for package in ("kubeadm-distro", "spire-agent"):
+                for directory in ("bin", "dist"):
+                    link = repo / "os-image/packages" / package / directory
+                    self.assertEqual(os.readlink(link), str(home / ".cache/nke-packages" / package / directory))
 
 if __name__ == "__main__":
     unittest.main()

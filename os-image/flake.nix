@@ -117,8 +117,9 @@
         };
     in
     {
-      # The package build's tools, for working on it on a Linux host. The
-      # package-builder VM installs the same list.
+      # The package build's tools, for working on it on a Linux host and for the
+      # stock Linux builder macOS uses. The package-builder VM installs the same
+      # list, and podman through its podman module.
       devShells = nixpkgs.lib.genAttrs (builtins.attrValues guests) (
         system:
         let
@@ -127,7 +128,7 @@
         {
           package-build = pkgs.mkShellNoCC {
             name = "nvke-package-build";
-            packages = import ./nix/build-tools.nix { inherit pkgs; };
+            packages = import ./nix/build-tools.nix { inherit pkgs; } ++ [ pkgs.podman ];
             # Otherwise cgo finds the host's gcc and links the agent against the
             # host's glibc, which the image may not have.
             CC = "nke-ubuntu-cc";
