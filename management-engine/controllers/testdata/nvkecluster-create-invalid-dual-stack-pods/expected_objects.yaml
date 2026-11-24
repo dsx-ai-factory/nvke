@@ -10,14 +10,11 @@ items:
     name: cluster-1
     namespace: default
   spec:
-    apiServerAccess:
-      publicAccessEnabled: false
     clusterNetwork:
       pods:
         cidrBlocks:
         - 10.244.0.0/16
         - fd00::/48
-      serviceDomain: cluster.local
       services:
         cidrBlocks:
         - 10.96.0.0/12

@@ -15,6 +15,7 @@ func testMachineInit() MachineInit {
 	return MachineInit{UserDataTemplate: "#cloud-config\nhostname: {{ .Hostname }}\n"}
 }
 
+// TestTypedResourcesRoundTrip verifies that typed resources survive serialization and pass schema validation.
 func TestTypedResourcesRoundTrip(t *testing.T) {
 	scheme := runtime.NewScheme()
 	if err := AddToScheme(scheme); err != nil {
@@ -39,13 +40,11 @@ func TestTypedResourcesRoundTrip(t *testing.T) {
 				Name: "demo", Namespace: "org-demo",
 				Spec: NVKEClusterSpec{
 					ClusterNetwork: ClusterNetwork{
-						Pods:          NetworkRanges{CIDRBlocks: []NetworkCIDR{"10.244.0.0/16"}},
-						Services:      NetworkRanges{CIDRBlocks: []NetworkCIDR{"10.96.0.0/12"}},
-						ServiceDomain: "cluster.local",
+						Pods:     NetworkRanges{CIDRBlocks: []NetworkCIDR{"10.244.0.0/16"}},
+						Services: NetworkRanges{CIDRBlocks: []NetworkCIDR{"10.96.0.0/12"}},
 					},
-					Release:            ReleaseSelection{Channel: ReleaseChannelReference{Name: "stable"}},
-					ControlPlaneClass:  "standard",
-					AcceleratedRuntime: &AcceleratedRuntimeSelection{Name: "gb200-ubuntu", Version: "1.2.3"},
+					Release:           ReleaseSelection{Channel: ReleaseChannelReference{Name: "stable"}},
+					ControlPlaneClass: "standard",
 					Network: &Network{
 						VPCID: "147ca92b-a90f-4094-92cd-7a0b3f10c30d",
 					},
@@ -183,7 +182,7 @@ func TestAuthenticationRoundTripPreservesImmutability(t *testing.T) {
 			schema.admit(t, old, nil)
 
 			cluster := decodeJSON[NVKECluster](t, encodeJSON(t, old))
-			cluster.Spec.APIServerAccess.PublicAccessEnabled = true
+			cluster.Spec.Release.Channel.Version = "1.36"
 			updated := decodeJSON[map[string]any](t, encodeJSON(t, cluster))
 			if errs := schema.validate(updated, old); len(errs) != 0 {
 				t.Fatalf("unrelated typed update changed authentication: %v", errs)

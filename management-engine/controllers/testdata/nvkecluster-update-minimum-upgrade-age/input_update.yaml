@@ -7,8 +7,6 @@ metadata:
   name: cluster-1
   namespace: default
 spec:
-  apiServerAccess:
-    publicAccessEnabled: false
   clusterNetwork:
     pods:
       cidrBlocks:
@@ -16,7 +14,6 @@ spec:
     services:
       cidrBlocks:
         - 10.96.0.0/12
-    serviceDomain: cluster.local
   release:
     channel:
       name: pinned

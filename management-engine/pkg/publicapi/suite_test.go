@@ -19,6 +19,7 @@ import (
 
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/gomega"
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/envtest"
@@ -54,6 +55,11 @@ var _ = fixture.DescribeCaseSet(publicAPICaseSet("Operator API", "operator-", "o
 		return []client.ObjectList{&v1.MachineImageList{}, &v1.ClusterReleaseList{}}
 	}))
 
+var _ = fixture.DescribeCaseSet(publicAPICaseSet("Tenant cluster API", "tenant-cluster-", "tenant", Tenant,
+	func() []client.ObjectList {
+		return []client.ObjectList{&v1.NVKEClusterList{}}
+	}))
+
 // publicAPICaseSet configures isolated API fixtures with optional operator setup requests
 // and golden comparisons for a single request or a request batch.
 func publicAPICaseSet(
@@ -67,6 +73,7 @@ func publicAPICaseSet(
 		MaskExpectedMetadata: true,
 		SchemeFn: func() *runtime.Scheme {
 			scheme := runtime.NewScheme()
+			gomega.Expect(corev1.AddToScheme(scheme)).To(gomega.Succeed())
 			gomega.Expect(v1.AddToScheme(scheme)).To(gomega.Succeed())
 			return scheme
 		},

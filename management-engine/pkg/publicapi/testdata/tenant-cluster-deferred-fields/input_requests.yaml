@@ -1,0 +1,137 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+- method: POST
+  path: "/v1/clusters"
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: "example-cluster"
+    spec:
+      clusterNetwork:
+        pods:
+          cidrBlocks: ["10.244.0.0/16"]
+        services:
+          cidrBlocks: ["10.96.0.0/12"]
+      release:
+        channel:
+          name: "stable"
+      controlPlaneClass: "standard"
+- method: POST
+  path: "/v1/clusters"
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: "rejected-apiserveraccess"
+    spec:
+      clusterNetwork:
+        pods:
+          cidrBlocks: ["10.244.0.0/16"]
+        services:
+          cidrBlocks: ["10.96.0.0/12"]
+      release:
+        channel:
+          name: "stable"
+      controlPlaneClass: "standard"
+      apiServerAccess:
+        publicAccessEnabled: false
+- method: POST
+  path: "/v1/clusters"
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: "rejected-acceleratedruntime"
+    spec:
+      clusterNetwork:
+        pods:
+          cidrBlocks: ["10.244.0.0/16"]
+        services:
+          cidrBlocks: ["10.96.0.0/12"]
+      release:
+        channel:
+          name: "stable"
+      controlPlaneClass: "standard"
+      acceleratedRuntime:
+        name: "none"
+- method: POST
+  path: "/v1/clusters"
+  headers:
+    Content-Type: [application/json]
+  body:
+    metadata:
+      name: "rejected-servicedomain"
+    spec:
+      clusterNetwork:
+        pods:
+          cidrBlocks: ["10.244.0.0/16"]
+        services:
+          cidrBlocks: ["10.96.0.0/12"]
+        serviceDomain: "cluster.local"
+      release:
+        channel:
+          name: "stable"
+      controlPlaneClass: "standard"
+- method: PUT
+  path: "/v1/clusters/example-cluster"
+  body:
+    metadata:
+      name: "example-cluster"
+    spec:
+      clusterNetwork:
+        pods:
+          cidrBlocks: ["10.244.0.0/16"]
+        services:
+          cidrBlocks: ["10.96.0.0/12"]
+      release:
+        channel:
+          name: "stable"
+      controlPlaneClass: "standard"
+      apiServerAccess:
+        publicAccessEnabled: false
+  headers:
+    Content-Type: ["application/json"]
+    If-Match: ["{{etag}}"]
+- method: PUT
+  path: "/v1/clusters/example-cluster"
+  body:
+    metadata:
+      name: "example-cluster"
+    spec:
+      clusterNetwork:
+        pods:
+          cidrBlocks: ["10.244.0.0/16"]
+        services:
+          cidrBlocks: ["10.96.0.0/12"]
+      release:
+        channel:
+          name: "stable"
+      controlPlaneClass: "standard"
+      acceleratedRuntime:
+        name: "none"
+  headers:
+    Content-Type: ["application/json"]
+    If-Match: ["{{etag}}"]
+- method: PUT
+  path: "/v1/clusters/example-cluster"
+  body:
+    metadata:
+      name: "example-cluster"
+    spec:
+      clusterNetwork:
+        pods:
+          cidrBlocks: ["10.244.0.0/16"]
+        services:
+          cidrBlocks: ["10.96.0.0/12"]
+        serviceDomain: "cluster.local"
+      release:
+        channel:
+          name: "stable"
+      controlPlaneClass: "standard"
+  headers:
+    Content-Type: ["application/json"]
+    If-Match: ["{{etag}}"]
+- method: GET
+  path: "/v1/clusters/example-cluster"

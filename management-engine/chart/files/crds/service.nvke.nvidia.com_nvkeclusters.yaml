@@ -50,70 +50,6 @@ spec:
             description: NVKEClusterSpec configures a cluster's control plane and
               node pools.
             properties:
-              acceleratedRuntime:
-                description: AcceleratedRuntime selects an accelerated runtime bundle.
-                  Use name "none" to opt out.
-                properties:
-                  name:
-                    description: ResourceName is a Kubernetes DNS subdomain name,
-                      not a provider identifier.
-                    maxLength: 253
-                    minLength: 1
-                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                    type: string
-                  version:
-                    description: Version is an OCI tag. It need not be a semantic
-                      version.
-                    maxLength: 128
-                    minLength: 1
-                    pattern: ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$
-                    type: string
-                required:
-                - name
-                type: object
-                x-kubernetes-validations:
-                - message: version is required for a runtime release and must be omitted
-                    for none
-                  rule: 'self.name == ''none'' ? !has(self.version) : has(self.version)'
-              apiServerAccess:
-                description: APIServerAccess controls access to the cluster's Kubernetes
-                  API server from outside the VPC.
-                properties:
-                  publicAccessCidrs:
-                    description: PublicAccessCIDRs lists the source networks allowed
-                      to use public API server access.
-                    items:
-                      description: PublicAccessCIDR is an allowed source network and
-                        optional description.
-                      properties:
-                        cidr:
-                          description: CIDR is an IPv4 or IPv6 source network in CIDR
-                            notation.
-                          maxLength: 49
-                          type: string
-                          x-kubernetes-validations:
-                          - message: must be an IPv4 or IPv6 CIDR
-                            rule: isCIDR(self)
-                        description:
-                          description: Description is an optional label for the source
-                            network.
-                          maxLength: 256
-                          type: string
-                      required:
-                      - cidr
-                      type: object
-                    maxItems: 64
-                    type: array
-                    x-kubernetes-list-map-keys:
-                    - cidr
-                    x-kubernetes-list-type: map
-                  publicAccessEnabled:
-                    description: PublicAccessEnabled enables public access to the
-                      Kubernetes API server.
-                    type: boolean
-                required:
-                - publicAccessEnabled
-                type: object
               apiServerEndpoint:
                 description: |-
                   APIServerEndpoint gives the API server a stable address that survives control-plane node changes.
@@ -134,6 +70,7 @@ spec:
               authentication:
                 description: |-
                   Authentication configures additional JWT issuers for cluster access.
+                  Custom authentication is not yet supported by the service.
                   It can only be set when creating the cluster.
                 properties:
                   jwt:
@@ -234,8 +171,7 @@ spec:
                         == 1)
                 type: object
               clusterNetwork:
-                description: ClusterNetwork describes the pod/service networks and
-                  cluster DNS domain.
+                description: ClusterNetwork describes the pod and service networks.
                 properties:
                   pods:
                     description: Pods specifies the address ranges used by pods.
@@ -244,6 +180,7 @@ spec:
                         description: |-
                           CIDRBlocks contains one address range, or one IPv4 and one IPv6 range for dual-stack.
                           The first range selects the default IP family.
+                          Provisioning currently supports a single IPv4 range.
                         items:
                           description: NetworkCIDR is an IPv4 or IPv6 network in CIDR
                             notation.
@@ -265,12 +202,6 @@ spec:
                     required:
                     - cidrBlocks
                     type: object
-                  serviceDomain:
-                    description: ServiceDomain is the DNS domain used by cluster services.
-                    maxLength: 253
-                    minLength: 1
-                    pattern: ^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$
-                    type: string
                   services:
                     description: Services specifies the address ranges used by cluster
                       services.
@@ -279,6 +210,7 @@ spec:
                         description: |-
                           CIDRBlocks contains one address range, or one IPv4 and one IPv6 range for dual-stack.
                           The first range selects the default IP family.
+                          Provisioning currently supports a single IPv4 range.
                         items:
                           description: NetworkCIDR is an IPv4 or IPv6 network in CIDR
                             notation.
@@ -302,7 +234,6 @@ spec:
                     type: object
                 required:
                 - pods
-                - serviceDomain
                 - services
                 type: object
               controlPlaneClass:
@@ -529,7 +460,6 @@ spec:
                 - channel
                 type: object
             required:
-            - apiServerAccess
             - clusterNetwork
             - controlPlaneClass
             - release

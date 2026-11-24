@@ -168,11 +168,9 @@ var baseResources = map[string]string{
 		"kind": "NVKECluster",
 		"metadata": {"name": "demo", "namespace": "org-demo"},
 		"spec": {
-			"apiServerAccess": {"publicAccessEnabled": false},
 			"clusterNetwork": {
 				"pods": {"cidrBlocks": ["192.168.0.0/16"]},
-				"services": {"cidrBlocks": ["10.96.0.0/12"]},
-				"serviceDomain": "cluster.local"
+				"services": {"cidrBlocks": ["10.96.0.0/12"]}
 			},
 			"release": {"channel": {"name": "stable"}},
 			"controlPlaneClass": "standard"
@@ -311,10 +309,23 @@ func deleteField(obj map[string]any, path []string) {
 	delete(parent, key)
 }
 
+// TestGeneratedResourceSchemas validates generated schemas and excludes deferred cluster fields.
 func TestGeneratedResourceSchemas(t *testing.T) {
 	for _, resource := range []string{"nvkeclusters", "machineimages", "clusterreleases", "nodeprofiles", "controlplaneclasses"} {
 		t.Run(resource, func(t *testing.T) {
-			loadResourceSchema(t, resource).admit(t, baseResource(t, resource), nil)
+			schema := loadResourceSchema(t, resource)
+			schema.admit(t, baseResource(t, resource), nil)
+			if resource == "nvkeclusters" {
+				spec := schema.structural.Properties["spec"]
+				for _, name := range []string{"apiServerAccess", "acceleratedRuntime"} {
+					if _, exists := spec.Properties[name]; exists {
+						t.Errorf("deferred field spec.%s is still published", name)
+					}
+				}
+				if _, exists := spec.Properties["clusterNetwork"].Properties["serviceDomain"]; exists {
+					t.Error("deferred field spec.clusterNetwork.serviceDomain is still published")
+				}
+			}
 		})
 	}
 }
@@ -493,52 +504,6 @@ func TestNVKEClusterSchemaAdmission(t *testing.T) {
 	}
 }
 
-func TestNVKEClusterAcceleratedRuntimeAdmission(t *testing.T) {
-	path := []string{"spec", "acceleratedRuntime"}
-	loadResourceSchema(t, "nvkeclusters").runCreate(t, "nvkeclusters", []fieldCase{
-		{name: "omitted runtime", path: path, remove: true},
-		{name: "runtime with version", path: path, value: map[string]any{"name": "gb200-ubuntu", "version": "1.2.3"}},
-		{name: "explicit opt out", path: path, value: map[string]any{"name": "none"}},
-		{name: "missing name", path: path, value: map[string]any{"version": "1.2.3"}, invalid: true},
-		{name: "missing version", path: path, value: map[string]any{"name": "gb200-ubuntu"}, invalid: true},
-		{name: "empty version", path: path, value: map[string]any{"name": "gb200-ubuntu", "version": ""}, invalid: true},
-		{name: "oversized version", path: path, value: map[string]any{"name": "gb200-ubuntu", "version": strings.Repeat("a", 129)}, invalid: true},
-		{name: "opt out with version", path: path, value: map[string]any{"name": "none", "version": "1.2.3"}, invalid: true},
-	})
-}
-
-func TestAcceleratedRuntimeTags(t *testing.T) {
-	schema := loadResourceSchema(t, "nvkeclusters")
-	for _, tt := range []struct {
-		tag     string
-		invalid bool
-	}{
-		{tag: "1.2.3"},
-		{tag: "v1.2.3-rc.1"},
-		{tag: "GB200_ubuntu-24.04"},
-		{tag: "_preview"},
-		{tag: "latest"},
-		{tag: "x.y.z"},
-		{tag: strings.Repeat("a", 128)},
-		{tag: strings.Repeat("a", 129), invalid: true},
-		{tag: "", invalid: true},
-		{tag: " ", invalid: true},
-		{tag: "not a tag", invalid: true},
-		{tag: "1.2.3+build", invalid: true},
-		{tag: "-preview", invalid: true},
-		{tag: ".preview", invalid: true},
-		{tag: "repo:tag", invalid: true},
-		{tag: "repo/tag", invalid: true},
-		{tag: "café", invalid: true},
-	} {
-		t.Run(tt.tag, func(t *testing.T) {
-			obj := baseResource(t, "nvkeclusters")
-			setField(obj, []string{"spec", "acceleratedRuntime"}, map[string]any{"name": "gb200-ubuntu", "version": tt.tag})
-			schema.check(t, tt.invalid, obj, nil)
-		})
-	}
-}
-
 // NetworkRanges is shared by pods and services, so the dual-stack rule is
 // checked on both rather than on services alone.
 func TestNVKEClusterNetworkFamilies(t *testing.T) {
@@ -708,6 +673,7 @@ func clusterWithAPIServerAddress(t *testing.T, address string) map[string]any {
 	return obj
 }
 
+// TestResourceCollectionUniqueness rejects duplicate entries in map and set collections.
 func TestResourceCollectionUniqueness(t *testing.T) {
 	schema := loadResourceSchema(t, "nvkeclusters")
 	serviceCIDRs := []string{"spec", "clusterNetwork", "services", "cidrBlocks"}
@@ -722,11 +688,6 @@ func TestResourceCollectionUniqueness(t *testing.T) {
 			name: "duplicate condition type", path: []string{"status", "conditions"},
 			items: `[{"type":"Ready","status":"True","reason":"Ready","message":"","lastTransitionTime":"2026-01-01T00:00:00Z"},
 			         {"type":"Ready","status":"False","reason":"Pending","message":"","lastTransitionTime":"2026-01-01T00:00:00Z"}]`,
-			invalid: true,
-		},
-		{
-			name: "duplicate access CIDR", path: []string{"spec", "apiServerAccess", "publicAccessCidrs"},
-			items:   `[{"cidr":"10.0.0.0/8"},{"cidr":"10.0.0.0/8","description":"duplicate"}]`,
 			invalid: true,
 		},
 		{
