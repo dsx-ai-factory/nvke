@@ -100,9 +100,10 @@ cp controller/tilt_config.json.example controller/tilt_config.json
 cp controller/.env.tilt.example controller/.env.tilt
 # then edit controller/.env.tilt and fill the five empty values
 
-# Only if the CAPNICo checkout is not a sibling of this repository. Absolute:
-# Tilt runs the provider script from controller/, so a relative path resolves
-# inside the repository.
+# Your CAPNICo checkout. Set it even when the checkout is a sibling of this
+# repository: Tilt does not look for one, and without it installs the released
+# chart, which needs NGC_API_KEY. Absolute: Tilt runs the provider script from
+# controller/, so a relative path resolves inside the repository.
 export CAPNICO_SOURCE_DIR="$PWD/../cluster-api-provider-nico"
 
 # kind cluster, Cluster API, and the bundle mirror the node image build reads.
@@ -191,10 +192,10 @@ OIDC is on.
 
 Real hardware, a real NICo site, and a management cluster that outlives your
 terminal. Steps 1 to 4 have been run end to end on leased bare metal to a
-`Ready` control-plane node; steps 5, 6 and 8 have been run against mock NICo
-rather than a real site, and step 7 against neither. New management cluster
-clusters use OVN-Kubernetes. Treat a surprise here as a bug in this page and
-say so.
+`Ready` control-plane node; steps 5 and 8 have been run against mock NICo
+rather than a real site, and steps 6 and 7 have not been run from this page.
+New management cluster clusters use OVN-Kubernetes. Treat a surprise here as a
+bug in this page and say so.
 
 ### Before you start
 
@@ -385,13 +386,15 @@ explains how to prove the NICo credentials once the site is up.
 
 ### 6. Install the management plane
 
-The bootstrap leaves you a plain Kubernetes cluster. Installing CWE onto it is a
-separate job, and the largest step here — `nvkectl` has no command for it.
+The bootstrap leaves you a plain Kubernetes cluster. Installing the management
+plane onto it is a separate job, and the largest step here — `nvkectl` has no
+command for it.
 
-Follow [Run NVKE end to end on one machine](get-started/local-site.md).
-It installs the whole management plane, Postgres, Temporal, SPIRE, CAPNICo,
-NVKE telemetry pipeline (NKTP) and CWE, with the commands that page lists, from the `deploy/nico`
-deploy path, the site spec and an NVKR release description.
+Follow [Install the management plane](operate/install-management-plane.md).
+It installs Cluster API, CAPNICo, SPIRE, NVKE telemetry (NKTP), PostgreSQL,
+Temporal and the NVKE controller from the `deploy/nico` deploy path and the
+site spec, and from an NVIDIA Kubernetes Recipes (NVKR) release description if
+you install from one.
 
 ```bash
 nvkectl config set-site --name my-site --url http://<VIP>:30080 \
@@ -421,9 +424,11 @@ nvkectl get providers      # nico must read CONFIGURED before you create anythin
 
 ### 7. Publish a release
 
-Step 6 ended by publishing a release through the install guide. To add another,
-for a second image or a changed user data, publish a new set under a new name;
-`nvkectl create` refuses an existing one.
+The install publishes no release, so publish one before you create a cluster.
+[Build and host node OS images](operate/build-node-images.md#register-the-image-for-provisioning)
+covers the files in full. To add another later, for a second image or a changed
+user data, publish a new set under a new name; `nvkectl create` refuses an
+existing one.
 
 Copy the three examples —
 [`machineimage.yaml`](../cli/examples/machineimage.yaml),
