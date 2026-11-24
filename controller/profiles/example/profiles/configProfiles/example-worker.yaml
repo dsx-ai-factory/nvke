@@ -2,12 +2,8 @@
 # SPDX-License-Identifier: Apache-2.0
 
 hooks:
-  beforeJoinNode:
+  beforeRemoveNode:
     - runbook:
-        name: example-sysctl
+        name: example-stop-service
         env:
-          EXAMPLE_SYSCTL_VALUE: "REPLACE_SYSCTL_VALUE"
-
-preJoinNodeReboot: false
-labels:
-  - node-role.kubernetes.io/worker=
+          EXAMPLE_SERVICE: "REPLACE_SERVICE_NAME"
