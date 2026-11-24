@@ -114,6 +114,7 @@ func (r *reconciler) createPendingNode(
 		},
 	}
 	nodes.PinAgentProfile(&pendingNode, r.cfg)
+	pendingNode.NodeIdentity = cluster.ControlPlaneConfig.NodeIdentity()
 
 	newNodeProvider.ApplyPlaceholderNodePayload(&pendingNode)
 

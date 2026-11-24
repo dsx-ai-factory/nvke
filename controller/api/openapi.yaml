@@ -1735,6 +1735,15 @@ components:
     #--------------------------------
     # Node Pool
     #--------------------------------
+    NodeIdentity:
+      x-fern-ignore: true
+      type: string
+      enum: [spireAgent, metadataService]
+      description: |
+        Where a node's agent gets its identity. spireAgent runs a SPIRE agent on the node.
+        metadataService runs none: the agent gets its token from the DSX metadata service,
+        which the node's infrastructure must provide, and requires TLS/JWT with external
+        mTLS. Defaults to spireAgent. Set at creation and cannot be changed.
     CloudInitFile:
       x-fern-ignore: true
       description: A file written by cloud-init on CAPI-backed nodes.
@@ -3400,6 +3409,8 @@ components:
             type: string
           description: Cloud-init runcmd entries for CAPI-backed nodes
           x-go-type-skip-optional-pointer: true
+        nodeIdentity:
+          $ref: "#/components/schemas/NodeIdentity"
 
     InfraNodePoolProviderUpdate:
       x-fern-ignore: true
@@ -3451,6 +3462,8 @@ components:
             type: string
           description: Cloud-init runcmd entries for CAPI-backed nodes
           x-go-type-skip-optional-pointer: true
+        nodeIdentity:
+          $ref: "#/components/schemas/NodeIdentity"
 
     NicoControlPlaneProvider:
       type: object
@@ -3661,6 +3674,8 @@ components:
             type: string
           description: Cloud-init runcmd entries for CAPI-backed control plane nodes
           x-go-type-skip-optional-pointer: true
+        nodeIdentity:
+          $ref: "#/components/schemas/NodeIdentity"
 
     InfraControlPlaneProviderUpdate:
       x-fern-ignore: true

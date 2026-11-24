@@ -77,6 +77,34 @@ func TestCreatePendingNodeSetsFailureDomainButLeavesInstanceTypeUnset(t *testing
 	mockTx.AssertExpectations(t)
 }
 
+func TestCreatePendingNode_PinsNodeIdentity(t *testing.T) {
+	t.Parallel()
+
+	mockTx := &testutil.MockTx{}
+	mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+		return node.NodeIdentity == db.NodeIdentityMetadataService
+	})).Return(db.Node{}, nil).Once()
+
+	r := &reconciler{db: mockTx, logger: slog.Default()}
+	cluster := db.Cluster{
+		ID:           uuid.New(),
+		Name:         "test-cluster",
+		ProviderType: db.ProviderTypeCAPI,
+		ControlPlaneConfig: db.ControlPlaneConfig{
+			ConfigurationID: uuid.New(),
+			ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
+				Capi: &db.CAPIControlPlaneProvider{NodeIdentity: db.NodeIdentityMetadataService},
+			},
+		},
+	}
+	newNodeProvider, err := clients.GetNewNodeProvider(cluster)
+	require.NoError(t, err)
+
+	_, err = r.createPendingNode(context.Background(), cluster, nil, "", newNodeProvider)
+	require.NoError(t, err)
+	mockTx.AssertExpectations(t)
+}
+
 func TestCreatePendingNode_ProviderPayload(t *testing.T) {
 	t.Parallel()
 

@@ -12,10 +12,13 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// ValidateNodeAgentProfile accepts every profile: CAPI nodes support each
-// SPIRE attestation method and transport.
-func (*Client) ValidateNodeAgentProfile(db.Node, db.NodePool) error {
-	return nil
+// ValidateNodeAgentProfile accepts every profile that supports the pool's
+// node identity.
+func (*Client) ValidateNodeAgentProfile(profile db.Node, nodePool db.NodePool) error {
+	if nodePool.Capi != nil {
+		profile.NodeIdentity = nodePool.Capi.NodeIdentity
+	}
+	return profile.ValidateNodeIdentity()
 }
 
 // SpireAgentPath supplies no path: CreateMachine writes a join-token node's

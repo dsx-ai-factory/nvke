@@ -39,6 +39,7 @@ type Node struct {
 	SpireAttestationMethod       SpireAttestationMethod `bun:"type:text,notnull"`
 	NodeAgentExternalMTLSEnabled bool                   `bun:"node_agent_external_mtls_enabled,type:boolean,notnull,default:false"`
 	NodeAgentTLSJWTEnabled       bool                   `bun:"node_agent_tls_jwt_enabled,type:boolean,notnull,default:false"`
+	NodeIdentity                 NodeIdentity           `bun:"node_identity,type:text,notnull,default:''"`
 	Conditions                   NodeConditions         `bun:"type:jsonb"`
 	AgentVersion                 string                 `bun:"type:text,notnull,default:''"`
 	ControlPlaneConfigurationID  uuid.UUID              `bun:"configuration_id,type:uuid,nullzero"`
@@ -52,6 +53,7 @@ type Node struct {
 	Nico               *NicoNodeProvider        `bun:"nico,type:jsonb"`
 	NodeAgentLifecycle *NodeAgentLifecycle      `bun:"node_agent_lifecycle,type:jsonb"`
 	LaunchLayer        *LaunchLayerNodeProvider `bun:"launch_layer,type:jsonb"`
+	Capi               *CAPINodeProvider        `bun:"capi,type:jsonb"`
 	// CertificateInspection retains read-only public observations independently of lifecycle conditions.
 	CertificateInspection *CertificateInspection `bun:"type:jsonb,nullzero"`
 }
@@ -73,6 +75,26 @@ type LaunchLayerNodeProvider struct {
 	RackID     string `json:"rack_id,omitempty"`
 }
 
+// CAPINodeProvider records per-node state for infra (CAPI) provider nodes.
+type CAPINodeProvider struct {
+	// AgentDialAddress overrides IP as the address the node agent is dialed at.
+	AgentDialAddress string `json:"agent_dial_address,omitempty"`
+}
+
+// UsesMetadataServiceIdentity reports whether the node runs no SPIRE agent
+// and its agent gets its identity from the DSX metadata service.
+func (n Node) UsesMetadataServiceIdentity() bool {
+	return n.NodeIdentity == NodeIdentityMetadataService
+}
+
+// AgentDialHost returns the host the controller dials the node agent at.
+func (n Node) AgentDialHost() string {
+	if n.Capi != nil && n.Capi.AgentDialAddress != "" {
+		return n.Capi.AgentDialAddress
+	}
+	return n.IP
+}
+
 // ValidateSecurityProfile rejects node records whose immutable connection and
 // attestation settings were not selected at creation time.
 func (n Node) ValidateSecurityProfile() error {
@@ -88,7 +110,30 @@ func (n Node) ValidateSecurityProfile() error {
 	if n.NodeAgentTLSJWTEnabled && !n.SpiffeEnabled && !n.NodeAgentExternalMTLSEnabled {
 		return fmt.Errorf("node %s requires a TLS transport for TLS/JWT", n.ID)
 	}
+	if err := n.ValidateNodeIdentity(); err != nil {
+		return fmt.Errorf("node %s: %w", n.ID, err)
+	}
 	return nil
+}
+
+// ErrMetadataServiceIdentityRequiresTLSJWT rejects a metadataService node
+// whose agent could not authenticate.
+var ErrMetadataServiceIdentityRequiresTLSJWT = errors.New("metadataService node identity requires TLS/JWT with external mTLS: the node runs no SPIRE agent")
+
+// ValidateNodeIdentity rejects a node identity the node's agent settings
+// cannot support.
+func (n Node) ValidateNodeIdentity() error {
+	switch n.NodeIdentity {
+	case "", NodeIdentitySpireAgent:
+		return nil
+	case NodeIdentityMetadataService:
+		if !n.NodeAgentTLSJWTEnabled || !n.NodeAgentExternalMTLSEnabled {
+			return ErrMetadataServiceIdentityRequiresTLSJWT
+		}
+		return nil
+	default:
+		return fmt.Errorf("invalid node identity %q", n.NodeIdentity)
+	}
 }
 
 // IsManagedByNodePool reports whether the node is managed by a node pool controller.
@@ -537,8 +582,8 @@ func (q *queriesImpl) CreateNode(ctx context.Context, node *Node) (Node, error) 
 func (q *queriesImpl) UpdateNode(ctx context.Context, node *Node) (Node, error) {
 	node.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(node).
-		ExcludeColumn("spiffe_enabled", "spire_attestation_method", "node_agent_external_mtls_enabled", "node_agent_tls_jwt_enabled").
-		WherePK().Returning("id, spiffe_enabled, spire_attestation_method, node_agent_external_mtls_enabled, node_agent_tls_jwt_enabled").Exec(ctx)
+		ExcludeColumn("spiffe_enabled", "spire_attestation_method", "node_agent_external_mtls_enabled", "node_agent_tls_jwt_enabled", "node_identity").
+		WherePK().Returning("id, spiffe_enabled, spire_attestation_method, node_agent_external_mtls_enabled, node_agent_tls_jwt_enabled, node_identity").Exec(ctx)
 	if err != nil {
 		return Node{}, err
 	}

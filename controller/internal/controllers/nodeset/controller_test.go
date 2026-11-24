@@ -122,6 +122,31 @@ func TestUnit_Reconcile(t *testing.T) {
 				mockDB.AssertNotCalled(t, "ListNodeSets", mock.Anything, mock.Anything)
 			},
 		},
+		"pins the node set's node identity on a new node": {
+			nodeSet: func() db.NodeSet {
+				nodeSet := baseNodeSet
+				nodeSet.SetCapi(db.CAPINodePoolProvider{NodeIdentity: db.NodeIdentityMetadataService})
+				return nodeSet
+			}(),
+			cfg: config.Config{
+				NodeAgentExternalMTLSEnabled: true,
+				NodeAgent:                    config.NodeAgentConfig{TLSJWT: config.TLSJWTConfig{Enabled: true}},
+			},
+			setup: func(mockDB *testutil.MockDB, mockTx *testutil.MockTx, nodeSet db.NodeSet) {
+				capiNodePool := baseNodePool
+				capiNodePool.SetCapi(db.CAPINodePoolProvider{NodeIdentity: db.NodeIdentityMetadataService})
+				mockDB.MockTx = mockTx
+				mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+				mockTx.On("GetNodeSet", mock.Anything, nodeSet.ID).Return(nodeSet, nil)
+				mockTx.On("GetNodePool", mock.Anything, nodePoolID).Return(capiNodePool, nil)
+				mockTx.On("ListNodes", mock.Anything, db.NodeFilters{NodeSetID: &nodeSetID}).Return([]db.Node{}, nil).Once()
+				mockTx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "c", ProviderType: db.ProviderTypeCAPI}, nil).Once()
+				mockTx.On("ListClusterNodeNames", mock.Anything, clusterID).Return([]string{}, nil).Once()
+				mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
+					return node.NodeIdentity == db.NodeIdentityMetadataService
+				})).Return(db.Node{}, nil).Once()
+			},
+		},
 		"deletes unclaimed pending node when above desired count": {
 			nodeSet: db.NodeSet{
 				ID:           nodeSetID,

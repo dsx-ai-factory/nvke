@@ -22,6 +22,7 @@ func TestUpdateSpireServerWorkflow(t *testing.T) {
 	nodeB := db.Node{ID: uuid.New(), Name: "b", IP: "10.0.0.2", SpiffeEnabled: true}
 	noSpiffe := db.Node{ID: uuid.New(), Name: "no-spiffe", IP: "10.0.0.3"}
 	noIP := db.Node{ID: uuid.New(), Name: "no-ip", SpiffeEnabled: true}
+	noSpireAgent := db.Node{ID: uuid.New(), Name: "no-spire-agent", IP: "10.0.0.4", SpiffeEnabled: true, NodeIdentity: db.NodeIdentityMetadataService}
 
 	tests := []struct {
 		name        string
@@ -30,6 +31,7 @@ func TestUpdateSpireServerWorkflow(t *testing.T) {
 		wantFailure string
 	}{
 		{name: "all nodes succeed and the lock is cleared", nodes: []db.Node{nodeA, noSpiffe, nodeB}},
+		{name: "a node without a SPIRE agent is skipped", nodes: []db.Node{nodeA, noSpireAgent, nodeB}},
 		{
 			name:        "one node fails and UpdateFailed names it",
 			nodes:       []db.Node{nodeA, noSpiffe, nodeB},
@@ -71,7 +73,7 @@ func TestUpdateSpireServerWorkflow(t *testing.T) {
 				require.ErrorContains(t, env.GetWorkflowError(), tt.wantFailure)
 			}
 			env.AssertExpectations(t)
-			for _, skipped := range []db.Node{noSpiffe, noIP} {
+			for _, skipped := range []db.Node{noSpiffe, noIP, noSpireAgent} {
 				env.AssertNotCalled(t, "ReconfigureNodeSpireAgent", mock.Anything, activities.ReconfigureNodeSpireAgentInput{
 					NodeID: skipped.ID, Address: "spire.example.test", Port: 8081,
 				})

@@ -137,6 +137,7 @@ func apiInfraNodeSetProviderFromDB(capiNodeSetProvider *db.CAPINodePoolProvider)
 	out := &api.InfraNodeSetProvider{
 		MachineTemplate:    obj,
 		PreKubeadmCommands: append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...),
+		NodeIdentity:       apiNodeIdentityFromDB(capiNodeSetProvider.NodeIdentity),
 	}
 	if apiFiles := apiCloudInitFilesFromDB(capiNodeSetProvider.BootstrapFiles); apiFiles != nil {
 		out.BootstrapFiles = *apiFiles

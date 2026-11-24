@@ -275,6 +275,7 @@ func ControlPlaneConfigFromNodePool(np *NodePool) *ControlPlaneConfig {
 			SpireAttestationMethod:          capiNodePoolProvider.SpireAttestationMethod,
 			BootstrapFiles:                  capiNodePoolProvider.BootstrapFiles,
 			PreKubeadmCommands:              capiNodePoolProvider.PreKubeadmCommands,
+			NodeIdentity:                    capiNodePoolProvider.NodeIdentity,
 		})
 	}
 
@@ -382,6 +383,7 @@ func MergeControlPlaneConfigFromNodePools(pools []NodePool) *ControlPlaneConfig 
 			SpireAttestationMethod:          cfg.Capi.SpireAttestationMethod,
 			BootstrapFiles:                  cfg.Capi.BootstrapFiles,
 			PreKubeadmCommands:              cfg.Capi.PreKubeadmCommands,
+			NodeIdentity:                    cfg.Capi.NodeIdentity,
 		})
 	}
 

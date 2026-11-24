@@ -122,6 +122,12 @@ const (
 	NodeAgentUpgradeStatusPhaseRunning NodeAgentUpgradeStatusPhase = "Running"
 )
 
+// Defines values for NodeIdentity.
+const (
+	NodeIdentityMetadataService NodeIdentity = "metadataService"
+	NodeIdentitySpireAgent      NodeIdentity = "spireAgent"
+)
+
 // Defines values for NodeTaintEffect.
 const (
 	NodeTaintEffectNoExecute        NodeTaintEffect = "NoExecute"
@@ -796,6 +802,12 @@ type InfraControlPlaneProvider struct {
 	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
 	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
 
+	// NodeIdentity Where a node's agent gets its identity. spireAgent runs a SPIRE agent on the node.
+	// metadataService runs none: the agent gets its token from the DSX metadata service,
+	// which the node's infrastructure must provide, and requires TLS/JWT with external
+	// mTLS. Defaults to spireAgent. Set at creation and cannot be changed.
+	NodeIdentity *NodeIdentity `json:"nodeIdentity,omitempty"`
+
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed control plane nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
 }
@@ -822,6 +834,12 @@ type InfraNodePoolProvider struct {
 	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
 	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
 
+	// NodeIdentity Where a node's agent gets its identity. spireAgent runs a SPIRE agent on the node.
+	// metadataService runs none: the agent gets its token from the DSX metadata service,
+	// which the node's infrastructure must provide, and requires TLS/JWT with external
+	// mTLS. Defaults to spireAgent. Set at creation and cannot be changed.
+	NodeIdentity *NodeIdentity `json:"nodeIdentity,omitempty"`
+
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
 }
@@ -847,6 +865,12 @@ type InfraNodeSetProvider struct {
 
 	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
 	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
+
+	// NodeIdentity Where a node's agent gets its identity. spireAgent runs a SPIRE agent on the node.
+	// metadataService runs none: the agent gets its token from the DSX metadata service,
+	// which the node's infrastructure must provide, and requires TLS/JWT with external
+	// mTLS. Defaults to spireAgent. Set at creation and cannot be changed.
+	NodeIdentity *NodeIdentity `json:"nodeIdentity,omitempty"`
 
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
@@ -1386,6 +1410,12 @@ type NodeConditions struct {
 	// TeleportRegistered The condition indicating whether the node is registered with Teleport for SSH. True when confirmed registered; includes lastTransitionTime and message.
 	TeleportRegistered *Condition `json:"teleportRegistered,omitempty"`
 }
+
+// NodeIdentity Where a node's agent gets its identity. spireAgent runs a SPIRE agent on the node.
+// metadataService runs none: the agent gets its token from the DSX metadata service,
+// which the node's infrastructure must provide, and requires TLS/JWT with external
+// mTLS. Defaults to spireAgent. Set at creation and cannot be changed.
+type NodeIdentity string
 
 // NodeNamePrefix Prefix for generated node names: `<cluster name>-<nodeNamePrefix>-<suffix>`.
 // The controller assigns suffix as a 4-digit decimal number (0000–9999).

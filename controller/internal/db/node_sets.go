@@ -84,6 +84,14 @@ func (n *NodeSet) CAPIProvider() (CAPINodePoolProvider, error) {
 	return *cloneCAPINodePoolProvider(*n.Capi), nil
 }
 
+// NodeIdentity returns where the node set's nodes' agents get their identity.
+func (n *NodeSet) NodeIdentity() NodeIdentity {
+	if n.Capi == nil {
+		return ""
+	}
+	return n.Capi.NodeIdentity
+}
+
 func (n *NodeSet) LaunchLayerProvider() (LaunchLayerNodePoolProvider, error) {
 	if n.LaunchLayer == nil {
 		return LaunchLayerNodePoolProvider{}, fmt.Errorf("%w: node set %s launch_layer", ErrMissingProviderPayload, n.ID)

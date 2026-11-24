@@ -65,6 +65,7 @@ type CAPIControlPlaneProvider struct {
 	SpireAttestationMethod          SpireAttestationMethod `json:"spire_attestation_method,omitempty"`
 	BootstrapFiles                  []CloudInitFile        `json:"bootstrap_files,omitempty"`
 	PreKubeadmCommands              []string               `json:"pre_kubeadm_commands,omitempty"`
+	NodeIdentity                    NodeIdentity           `json:"node_identity,omitempty"`
 }
 
 // LaunchLayerControlPlaneProvider is the LaunchLayer-specific control-plane
@@ -109,6 +110,14 @@ func (c ControlPlaneConfigSpec) CAPIProvider() (CAPIControlPlaneProvider, error)
 		return CAPIControlPlaneProvider{}, fmt.Errorf("%w: control plane config capi", ErrMissingProviderPayload)
 	}
 	return *cloneCAPIControlPlaneProvider(c.Capi), nil
+}
+
+// NodeIdentity returns where new control-plane nodes' agents get their identity.
+func (c ControlPlaneConfigSpec) NodeIdentity() NodeIdentity {
+	if c.Capi == nil {
+		return ""
+	}
+	return c.Capi.NodeIdentity
 }
 
 func (c ControlPlaneConfigSpec) LaunchLayerProvider() (LaunchLayerControlPlaneProvider, error) {
@@ -229,6 +238,7 @@ func cloneCAPIControlPlaneProvider(provider *CAPIControlPlaneProvider) *CAPICont
 		SpireAttestationMethod:          provider.SpireAttestationMethod,
 		BootstrapFiles:                  append([]CloudInitFile(nil), provider.BootstrapFiles...),
 		PreKubeadmCommands:              append([]string(nil), provider.PreKubeadmCommands...),
+		NodeIdentity:                    provider.NodeIdentity,
 	}
 }
 

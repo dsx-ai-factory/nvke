@@ -33,6 +33,15 @@ const (
 	SpireAttestationMethodDSXIMDS   SpireAttestationMethod = "dsxImds"
 )
 
+// NodeIdentity selects where a node's agent gets its identity. Empty means
+// NodeIdentitySpireAgent.
+type NodeIdentity string
+
+const (
+	NodeIdentitySpireAgent      NodeIdentity = "spireAgent"
+	NodeIdentityMetadataService NodeIdentity = "metadataService"
+)
+
 type NicoNodePoolProvider struct {
 	SubnetIDs                []uuid.UUID           `json:"subnet_ids,omitempty"`
 	VpcPrefixIDs             []uuid.UUID           `json:"vpc_prefix_ids,omitempty"`
@@ -50,6 +59,7 @@ type CAPINodePoolProvider struct {
 	BootstrapFiles         []CloudInitFile        `json:"bootstrap_files,omitempty"`
 	PreKubeadmCommands     []string               `json:"pre_kubeadm_commands,omitempty"`
 	SpireAttestationMethod SpireAttestationMethod `json:"spire_attestation_method,omitempty"`
+	NodeIdentity           NodeIdentity           `json:"node_identity,omitempty"`
 }
 
 // LaunchLayerSecurityGroupRefs names the owning cluster's managed security
@@ -100,6 +110,7 @@ func uuidPtrEqual(a, b *uuid.UUID) bool {
 func (c CAPINodePoolProvider) Equal(other CAPINodePoolProvider) bool {
 	return utils.JSONEqual(c.InfraMachineTemplate, other.InfraMachineTemplate) &&
 		c.SpireAttestationMethod == other.SpireAttestationMethod &&
+		c.NodeIdentity == other.NodeIdentity &&
 		cloudInitFilesEqual(c.BootstrapFiles, other.BootstrapFiles) &&
 		slices.Equal(c.PreKubeadmCommands, other.PreKubeadmCommands)
 }
@@ -325,6 +336,7 @@ func cloneCAPINodePoolProvider(provider CAPINodePoolProvider) *CAPINodePoolProvi
 		BootstrapFiles:         append([]CloudInitFile(nil), provider.BootstrapFiles...),
 		PreKubeadmCommands:     append([]string(nil), provider.PreKubeadmCommands...),
 		SpireAttestationMethod: provider.SpireAttestationMethod,
+		NodeIdentity:           provider.NodeIdentity,
 	}
 }
 

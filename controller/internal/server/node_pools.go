@@ -1033,6 +1033,7 @@ func apiInfraNodePoolProviderFromDB(capiNodePoolProvider *db.CAPINodePoolProvide
 	out := &api.InfraNodePoolProvider{
 		MachineTemplate:    obj,
 		PreKubeadmCommands: append([]string(nil), capiNodePoolProvider.PreKubeadmCommands...),
+		NodeIdentity:       apiNodeIdentityFromDB(capiNodePoolProvider.NodeIdentity),
 	}
 	if apiFiles := apiCloudInitFilesFromDB(capiNodePoolProvider.BootstrapFiles); apiFiles != nil {
 		out.BootstrapFiles = *apiFiles
@@ -1184,6 +1185,7 @@ func dbNodePoolFromAPI(
 			InfraMachineTemplate: infraMachineTemplate,
 			BootstrapFiles:       dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles),
 			PreKubeadmCommands:   append([]string(nil), req.Infra.PreKubeadmCommands...),
+			NodeIdentity:         dbNodeIdentityFromAPI(req.Infra.NodeIdentity),
 		})
 	case req.LaunchLayer != nil:
 		nodePool.SetLaunchLayer(dbLaunchLayerNodePoolProviderFromAPI(*req.LaunchLayer))
