@@ -6,6 +6,8 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import pty
+import select
 import shutil
 import signal
 import subprocess
@@ -41,6 +43,7 @@ Path(os.environ["NIX_DISK_IMAGE"]).touch()
 if boot <= int(os.environ.get("BOOT_FAIL", "0")):
     print("Kernel panic", flush=True)
     sys.exit(1)
+time.sleep(float(os.environ.get("LOGIN_DELAY", "0")))
 print("<<< Welcome to NixOS >>>\nnixos login: builder (automatic login)", flush=True)
 
 def wait_for_poweroff():
@@ -296,6 +299,87 @@ fcntl.flock(int(sys.argv[-1]), fcntl.LOCK_EX | fcntl.LOCK_NB)
         self.assertEqual(self.console()[-1], "systemctl poweroff")
         self.assertEqual(self.event_list()[-1], ["poweroff"])
         self.assertFalse((self.state / "stock/runtime").exists())
+
+    def interrupt_on_a_terminal(self, trigger, **env):
+        """Run the driver on a terminal, as a person does, and press Ctrl-C once `trigger` is logged."""
+        self.output.mkdir()
+        (self.output / "previous.deb").write_text("previous")
+        pid, fd = pty.fork()
+        if pid == 0:
+            try:
+                os.execve(shutil.which("bash"), ["bash", str(SCRIPT), "--source", str(self.repo),
+                                                 "--output", str(self.output)], self.env | env)
+            finally:
+                os._exit(127)
+        out, status, sent = b"", None, False
+        deadline = time.time() + 60
+        while status is None and time.time() < deadline:
+            if not sent and any(e[0] == trigger for e in self.event_list()):
+                time.sleep(1.5)  # into the wait that follows
+                os.write(fd, b"\x03")
+                sent = True
+            if select.select([fd], [], [], 0.1)[0]:
+                try:
+                    out += os.read(fd, 4096)
+                except OSError:
+                    pass
+            done, wait_status = os.waitpid(pid, os.WNOHANG)
+            if done:
+                status = os.waitstatus_to_exitcode(wait_status)
+        if status is None:
+            os.kill(pid, signal.SIGKILL)
+            os.waitpid(pid, 0)
+        os.close(fd)
+        out = out.decode(errors="replace")
+        self.assertTrue(sent, out)
+        self.assertEqual(status, 130, out)
+        self.assertNotIn("Packages returned", out)
+        self.assertEqual(sorted(p.name for p in self.output.iterdir()), ["previous.deb"])
+        self.assertFalse((self.state / "stock/runtime").exists())
+
+    def test_ctrl_c_on_a_terminal_while_booting_fails(self):
+        self.interrupt_on_a_terminal("boot", LOGIN_DELAY="30", NKE_BUILDER_BOOT_TIMEOUT="60")
+
+    def test_ctrl_c_on_a_terminal_while_starting_the_build_fails(self):
+        self.interrupt_on_a_terminal("console", NO_START="1", NKE_BUILDER_START_TIMEOUT="60")
+        self.assertEqual(self.console()[-1], "systemctl poweroff")
+
+    def test_ctrl_c_on_a_terminal_mid_build_powers_the_guest_off(self):
+        self.interrupt_on_a_terminal("src", HANG="1")
+        self.assertEqual(self.console()[-1], "systemctl poweroff")
+
+    def test_output_sync_failure_is_not_taken_for_a_corrupt_disk(self):
+        # rsync exits 11 on a write error, which once meant "corrupt guest store" here.
+        self.write(self.tools / "rsync", """#!/bin/sh
+echo "rsync: write failed: No space left on device (28)" >&2
+exit 11
+""")
+        disk = self.state / "stock/root.qcow2"
+        disk.parent.mkdir(parents=True)
+        disk.write_text("warm disk")
+        result = self.run_driver()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(len(self.boots()), 1)
+        self.assertTrue(disk.exists())
+        self.assertNotIn("corrupt", result.stderr)
+
+    def test_failed_source_staging_stops_before_boot(self):
+        self.write(self.tools / "tar", """#!/bin/sh
+echo "tar: write error" >&2
+exit 2
+""")
+        result = self.run_driver()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.boots(), [])
+
+    def test_failed_console_setup_stops_before_boot(self):
+        self.write(self.tools / "mkfifo", """#!/bin/sh
+echo "mkfifo: Operation not permitted" >&2
+exit 1
+""")
+        result = self.run_driver()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(self.boots(), [])
 
     def test_secret_goes_through_the_env_file_not_the_console(self):
         result = self.run_driver(NGC_API_KEY="example-secret", NKE_TARGET_UBUNTU_SERIES="26.04")

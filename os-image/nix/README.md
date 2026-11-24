@@ -110,14 +110,21 @@ user does not need to be trusted.
   `~/.cache/nke/builders/<arch>/stock`: the persistent disk `root.qcow2`, which
   holds the guest's Nix store and build caches, plus `console.log` and the
   last `build.log`. The disk does not shrink when the guest deletes files, so
-  expect it to take most of its 32 GiB after the first build. The shared
-  directory is created for each run and deleted when it exits. One run at a time can use that state; a second fails with
-  "already in use". Delete `stock/` to start again from a fresh disk.
+  expect it to grow to most of its 32 GiB over a few builds. Delete `stock/` to
+  start again from a fresh disk. If this Mac ran the package VM before,
+  everything else in the builder state directory is that VM's disk and keys,
+  which are no longer used and can be deleted.
+- **One run at a time** can use that state; a second fails with "already in
+  use". A builder VM left running by a killed build holds it until that VM
+  exits. If no build is running, stop its `qemu-system-aarch64` process
+  (`qemu-system-x86_64` for amd64).
 - **Credentials** such as `NGC_API_KEY` reach the guest only in the
   environment file, which the guest deletes once read. Nothing secret is typed
-  on the console, which is logged.
-- **Interrupting** a build with Ctrl-C powers the guest off cleanly from its
-  console.
+  on the console, which is logged. The shared directory that carries the file
+  is created for each run and deleted when the build exits, or by the next run
+  after a hard stop.
+- **Interrupting** a build with Ctrl-C powers the guest off from its console
+  once the guest has logged in; before that, it stops QEMU.
 - **A damaged disk.** If the VM does not reach its console login, or the
   guest's Nix database is corrupt, on a disk reused from an earlier run, the
   build deletes the disk and retries once.

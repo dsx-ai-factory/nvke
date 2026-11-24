@@ -118,7 +118,8 @@ stage() {
   chmod 0644 "$xchg/src-$1.tar" "$xchg/env-$1.sh" "$xchg/run-$1.sh"
 }
 
-# boot starts the VM and waits for the console login.
+# boot starts the VM and waits for the console login, setting ready=1 once it
+# is there. It returns 0 either way, so set -e stays in force inside it.
 boot() {
   rm -f -- "$state/console.in"
   mkfifo -m 0600 "$state/console.in"
@@ -136,23 +137,31 @@ boot() {
       exec "$vm/bin/$vm_program"
   ) <"$state/console.in" >"$console" 2>&1 &
   vm_pid=$!
+  # Only QEMU needs its own process group. With job control on, every later
+  # command would get one too, and a Ctrl-C typed on the terminal would stop
+  # only that command, not this script.
+  set +m
   local deadline=$((SECONDS + ${NKE_BUILDER_BOOT_TIMEOUT:-900}))
   until grep -q "automatic login" "$console" 2>/dev/null; do
-    if ! kill -0 "$vm_pid" 2>/dev/null || ((SECONDS >= deadline)); then return 1; fi
+    if ! kill -0 "$vm_pid" 2>/dev/null || ((SECONDS >= deadline)); then return 0; fi
     sleep 1
   done
   ready=1
 }
 
-# run_build <attempt> returns 0 when the artifacts are in place, 10 when the VM
-# did not boot, and 11 when the guest's Nix database is corrupt; it exits on
-# any other failure.
+# run_build <attempt> returns once the artifacts are in place, or with
+# retry_reason set when the VM did not boot or the guest's Nix database is
+# corrupt; it exits on any other failure. Its callers run it as a plain
+# command, so set -e stays in force inside it.
 run_build() {
   local id=$(($(date +%s)))-$$-$1 status
+  retry_reason=
   stage "$id"
-  if ! boot; then
+  boot
+  if [[ "$ready" != 1 ]]; then
     stop_vm
-    return 10
+    retry_reason="The builder VM did not reach its console login; see $console"
+    return 0
   fi
   echo "Builder console: $console"
   printf 'bash /tmp/xchg/run-%s.sh %s &\n' "$id" "$id" >&3
@@ -179,7 +188,10 @@ run_build() {
   fi
   status=$(<"$xchg/status-$id")
   if [[ "$status" != 0 ]]; then
-    if grep -q 'database disk image is malformed' "$build_log" 2>/dev/null; then return 11; fi
+    if grep -q 'database disk image is malformed' "$build_log" 2>/dev/null; then
+      retry_reason="The guest's Nix database is corrupt; see $build_log"
+      return 0
+    fi
     echo "The package build failed in the guest (status $status); see $build_log" >&2
     exit 1
   fi
@@ -203,23 +215,17 @@ attempt=1
 while :; do
   had_disk=0
   if [[ -e "$disk" ]]; then had_disk=1; fi
-  result=0
-  run_build "$attempt" || result=$?
-  if [[ "$result" == 0 ]]; then break; fi
-  case "$result" in
-    10) problem="The builder VM did not reach its console login; see $console" ;;
-    11) problem="The guest's Nix database is corrupt; see $build_log" ;;
-    *) exit "$result" ;;
-  esac
-  # A persistent disk left half-written by a hard stop can do either; a fresh
-  # disk cannot, so only a reused disk is worth one retry.
+  run_build "$attempt"
+  if [[ -z "$retry_reason" ]]; then break; fi
+  # A persistent disk left half-written by a hard stop can fail to boot or hold
+  # a corrupt store; a fresh disk cannot, so only a reused disk is worth one retry.
   if [[ "$attempt" == 1 && "$had_disk" == 1 ]]; then
-    echo "$problem; recreating the builder disk and retrying once" >&2
+    echo "$retry_reason; recreating the builder disk and retrying once" >&2
     rm -f -- "$disk"
     attempt=2
     continue
   fi
-  echo "$problem" >&2
+  echo "$retry_reason" >&2
   exit 1
 done
 echo "Packages returned to $artifacts"
