@@ -296,6 +296,12 @@ schema compatibility and back up state before an upgrade. A rollback does not
 undo data migrations. Retained objects still carry their former Helm ownership
 metadata, so transferring them to another release requires an explicit migration.
 
+When upgrading from release-version annotations to `spec.kubernetes.version`,
+sync the new CRDs first. Copy each release's
+`service.nvke.nvidia.com/machine-init-kubernetes-version` annotation into that spec
+field, verify the stored value, then sync the manager and APIs. Keep the existing
+image, initialization and version annotations unchanged during this migration.
+
 The chart does not create or delete its release namespace. State RBAC and
 bootstrap ConfigMaps are removed with the state release; retained tenant
 resources therefore remain but cannot be managed until access and configuration
