@@ -72,9 +72,8 @@ ROOT_FS_LABEL ?= cloudimg-rootfs
 # either way, because the build VM captures its log there.
 SERIAL_CONSOLE ?=
 
-# The Ubuntu snapshot every Ubuntu package comes from (#2206). Empty keeps the
-# default in variables.pkr.hcl, the one place it is pinned; set either to
-# override it for one build, e.g. a candidate ID or a mirror of the service.
+# Override the Ubuntu snapshot (#2206) for one build; empty keeps the default
+# in variables.pkr.hcl, the one place it is pinned.
 UBUNTU_SNAPSHOT ?=
 UBUNTU_SNAPSHOT_BASE_URL ?=
 
@@ -216,7 +215,7 @@ KERNEL_PACKAGE ?= $(if $(filter hvf,$(ACCELERATOR)),linux-generic,)
 PACKER_BUILD = ARCH=$(ARCH) ACCELERATOR=$(ACCELERATOR) REQUIRE_ACCELERATION=$(REQUIRE_ACCELERATION) \
 	./scripts/run-packer-build.sh $(PACKER) build
 
-.PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-ssh-key prepare-image-build prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde check-acceleration ubuntu-snapshot-check
+.PHONY: os-image-fde os-image-non-fde _os-image-fde _os-image-non-fde preflight init-packer init-fde init-non-fde validate-packer ssh-key prepare-ssh-key prepare-image-build prepare-installer-iso prepare-artifacts prepare-packer-inputs clean clean-packer-scratch clean-fde-output clean-non-fde-output check-deps check-source collect-qcow2-fde collect-qcow2-non-fde check-acceleration
 
 prepare-ssh-key:
 	@command -v ssh-keygen >/dev/null 2>&1 || { \
@@ -308,16 +307,6 @@ init-packer: preflight
 	$(PACKER) init "$(PACKER_PROJECT)"
 
 init-fde init-non-fde: init-packer
-
-# Check that a candidate Ubuntu snapshot serves both series and both
-# architectures before it becomes ubuntu_snapshot's default in
-# variables.pkr.hcl (#2206). Without UBUNTU_SNAPSHOT, proposes the current
-# hour. The base URL defaults to the public service, as the variable does.
-ubuntu-snapshot-check:
-	@id="$(UBUNTU_SNAPSHOT)"; \
-	if [ -z "$$id" ]; then id="$$(date -u +%Y%m%dT%H0000Z)"; echo "candidate snapshot: $$id"; fi; \
-	$(PYTHON) ./scripts/check-ubuntu-snapshot.py id \
-		--base-url "$(or $(UBUNTU_SNAPSHOT_BASE_URL),https://snapshot.ubuntu.com/ubuntu)" --snapshot-id "$$id"
 
 validate-packer:
 	@command -v "$(PACKER)" >/dev/null 2>&1 || { echo "Packer is required to validate the directory project" >&2; exit 1; }

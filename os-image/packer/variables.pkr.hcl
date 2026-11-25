@@ -241,7 +241,7 @@ variable "efi_firmware_vars" {
 variable "ubuntu_snapshot" {
   type        = string
   default     = "20261119T000000Z"
-  description = "snapshot.ubuntu.com snapshot ID (YYYYMMDDTHHMMSSZ) the installer and provisioning take every Ubuntu package from: the one place the build pins Ubuntu (#2206). Check a candidate with `make ubuntu-snapshot-check`."
+  description = "snapshot.ubuntu.com snapshot ID (YYYYMMDDTHHMMSSZ) the installer and provisioning take every Ubuntu package from: the one place the build pins Ubuntu (#2206)."
 
   validation {
     condition     = can(regex("^[0-9]{8}T[0-9]{6}Z$", var.ubuntu_snapshot))

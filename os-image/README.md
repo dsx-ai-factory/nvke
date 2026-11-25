@@ -100,14 +100,11 @@ host is fine, since older glibc runs on newer Ubuntu. `boot-smoke` also runs
 
 Every Ubuntu package comes from one `snapshot.ubuntu.com` snapshot, set by
 `ubuntu_snapshot` in `packer/variables.pkr.hcl`, so two builds of the same
-commit install the same versions. The build fails on any installed version
-the snapshot does not carry, and the image keeps the snapshot as its Ubuntu
+commit install the same versions. The bake fails on any installed version the
+snapshot does not carry, and the image keeps the snapshot as its Ubuntu
 source. `UBUNTU_SNAPSHOT=<YYYYMMDDTHHMMSSZ>` overrides the ID for one build,
-and `UBUNTU_SNAPSHOT_BASE_URL` points the build at a mirror of the service.
-`make -C os-image/packer ubuntu-snapshot-check UBUNTU_SNAPSHOT=<ID>` checks a
-candidate before it becomes the default. See
-[docs/ubuntu-snapshot.md](docs/ubuntu-snapshot.md) for how the installer uses
-it and what nodes carry.
+and `UBUNTU_SNAPSHOT_BASE_URL` points the build at a mirror of the service. See
+[docs/ubuntu-snapshot.md](docs/ubuntu-snapshot.md).
 
 `SERIAL_CONSOLE` selects the UART the **installed** system sends kernel output
 to. Empty (the default) keeps the architecture default — `ttyS0` on amd64,
@@ -319,7 +316,7 @@ needs HTTPS access to `snapshot.ubuntu.com`, or to a mirror of it named by
 `ports.ubuntu.com`. When the snapshot is unreachable, the installer aborts and
 Packer reports only "Timeout waiting for SSH" once `ssh_timeout` (60 minutes
 by default) passes; the reason is in the installer's serial log. Provisioning
-uploads `scripts/check-ubuntu-snapshot.py`, so a caller that stages the
+uploads `image-tests/test_ubuntu_snapshot.py`, so a caller that stages the
 project must include it.
 
 The Make targets accept `SSH_PRIVATE_KEY_FILE` and `SSH_PUBLIC_KEY_FILE` as an

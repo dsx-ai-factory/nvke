@@ -157,11 +157,10 @@ build {
     ]
   }
 
-  # provision.sh runs this twice: on the apt sources, and on every installed
-  # version while the indexes still exist (#2206). It removes it afterwards.
+  # Image tests that provision.sh runs against the image it builds (#2206).
   provisioner "file" {
-    source      = "${local.project_root}/scripts/check-ubuntu-snapshot.py"
-    destination = "/var/tmp/check-ubuntu-snapshot.py"
+    source      = "${local.project_root}/image-tests/test_ubuntu_snapshot.py"
+    destination = "/var/tmp/test_ubuntu_snapshot.py"
   }
 
   provisioner "shell" {

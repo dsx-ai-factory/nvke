@@ -219,29 +219,28 @@ systemctl is-active openvswitch-switch.service
 sudo ovs-vsctl show >/dev/null
 
 # BEGIN apt-sources-check (test_provision.BootSmokeSourcesTest runs this block)
-# Ubuntu packages come from one snapshot.ubuntu.com snapshot (#2206). After
-# cloud-init's first boot, every apt source is a snapshot (a URI ending in a
-# snapshot ID, at the expected one when the caller passes UBUNTU_SNAPSHOT_URI)
-# or the image's local repo; nothing else, and so never the live archive.
-# Only what apt reads counts: comment lines (24.04's stub sources.list is
-# nothing else) and files that are not .list or .sources (curtin's
-# ubuntu.sources.curtin.orig backup) are skipped.
-apt_uris=$(cat /etc/apt/sources.list /etc/apt/sources.list.d/*.list /etc/apt/sources.list.d/*.sources 2>/dev/null |
-    grep -v '^[[:space:]]*#' |
-    sed -n -E -e 's/^URIs:[[:space:]]*//p' \
-        -e 's/^deb(-src)?[[:space:]]+(\[[^]]*\][[:space:]]+)?([^[:space:]]+).*/\3/p' |
-    tr -s ' \t' '\n\n' | grep -v '^$' || true)
-[[ -n "${apt_uris}" ]] || { echo "the image has no apt sources at all" >&2; exit 1; }
-foreign=$(grep -v -E -e '^https?://[^[:space:]]+/[0-9]{8}T[0-9]{6}Z/?$' -e '^file:/usr/lib/nvke/debs/?$' <<<"${apt_uris}" || true)
+# After first boot, apt still reads an Ubuntu snapshot (exactly
+# UBUNTU_SNAPSHOT_URI when the caller sets it), the local repo and nothing else
+# (#2206). apt's own parser lists them, so they count exactly as apt counts them.
+apt_uris=$(python3 -c '
+import apt_pkg
+apt_pkg.init()
+sources = apt_pkg.SourceList()
+sources.read_main_list()
+print("\n".join(sorted({index.uri for index in sources.list})))')
+if [[ -n "${expected_snapshot}" ]]; then
+    snapshot=(-F -x -e "${expected_snapshot%/}/")
+else
+    snapshot=(-E -x -e 'https?://[^[:space:]]+/[0-9]{8}T[0-9]{6}Z/')
+fi
+foreign=$(grep -Fvx -e 'file:/usr/lib/nvke/debs/' <<<"${apt_uris}" | grep -v "${snapshot[@]}" || true)
 if [[ -n "${foreign}" ]]; then
     echo "apt sources other than the Ubuntu snapshot and the local repo:" >&2
     echo "${foreign}" >&2
     exit 1
 fi
-if [[ -n "${expected_snapshot}" ]]; then
-    grep -Fxq -e "${expected_snapshot%/}" -e "${expected_snapshot%/}/" <<<"${apt_uris}" ||
-        { echo "no apt source names ${expected_snapshot}; they are:" >&2; echo "${apt_uris}" >&2; exit 1; }
-fi
+grep -q "${snapshot[@]}" <<<"${apt_uris}" ||
+    { echo "no apt source is the Ubuntu snapshot ${expected_snapshot}; they are:" >&2; echo "${apt_uris}" >&2; exit 1; }
 # END apt-sources-check
 
 # The local apt repo has to offer what a node installs at cluster create.

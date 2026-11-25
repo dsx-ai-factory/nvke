@@ -56,28 +56,19 @@ autoinstall:
   ntp:
     enabled: true
 
-  # Every Ubuntu package comes from one snapshot.ubuntu.com snapshot (#2206),
-  # for the installer and for the installed system, which keeps these sources;
-  # nothing reads the live archive or security.ubuntu.com. One archive serves
-  # both architectures: the snapshot service carries arm64 under /ubuntu, and
-  # its /ubuntu-ports answers 401. Subiquity mirror-checks this single legacy
-  # `primary` candidate, and `fallback: abort` stops the install when that check
-  # fails rather than quietly installing from the ISO alone.
+  # Every Ubuntu package comes from one snapshot (#2206); see
+  # os-image/docs/ubuntu-snapshot.md.
   apt:
     preserve_sources_list: false
     geoip: false
-    fallback: abort
+    fallback: abort  # rather than install from the ISO alone
     primary:
       - arches: [default]
         uri: ${ubuntu_snapshot_uri}
     security:
       - arches: [default]
         uri: ${ubuntu_snapshot_uri}
-    # Written out rather than derived from the image's own ubuntu.sources:
-    # curtin derives it by swapping a default mirror URI that matches exactly,
-    # and on the 24.04.5 arm64 ISO the file's ports.ubuntu.com/ubuntu-ports/
-    # has a trailing slash curtin's default lacks, so the live archive stayed.
-    # Curtin fills $PRIMARY, $SECURITY and $RELEASE from the sections above.
+    # Explicit, so curtin cannot keep the ISO's live archive URI (24.04.5 arm64).
     sources_list: |
       Types: deb
       URIs: $PRIMARY
@@ -131,15 +122,8 @@ autoinstall:
     - socat
     - ethtool
 
-  # all, not security: the base system arrives from the ISO at point-release
-  # versions, and the snapshot no longer indexes any that -updates has since
-  # replaced, so the build's snapshot check (provision.sh) fails unless every
-  # package is brought up to the snapshot here. An earlier switch to "all" was
-  # reverted for pulling every linux-firmware-* split package; the kernel now
-  # depends on all of them anyway. Its cost is measured in
-  # os-image/docs/ubuntu-snapshot.md. Applied by curtin during install, before
-  # the late-commands below, so any kernel upgrade here is already in place
-  # when those regenerate the initramfs.
+  # all, not security: the snapshot does not serve the ISO's superseded
+  # versions. Runs before the late-commands, so they see any new kernel.
   updates: all
 
   late-commands:

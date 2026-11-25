@@ -5,6 +5,7 @@
 
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -55,8 +56,8 @@ class ProvisionSeriesGateTest(unittest.TestCase):
             self.assertIn("reached-sudo", result.stderr)
 
 
-class ProvisionSnapshotChecksTest(unittest.TestCase):
-    """Where the snapshot checks sit in provision.sh (#2206)."""
+class ProvisionRunsTheImageTestsTest(unittest.TestCase):
+    """Where provision.sh runs image-tests/test_ubuntu_snapshot.py (#2206)."""
 
     def setUp(self):
         self.lines = SCRIPT.read_text().splitlines()
@@ -66,53 +67,57 @@ class ProvisionSnapshotChecksTest(unittest.TestCase):
         self.assertEqual(len(hits), 1, f"{needle!r} at {hits}")
         return hits[0]
 
-    def test_sources_are_checked_before_provisioning_installs_from_them(self):
-        sources = self.index("check-ubuntu-snapshot.py sources")
-        update = self.lines.index("sudo apt-get update")
-        self.assertLess(update, sources)
-        self.assertLess(sources, self.index("apt-get install -y doca-openvswitch-switch"))
-        self.assertIn('--snapshot-uri "${UBUNTU_SNAPSHOT_URI}"', self.lines[sources])
+    def test_image_tests_run_after_cleanup_while_the_indexes_still_exist(self):
+        tests = self.index("python3 /var/tmp/test_ubuntu_snapshot.py")
+        self.assertLess(self.index("sudo apt-get -y --purge autoremove"), tests)
+        self.assertLess(tests, self.index("sudo rm -rf /var/lib/apt/lists/*"))
 
-    def test_versions_are_checked_while_the_indexes_still_exist(self):
-        versions = self.index("check-ubuntu-snapshot.py versions")
-        self.assertLess(self.index("sudo apt-get clean"), versions)
-        self.assertLess(self.index("sudo apt-get -y --purge autoremove"), versions)
-        self.assertLess(versions, self.index("sudo rm -rf /var/lib/apt/lists/*"))
-        self.assertIn("--exempt nvke-agent", self.lines[versions])
-
-    def test_the_uploaded_check_does_not_stay_in_the_image(self):
-        self.assertLess(self.index("check-ubuntu-snapshot.py versions"),
-                        self.index("rm -f /var/tmp/check-ubuntu-snapshot.py"))
+    def test_the_image_tests_do_not_stay_in_the_image(self):
+        self.assertLess(self.index("python3 /var/tmp/test_ubuntu_snapshot.py"),
+                        self.index("rm -f /var/tmp/test_ubuntu_snapshot.py"))
 
 
-SNAPSHOT_SOURCES = """Types: deb
-URIs: https://snapshot.ubuntu.com/ubuntu/20261119T000000Z
+SNAPSHOT = "https://snapshot.ubuntu.com/ubuntu/20261119T000000Z"
+SNAPSHOT_SOURCES = f"""Types: deb
+URIs: {SNAPSHOT}
 Suites: noble noble-updates noble-backports
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 
 Types: deb
-URIs: https://snapshot.ubuntu.com/ubuntu/20261119T000000Z
+URIs: {SNAPSHOT}
 Suites: noble-security
 Components: main restricted universe multiverse
 Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
 """
 
 
+def python_apt():
+    return bool(shutil.which("python3")) and subprocess.run(
+        ["python3", "-c", "import apt_pkg"], capture_output=True, check=False).returncode == 0
+
+
+# Skipped where python3-apt is missing (macOS), but never in CI, where a
+# missing python3-apt has to fail rather than quietly drop these tests.
+@unittest.skipUnless(python_apt() or os.environ.get("CI"), "the block reads the sources with python3-apt")
 class BootSmokeSourcesTest(unittest.TestCase):
-    """boot-smoke's apt-sources block, run on fixture /etc/apt trees (#2206)."""
+    """boot-smoke's apt-sources block, with this host's python3-apt reading fixture sources (#2206)."""
 
     def run_block(self, files, expected=""):
         text = SCRIPT.with_name("boot-smoke.sh").read_text()
         block = text.split("# BEGIN apt-sources-check", 1)[1].split("# END apt-sources-check", 1)[0]
         block = block.split("\n", 1)[1]  # the rest of the BEGIN line is prose
         with tempfile.TemporaryDirectory() as tmp:
-            apt = Path(tmp) / "apt"
-            (apt / "sources.list.d").mkdir(parents=True)
+            etc = Path(tmp) / "apt"
+            (etc / "sources.list.d").mkdir(parents=True)
             for name, content in files.items():
-                (apt / name).write_text(content)
-            script = "set -euo pipefail\nexpected_snapshot=$1\n" + block.replace("/etc/apt", str(apt))
+                (etc / name).write_text(content)
+            config = Path(tmp) / "apt.conf"
+            config.write_text(f'Dir::Etc::sourcelist "{etc}/sources.list";\n'
+                              f'Dir::Etc::sourceparts "{etc}/sources.list.d";\n')
+            script = "set -euo pipefail\nexpected_snapshot=$1\n" + block
             return subprocess.run(["bash", "-c", script, "boot-smoke", expected],
+                                  env={**os.environ, "APT_CONFIG": str(config)},
                                   capture_output=True, text=True, check=False)
 
     def image(self, **extra):
@@ -125,35 +130,61 @@ class BootSmokeSourcesTest(unittest.TestCase):
         files.update(extra)
         return files
 
+    def assertFailsNaming(self, result, uri):
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(uri, result.stderr)
+
     def test_snapshot_and_local_repo_pass(self):
-        result = self.run_block(self.image(), "https://snapshot.ubuntu.com/ubuntu/20261119T000000Z")
+        for expected in (SNAPSHOT, ""):
+            with self.subTest(expected=expected):
+                result = self.run_block(self.image(), expected)
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_disabled_stanza_passes(self):
+        disabled = "Enabled: no\nTypes: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: noble\nComponents: main\n"
+        result = self.run_block(self.image(**{"sources.list.d/off.sources": disabled}), SNAPSHOT)
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_live_archive_fails(self):
         live = "deb http://ports.ubuntu.com/ubuntu-ports noble main\n"
-        result = self.run_block(self.image(**{"sources.list.d/extra.list": live}))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("ports.ubuntu.com", result.stderr)
+        self.assertFailsNaming(self.run_block(self.image(**{"sources.list.d/extra.list": live})),
+                               "ports.ubuntu.com")
+
+    def test_live_archive_on_a_continued_uris_line_fails(self):
+        continued = (f"Types: deb\nURIs: {SNAPSHOT}\n http://ports.ubuntu.com/ubuntu-ports\n"
+                     "Suites: noble\nComponents: main\n")
+        self.assertFailsNaming(self.run_block(self.image(**{"sources.list.d/extra.sources": continued}), SNAPSHOT),
+                               "ports.ubuntu.com")
 
     def test_any_other_repository_fails(self):
         # Neither the snapshot nor the local repo: every source must be one of the two.
         other = "Types: deb\nURIs: http://mirror.example.org/ubuntu\nSuites: noble\nComponents: main\n"
-        result = self.run_block(self.image(**{"sources.list.d/mirror.sources": other}))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("mirror.example.org", result.stderr)
+        self.assertFailsNaming(self.run_block(self.image(**{"sources.list.d/mirror.sources": other})),
+                               "mirror.example.org")
 
     def test_other_snapshot_id_fails_when_one_is_expected(self):
-        result = self.run_block(self.image(), "https://snapshot.ubuntu.com/ubuntu/20200101T000000Z")
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("20200101T000000Z", result.stderr)
+        self.assertFailsNaming(self.run_block(self.image(), "https://snapshot.ubuntu.com/ubuntu/20200101T000000Z"),
+                               "20261119T000000Z")
+
+    def test_no_snapshot_source_fails(self):
+        # The image must keep the snapshot as its Ubuntu source, not just avoid others.
+        for expected in (SNAPSHOT, ""):
+            with self.subTest(expected=expected):
+                self.assertFailsNaming(self.run_block(self.image(**{"sources.list.d/ubuntu.sources": ""}), expected),
+                                       "no apt source is the Ubuntu snapshot")
+
+    def test_second_snapshot_beside_the_expected_one_fails(self):
+        older = "deb https://snapshot.ubuntu.com/ubuntu/20261118T000000Z noble main\n"
+        self.assertFailsNaming(self.run_block(self.image(**{"sources.list.d/older.list": older}), SNAPSHOT),
+                               "20261118T000000Z")
 
 
-class PackerUploadsTheCheckTest(unittest.TestCase):
-    def test_each_variant_uploads_the_check_and_passes_the_snapshot(self):
+class PackerUploadsTheImageTestsTest(unittest.TestCase):
+    def test_each_variant_uploads_the_image_tests_and_passes_the_snapshot(self):
         for variant in ("non-fde", "fde"):
             with self.subTest(variant=variant):
                 text = (SCRIPT.parent.parent / f"nvke-node-{variant}.pkr.hcl").read_text()
-                upload = text.index('destination = "/var/tmp/check-ubuntu-snapshot.py"')
+                upload = text.index('destination = "/var/tmp/test_ubuntu_snapshot.py"')
                 provision = text.index('script           = "${local.project_root}/scripts/provision.sh"')
                 self.assertLess(upload, provision)
                 self.assertIn('"UBUNTU_SNAPSHOT_URI=${local.ubuntu_snapshot_uri}"', text[upload:provision + 1])
