@@ -12,9 +12,7 @@
     spec:
       machineImageRef:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
-          #cloud-config
+      machineInit: {}
       profile: ubuntu-gpu
       tag: "2026.11"
 - method: POST
@@ -27,9 +25,7 @@
     spec:
       machineImageRef:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
-          #cloud-config
+      machineInit: {}
       profile: ubuntu-cpu
       tag: "2026.11"
 - method: POST
@@ -42,9 +38,7 @@
     spec:
       machineImageRef:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
-          #cloud-config
+      machineInit: {}
       profile: ubuntu-gpu
       tag: "2026.12"
 - method: POST
@@ -57,8 +51,6 @@
     spec:
       machineImageRef:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
-          #cloud-config
+      machineInit: {}
       profile: ubuntu-gpu
       tag: "2026.11"

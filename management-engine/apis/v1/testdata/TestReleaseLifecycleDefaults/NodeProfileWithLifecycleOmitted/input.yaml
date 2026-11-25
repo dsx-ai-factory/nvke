@@ -10,6 +10,4 @@ spec:
   tag: "24.04"
   machineImageRef:
     name: example-image
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
+  machineInit: {}
