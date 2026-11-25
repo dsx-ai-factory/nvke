@@ -11,12 +11,20 @@ body:
       hidden: false
     machineImageRef:
       name: ubuntu-2404-amd64
-    machineInit: {}
+    machineInit:
+      bootstrap:
+        bootstrapFiles:
+        - content: control-plane-v1
+          owner: root:root
+          path: /etc/nvke/release
+          permissions: "0644"
+        preBootstrapCommands:
+        - hostnamectl set-hostname nvke-control-plane
 headers:
   Cache-Control:
   - no-store
   Content-Length:
-  - "283"
+  - "485"
   Content-Type:
   - application/json
   Date:
