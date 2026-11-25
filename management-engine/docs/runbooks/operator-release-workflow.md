@@ -1,8 +1,9 @@
 # Operator release workflow
 
 Operators are privileged users of Cluster Service who publish releases and make
-them available through channels. Release changes go through the Cluster Service
-APIs; the `kubectl` commands in this runbook inspect state and workload health.
+them available through channels. Routine release management and validation use
+the Cluster Service APIs. Administrators can provide additional checks when
+direct access to the datastore or workload cluster is needed.
 
 This runbook covers the routine release workflow:
 
@@ -24,10 +25,9 @@ For validation on one cluster, see [test a release before wider rollout](#test-a
 
 ## Before starting
 
-You need `curl`, `jq` and `kubectl`, access to the Cluster Service APIs and
-datastore, and a kubeconfig for the workload cluster. Confirm that Cluster Service
-meets the [installation prerequisites](../helm-installation.md) and can reach the
-NVKE controller.
+You need `curl`, `jq` and access to the Cluster Service APIs. Confirm that
+Cluster Service meets the [installation prerequisites](../helm-installation.md)
+and can reach the NVKE controller.
 
 Use the site's tenant API endpoint and its approved internal
 endpoint for the operator API. Both refer to Cluster Service. Add the authentication
@@ -39,19 +39,12 @@ workloads alone does not establish access control.
 | --- | --- |
 | `TENANT_API_URL` | Published tenant-facing Cluster Service base URL, without a trailing slash or `/v1`. |
 | `OPERATOR_API_URL` | Approved internal operator-facing Cluster Service base URL, without a trailing slash or `/v1`. |
-| `TENANT_NAMESPACE` | Namespace holding the tenant's Cluster Service resources. |
-| `CLUSTER_NAME` | Cluster to inspect or change, identified within `TENANT_NAMESPACE`. |
+| `CLUSTER_NAME` | Cluster to inspect or change through the tenant API. |
 
-Confirm the active Kubernetes context points to the cluster holding Cluster Service state:
-
-```sh
-kubectl config current-context
-```
-
-Use an operator identity with catalog read/write access and a tenant identity
-with read/update access to the target cluster. The `kubectl` checks require read
-access to Cluster Service state and workload nodes. Keep credentials out of Git
-and captured results.
+Use an operator identity with catalog read/write access and an authorized tenant
+identity with read/update access to the target cluster. Cluster observations come
+from the Cluster Service tenant API; the operator API manages the catalog.
+Keep credentials out of Git and captured results.
 
 ## Select the release inputs
 
@@ -229,60 +222,45 @@ cat cluster-update.json
 
 ## Verify the rollout
 
-For each affected cluster, set `CLUSTER_NAME` and `TENANT_NAMESPACE` to its values.
-Use the context for the Cluster Service datastore:
+For each affected cluster, set `CLUSTER_NAME` and query the Cluster Service tenant
+API using an identity authorized for that tenant:
 
 ```sh
 curl -i "${TENANT_API_URL:?}/v1/clusters/${CLUSTER_NAME:?}"
-kubectl -n "${TENANT_NAMESPACE:?}" get nvkeclusters.service.nvke.nvidia.com "${CLUSTER_NAME:?}" -o json
 ```
 
-Check the stored resource and the workload cluster together:
+Check the returned selection and service-reported progress:
 
 | Check | Expected result |
 | --- | --- |
-| Condition freshness | Each relevant condition's `observedGeneration` matches `metadata.generation`. Channel edits do not change the cluster's generation, so also check the resolved release. |
+| `spec.release` | Matches the intended channel and version selection. |
 | `status.currentRelease` | Names the intended control-plane release and Kubernetes version. This records backend configuration, not completed node replacement. |
-| `status.conditions` | Current `Synced`, `ControlPlaneReady` and `Ready` observations are `True`; inspect their reasons and messages if not. |
-| Backend operation | `NVKEControllerProvisioned=True` and `NVKEControllerProvisioning=False`. For requested upgrades or recycling, also confirm those operations finish and inspect any `NVKEControllerUpdateFailed` error. |
+| `status.conditions` | `Synced`, `ControlPlaneReady` and `Ready` are `True`. Inspect reasons and messages for incomplete or failed operations. |
+| Reported generation | Relevant conditions agree with `status.observedGeneration`; mismatches indicate observations from different revisions. |
+| Backend operation | `NVKEControllerProvisioned=True` and `NVKEControllerProvisioning=False`. For requested upgrades or recycling, wait for the corresponding progress conditions to become `False` and inspect any `NVKEControllerUpdateFailed` error. Unknown status does not confirm completion. |
+| `status.nodePools` | Each requested pool reports the intended release and readiness. Where replica counts are populated, compare them with the requested counts; omitted counts mean unknown. |
 
-Use the [workload cluster access procedure](../../../docs/workload-clusters/access.md)
-to obtain its kubeconfig and arrange a route or approved proxy to the workload
-API. Access to the management cluster alone does not provide that connection.
-Set `WORKLOAD_KUBECONFIG` to the resulting file and inspect nodes:
-
-```sh
-kubectl --kubeconfig "${WORKLOAD_KUBECONFIG:?}" get nodes -o wide
-```
-
-All expected nodes must be present and `Ready`. Control-plane nodes must run the
-selected Kubernetes version; worker nodes must match their selected node profiles.
-Compare actual node counts with the requested pools. API success, `currentRelease`
-or `Ready=True` alone does not establish that replacement or scaling has finished.
-If the release changes the image or initialization, verify those changes on
-newly provisioned or replaced nodes. Record their node or Machine identities and
-check the image build identifier and expected initialization results. Existing
-Ready nodes alone do not show that the candidate has booted.
-
-Record provider health separately: a ready Kubernetes node can coexist with an
-infrastructure health condition that still reports provisioning.
+The tenant API omits `metadata.generation`, so these checks cannot independently
+prove that every observation reflects the latest spec revision. A matching
+`currentRelease` or `Ready=True` also does not establish that every node has been
+replaced or that a new image has booted. If status is inconclusive, or independent
+node-level verification is required, use the
+[administrator-assisted checks](#administrator-assisted-checks).
 
 ## Diagnose failures
 
-Inspect the resource's conditions and events:
-
-```sh
-kubectl -n "${TENANT_NAMESPACE:?}" describe nvkeclusters.service.nvke.nvidia.com "${CLUSTER_NAME:?}"
-```
+Read the conditions, reasons and messages returned by the cluster GET above.
+Record the intended selection, resolved release and backend cluster ID
+(`status.id`) when escalating to the service, backend or provider owner.
 
 | Symptom | Next action |
 | --- | --- |
-| API unavailable or HTTP 401/403 | Check the endpoint and workload readiness; confirm the site's caller credentials and permissions before retrying. |
+| API unavailable or HTTP 401/403 | Check the endpoint and caller credentials/permissions. Involve the service administrator if the API remains unavailable. |
 | HTTP 412 on update | Fetch the resource again, review changes and rebuild the request with its new ETag. |
 | Release not selected | Check the channel/version selection, minimum upgrade age and release lifecycle fields. Correct those inputs before retrying. |
-| Nodes fail to initialize or become Ready | Inspect node bootstrap and agent logs. Check network access, workload identity and compatibility of the image, initialization and CNI packages. |
-| `ClusterReconciled=False` or `NodePoolsReconciled=False` | Read the condition message. Check the referenced catalog resources and tenant infrastructure template; correct the failing input. |
-| `NVKEControllerUpdateFailed=True`, stalled replacement or nodes not Ready | Capture the condition messages, backend cluster ID (`status.id`) and node state. Involve the backend/provider owner before making another version change. |
+| Nodes fail to initialize or become Ready | Ask the administrator or backend owner to inspect bootstrap and agent logs, networking, workload identity and image/CNI compatibility. |
+| `ClusterReconciled=False` or `NodePoolsReconciled=False` | Check referenced catalog resources through the APIs. For infrastructure-template or service configuration errors, involve the administrator. |
+| `NVKEControllerUpdateFailed=True`, stalled replacement or nodes not Ready | Capture the API status and involve the backend/provider owner before making another version change. Request node-level checks if needed. |
 
 For a bad release, stop promoting it to other channels while investigating. A
 channel edit or Helm rollback does not undo a workload cluster upgrade. Follow
@@ -346,8 +324,8 @@ curl -i -H 'Content-Type: application/json' \
   "${OPERATOR_API_URL:?}/v1/cluster-release-channels"
 ```
 
-Expect HTTP 201. Set `CHANNEL_NAME` to this test channel and `CLUSTER_NAME` and
-`TENANT_NAMESPACE` to the test cluster. Follow [change a cluster's release selection](#change-a-clusters-release-selection),
+Expect HTTP 201. Set `CHANNEL_NAME` to this test channel and `CLUSTER_NAME` to
+the test cluster. Follow [change a cluster's release selection](#change-a-clusters-release-selection),
 then [verify the rollout](#verify-the-rollout). Keep other clusters on their existing channels.
 
 After validation, set `CHANNEL_NAME` to the intended rollout channel and follow
@@ -355,5 +333,42 @@ After validation, set `CHANNEL_NAME` to the intended rollout channel and follow
 Record the tested versions, release, cluster and outcome. Distinguish initial
 provisioning from upgrades or node replacement; success in one does not establish
 the others.
+
+## Administrator-assisted checks
+
+Use these checks for troubleshooting or independent release qualification when
+API status is insufficient. The administrator needs `kubectl` and read access to
+the relevant datastore resources and workload nodes.
+
+Set `TENANT_NAMESPACE` to the namespace holding the cluster's Cluster Service
+resource. Confirm the active context points to the datastore, then inspect its
+stored generation, conditions and events:
+
+```sh
+kubectl config current-context
+kubectl -n "${TENANT_NAMESPACE:?}" get nvkeclusters.service.nvke.nvidia.com "${CLUSTER_NAME:?}" -o json
+kubectl -n "${TENANT_NAMESPACE:?}" describe nvkeclusters.service.nvke.nvidia.com "${CLUSTER_NAME:?}"
+```
+
+Relevant conditions should have `observedGeneration` equal to
+`metadata.generation`. Channel edits do not change the cluster's generation,
+so also check the resolved release.
+
+Follow the [workload cluster access procedure](../../../docs/workload-clusters/access.md)
+to obtain a kubeconfig and arrange a route or approved proxy to its API. Set
+`WORKLOAD_KUBECONFIG` to that file and inspect nodes:
+
+```sh
+kubectl --kubeconfig "${WORKLOAD_KUBECONFIG:?}" get nodes -o wide
+```
+
+All expected nodes should be present and `Ready`, with control-plane versions,
+worker versions and node counts matching the requested configuration. For a new
+image or initialization, verify the build identifier and expected initialization results
+on newly provisioned or replaced nodes, and record their node or Machine
+identities. Existing Ready nodes alone do not show that the candidate has booted.
+
+Record provider health separately: a ready Kubernetes node can coexist with an
+infrastructure health condition that still reports provisioning.
 
 Created with AI assistance
