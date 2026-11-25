@@ -308,9 +308,9 @@ func (r *NVKEClusterReconciler) resolveReleaseTemplateVariables(ctx context.Cont
 func releaseTemplateVariables(machineInit internalv1.MachineInit, image *internalv1.MachineImage) (map[string]any, error) {
 	files := []internalv1.BootstrapFile{}
 	commands := []string{}
-	if bootstrap := machineInit.Infra; bootstrap != nil {
+	if bootstrap := machineInit.Bootstrap; bootstrap != nil {
 		files = append(files, bootstrap.BootstrapFiles...)
-		commands = append(commands, bootstrap.PreKubeadmCommands...)
+		commands = append(commands, bootstrap.PreBootstrapCommands...)
 	}
 	filesJSON, err := json.Marshal(files)
 	if err != nil {
@@ -318,7 +318,7 @@ func releaseTemplateVariables(machineInit internalv1.MachineInit, image *interna
 	}
 	commandsJSON, err := json.Marshal(commands)
 	if err != nil {
-		return nil, fmt.Errorf("marshal release pre-kubeadm commands: %w", err)
+		return nil, fmt.Errorf("marshal release pre-bootstrap commands: %w", err)
 	}
 	// JSON encoding preserves the script's newlines and quotes inside the infra template.
 	ipxeScript, err := json.Marshal(image.Spec.NICo.IPXEScript)
@@ -326,9 +326,9 @@ func releaseTemplateVariables(machineInit internalv1.MachineInit, image *interna
 		return nil, fmt.Errorf("marshal image iPXE script: %w", err)
 	}
 	return map[string]any{
-		"BootstrapFilesJSON":     string(filesJSON),
-		"PreKubeadmCommandsJSON": string(commandsJSON),
-		"IPXEScript":             string(ipxeScript),
+		"BootstrapFilesJSON":       string(filesJSON),
+		"PreBootstrapCommandsJSON": string(commandsJSON),
+		"IPXEScript":               string(ipxeScript),
 	}, nil
 }
 

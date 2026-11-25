@@ -12,7 +12,17 @@ import (
 )
 
 func testMachineInit() MachineInit {
-	return MachineInit{UserDataTemplate: "#cloud-config\nhostname: {{ .Hostname }}\n"}
+	return MachineInit{
+		Bootstrap: &MachineBootstrap{
+			BootstrapFiles: []BootstrapFile{{
+				Path:        "/etc/nvke/release",
+				Owner:       "root:root",
+				Permissions: "0644",
+				Content:     "test",
+			}},
+			PreBootstrapCommands: []string{"systemctl enable nvke-agent"},
+		},
+	}
 }
 
 // TestTypedResourcesRoundTrip verifies that typed resources survive serialization and pass schema validation.

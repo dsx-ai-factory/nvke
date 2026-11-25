@@ -28,11 +28,9 @@ spec:
   machineImageRef:
     name: management-engine-docker-node
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles: []
-      preKubeadmCommands:
+      preBootstrapCommands:
         - mkdir -p /run/cluster-api
         - echo success > /run/cluster-api/bootstrap-success.complete
 ---
@@ -46,11 +44,9 @@ spec:
   machineImageRef:
     name: management-engine-docker-node
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles: []
-      preKubeadmCommands:
+      preBootstrapCommands:
         - mkdir -p /run/cluster-api
         - echo success > /run/cluster-api/bootstrap-success.complete
         - echo docker-worker-1.36.4 > /run/cluster-api/worker-release

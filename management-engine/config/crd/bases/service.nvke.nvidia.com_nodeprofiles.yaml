@@ -99,9 +99,9 @@ spec:
                   It lives on the Release rather than the MachineImage so one image can back
                   several Releases whose initialization differs.
                 properties:
-                  infra:
-                    description: Infra supplies concrete bootstrap additions for the
-                      generic infra provider.
+                  bootstrap:
+                    description: Bootstrap supplies concrete bootstrap additions for
+                      the generic infra provider.
                     properties:
                       bootstrapFiles:
                         items:
@@ -130,33 +130,12 @@ spec:
                           type: object
                         type: array
                         x-kubernetes-list-type: atomic
-                      preKubeadmCommands:
+                      preBootstrapCommands:
                         items:
                           type: string
                         type: array
                         x-kubernetes-list-type: atomic
                     type: object
-                  userDataTemplate:
-                    description: |-
-                      UserDataTemplate is rendered with machine-specific values, such as the
-                      hostname and the selected Kubernetes version, and the result is stored in
-                      the machine's CAPI bootstrap Secret. It must begin with a cloud-init
-                      header.
-                    maxLength: 65536
-                    minLength: 1
-                    type: string
-                    x-kubernetes-validations:
-                    - message: userDataTemplate must not be blank
-                      rule: self.trim() != ''
-                    - message: userDataTemplate must begin with a cloud-init header
-                      rule: self.startsWith('#cloud-config\n') || self.startsWith('#cloud-config\r\n')
-                        || self.startsWith('#!') || self.startsWith('#include') ||
-                        self.startsWith('#cloud-boothook') || self.startsWith('#part-handler')
-                        || self.startsWith('#cloud-config-archive') || self.startsWith('Content-Type:')
-                    - message: userDataTemplate has unbalanced Go template delimiters
-                      rule: self.split('{{').size() == self.split('}}').size()
-                required:
-                - userDataTemplate
                 type: object
                 x-kubernetes-validations:
                 - message: machineInit is immutable

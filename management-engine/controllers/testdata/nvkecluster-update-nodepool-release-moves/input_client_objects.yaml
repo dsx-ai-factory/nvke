@@ -43,13 +43,11 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: control-plane-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo control-plane-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -62,11 +60,9 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles: []
-      preKubeadmCommands: []
+      preBootstrapCommands: []
 ---
 apiVersion: service.nvke.nvidia.com/v1
 kind: MachineImage
@@ -108,13 +104,11 @@ spec:
   machineImageRef:
     name: worker-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-a-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-a-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -127,13 +121,11 @@ spec:
   machineImageRef:
     name: other-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-b-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-b-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -146,13 +138,11 @@ spec:
   machineImageRef:
     name: worker-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-drift-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-drift-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -165,13 +155,11 @@ spec:
   machineImageRef:
     name: worker-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-steady-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-steady-release
 ---
 apiVersion: v1
@@ -196,7 +184,7 @@ data:
   nodepoolTmpl: &machineTemplate |
     {
       "bootstrapFiles": {{ .BootstrapFilesJSON }},
-      "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
+      "preKubeadmCommands": {{ .PreBootstrapCommandsJSON }},
       "machineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
         "kind": "NicoMachineTemplate",

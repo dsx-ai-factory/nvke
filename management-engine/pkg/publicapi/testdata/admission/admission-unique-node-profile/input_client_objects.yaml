@@ -5,8 +5,6 @@ metadata:
 spec:
   machineImageRef:
     name: img-ubuntu
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
+  machineInit: {}
   profile: ubuntu-gpu
   tag: "2026.11"

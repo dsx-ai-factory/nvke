@@ -35,10 +35,7 @@ spec:
     version: "1.34.8"
   machineImageRef:
     name: test-image
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
-      write_files: []
+  machineInit: {}
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -59,7 +56,7 @@ data:
   controlplaneTmpl: &machineTemplate |
     {
       "bootstrapFiles": {{ .BootstrapFilesJSON }},
-      "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
+      "preKubeadmCommands": {{ .PreBootstrapCommandsJSON }},
       "machineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
         "kind": "NicoMachineTemplate",

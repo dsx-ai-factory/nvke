@@ -9,10 +9,7 @@ spec:
     version: "1.35.2"
   machineImageRef:
     name: img-ubuntu
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
-      {}
+  machineInit: {}
 ---
 apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
@@ -25,10 +22,7 @@ spec:
     deprecated: true
   machineImageRef:
     name: img-ubuntu
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
-      {}
+  machineInit: {}
 ---
 apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
@@ -41,7 +35,4 @@ spec:
     hidden: true
   machineImageRef:
     name: img-ubuntu
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
-      {}
+  machineInit: {}

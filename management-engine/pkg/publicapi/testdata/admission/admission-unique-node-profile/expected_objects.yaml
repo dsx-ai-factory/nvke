@@ -12,9 +12,7 @@ items:
       hidden: false
     machineImageRef:
       name: img-ubuntu
-    machineInit:
-      userDataTemplate: |
-        #cloud-config
+    machineInit: {}
     profile: ubuntu-cpu
     tag: "2026.11"
 - apiVersion: service.nvke.nvidia.com/v1
@@ -29,9 +27,7 @@ items:
       hidden: false
     machineImageRef:
       name: img-ubuntu
-    machineInit:
-      userDataTemplate: |
-        #cloud-config
+    machineInit: {}
     profile: ubuntu-gpu
     tag: "2026.11"
 - apiVersion: service.nvke.nvidia.com/v1
@@ -46,9 +42,7 @@ items:
       hidden: false
     machineImageRef:
       name: img-ubuntu
-    machineInit:
-      userDataTemplate: |
-        #cloud-config
+    machineInit: {}
     profile: ubuntu-gpu
     tag: "2026.12"
 metadata: {}

@@ -29,7 +29,4 @@
         version: "1.36.3"
       machineImageRef:
         name: ubuntu-2404-amd64
-      machineInit:
-        userDataTemplate: |
-          #cloud-config
-          hostname: nvke-control-plane
+      machineInit: {}
