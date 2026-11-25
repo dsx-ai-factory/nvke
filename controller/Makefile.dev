@@ -33,6 +33,17 @@ export COLIMA_PROFILE ?= default
 export COLIMA_DOCKER_HOST ?= unix://$(HOME)/.colima/$(COLIMA_PROFILE)/docker.sock
 export KIND_CLUSTER_NAME ?= controller-capi
 export KIND_CLUSTER_CONFIG ?= hack/controller-capi-kind.yaml
+# The container engine CLI the local flow drives: docker, or nerdctl on containerd
+# with no Docker daemon. Tilt, the hack scripts and nico-sim read the same
+# variable; hack/container-engine/lib.sh says what nerdctl changes.
+export CONTAINER_CLI ?= docker
+ifneq ($(CONTAINER_CLI),docker)
+# shim/nerdctl runs nerdctl as root, which the rootful containerd needs; kind
+# execs a bare `nerdctl`, so it has to be first on PATH.
+export PATH := $(CURDIR)/hack/container-engine/shim:$(PATH)
+export KIND_EXPERIMENTAL_PROVIDER := $(CONTAINER_CLI)
+export OCI_BIN ?= $(CONTAINER_CLI)
+endif
 # The image `make registry-mirror` runs. The host daemon pulls it anonymously,
 # so CI points it at the Docker Hub mirror.
 REGISTRY_MIRROR_IMAGE ?= registry:2
@@ -391,7 +402,7 @@ dev-clusters: ## List available clusters via Teleport
 host-up: ## Prepare the Docker host for local clusters (Colima on macOS, vTPM proxy on Linux)
 	@case "$$(uname -s)" in \
 		Darwin) $(MAKE) colima-up ;; \
-		Linux) sudo ./hack/ensure-vtpm-proxy.sh ;; \
+		Linux) sudo ./hack/ensure-vtpm-proxy.sh$(if $(filter-out docker,$(CONTAINER_CLI)), && ./hack/container-engine/check.sh) ;; \
 		*) echo "host-up: unsupported OS $$(uname -s)" >&2; exit 1 ;; \
 	esac
 
@@ -419,8 +430,32 @@ LOCAL_BIN := $(CURDIR)/.local/bin
 clusterctl-os = $(shell uname -s | tr '[:upper:]' '[:lower:]')
 clusterctl-arch = $(if $(filter aarch64 arm64,$(shell uname -m)),arm64,amd64)
 
+# The management cluster config mounts the Docker socket for CAPD's controller.
+# Under nerdctl there is none, and nerdctl would create the missing source as a
+# directory on the host, so the nerdctl config is the same one without that mount.
+KIND_NERDCTL_CONFIG := $(CURDIR)/.local/kind-nerdctl.yaml
+kind-cluster-config = $(if $(filter docker,$(CONTAINER_CLI)),$(KIND_CLUSTER_CONFIG),$(KIND_NERDCTL_CONFIG))
+
+$(KIND_NERDCTL_CONFIG): $(KIND_CLUSTER_CONFIG)
+	@mkdir -p $(dir $@)
+	@sed '/\/var\/run\/docker\.sock/d' $< > $@
+
+# The name of the node arch for the bundle builds: the Docker daemon's, or under
+# nerdctl this host's, since nerdctl's `version` has no Server.Arch.
+container-server-arch = $(if $(filter docker,$(CONTAINER_CLI)),$(kind-docker-host) docker version --format '{{.Server.Arch}}',uname -m)
+
+# CAPD is Cluster API's Docker provider, which needs a Docker daemon, and the
+# bundle mirror is a Docker-only convenience. Their targets name this as their
+# first prerequisite under any other engine, so they stop before they build.
+docker-engine-only := $(if $(filter docker,$(CONTAINER_CLI)),,needs-docker-engine)
+
+.PHONY: needs-docker-engine
+needs-docker-engine:
+	@echo "This target needs Docker (CAPD, or the bundle mirror) and CONTAINER_CLI=$(CONTAINER_CLI) is set. Unset it, or use capi-core-up, which runs on nerdctl." >&2
+	@exit 1
+
 .PHONY: kind-up
-kind-up: ## Create the local Kind management cluster for CAPD
+kind-up: $(if $(filter docker,$(CONTAINER_CLI)),,$(KIND_NERDCTL_CONFIG)) ## Create the local Kind management cluster for CAPD
 	@echo "Ensuring Kind management cluster '$(KIND_CLUSTER_NAME)' exists..."
 # The default cluster was cwe-capi, with trust domain cwe-capi.nke.local. After
 # the rename, kind-down deletes only the new name, so stop here rather than
@@ -437,7 +472,7 @@ kind-up: ## Create the local Kind management cluster for CAPD
 	@if $(kind-docker-host) kind get clusters | grep -Fx "$(KIND_CLUSTER_NAME)" >/dev/null; then \
 		echo "✅ Kind management cluster '$(KIND_CLUSTER_NAME)' already exists"; \
 	else \
-		$(kind-docker-host) kind create cluster --name "$(KIND_CLUSTER_NAME)" --config "$(KIND_CLUSTER_CONFIG)"; \
+		$(kind-docker-host) kind create cluster --name "$(KIND_CLUSTER_NAME)" --config "$(kind-cluster-config)"; \
 	fi
 # `kind create cluster` switches contexts, the already-exists branch does not.
 # Everything downstream (clusterctl init, rollout status) targets the current
@@ -463,12 +498,12 @@ BUNDLE_MIRROR_VOLUME ?= capd-bundle-mirror-data
 # architecture-independent, so an arm64 daemon cannot install an amd64 build.
 # e2e_start_bundle_mirror copies into a named volume rather than bind mounting,
 # because the daemon that resolves a bind path is not always this host.
-bundle-mirror: kind-up ## Serve the CAPD bundle, built from public sources, on the kind network
-	@if [ "$$($(kind-docker-host) docker inspect --format '{{.State.Running}}' $(BUNDLE_MIRROR_NAME) 2>/dev/null)" = "true" ]; then \
+bundle-mirror: $(docker-engine-only) kind-up ## Serve the CAPD bundle, built from public sources, on the kind network
+	@if [ "$$($(kind-docker-host) $(CONTAINER_CLI) inspect --format '{{.State.Running}}' $(BUNDLE_MIRROR_NAME) 2>/dev/null)" = "true" ]; then \
 		echo "✅ Bundle mirror already running"; \
 	else \
 		echo "Building the CAPD bundle from public sources..."; \
-		server_arch="$$($(kind-docker-host) docker version --format '{{.Server.Arch}}')"; \
+		server_arch="$$($(container-server-arch))"; \
 		case "$$server_arch" in \
 			amd64|x86_64) bundle_arch=amd64 ;; \
 			arm64|aarch64) bundle_arch=arm64 ;; \
@@ -486,55 +521,63 @@ bundle-mirror: kind-up ## Serve the CAPD bundle, built from public sources, on t
 
 .PHONY: bundle-mirror-down
 bundle-mirror-down: ## Remove the CAPD bundle mirror and its volume
+# Nothing to remove under nerdctl: bundle-mirror does not run there.
+ifeq ($(CONTAINER_CLI),docker)
 	@$(kind-docker-host) bash -c '. hack/backend-e2e-lib.sh; \
 		e2e_stop_bundle_mirror $(BUNDLE_MIRROR_NAME) $(BUNDLE_MIRROR_VOLUME)'
 	@echo "✅ Bundle mirror removed"
+endif
+
+# nerdctl has no `network connect`, so a cache it starts joins the kind network
+# when it is created. One that was created apart from it is not connected.
+registry-mirror-network = $(if $(filter docker,$(CONTAINER_CLI)),,--network kind)
+registry-mirror-connect = $(if $(filter docker,$(CONTAINER_CLI)),@$(kind-docker-host) $(CONTAINER_CLI) network connect kind $(1) 2>/dev/null || true)
 
 .PHONY: registry-mirror
-registry-mirror: ## Start Docker Hub and registry.k8s.io pull-through caches
-	@if $(kind-docker-host) docker inspect registry-mirror >/dev/null 2>&1; then \
-		if [ "$$($(kind-docker-host) docker inspect --format '{{.State.Running}}' registry-mirror)" = "true" ]; then \
+registry-mirror: $(if $(filter docker,$(CONTAINER_CLI)),,kind-up) ## Start Docker Hub and registry.k8s.io pull-through caches
+	@if $(kind-docker-host) $(CONTAINER_CLI) inspect registry-mirror >/dev/null 2>&1; then \
+		if [ "$$($(kind-docker-host) $(CONTAINER_CLI) inspect --format '{{.State.Running}}' registry-mirror)" = "true" ]; then \
 			echo "✅ Registry mirror already running"; \
 		else \
 			echo "Starting existing Docker Hub pull-through cache..."; \
-			$(kind-docker-host) docker start registry-mirror >/dev/null; \
+			$(kind-docker-host) $(CONTAINER_CLI) start registry-mirror >/dev/null; \
 			echo "✅ Registry mirror started"; \
 		fi; \
 	else \
 		echo "Starting Docker Hub pull-through cache..."; \
-		$(kind-docker-host) docker run -d \
+		$(kind-docker-host) $(CONTAINER_CLI) run -d \
 			--name registry-mirror \
-			--restart=always \
+			--restart=always $(registry-mirror-network) \
 			-e REGISTRY_PROXY_REMOTEURL=https://registry-1.docker.io \
 			$(REGISTRY_MIRROR_IMAGE) >/dev/null && \
 		echo "✅ Registry mirror started"; \
 	fi
-	@$(kind-docker-host) docker network connect kind registry-mirror 2>/dev/null || true
-	@if $(kind-docker-host) docker inspect registry-k8s-mirror >/dev/null 2>&1; then \
-		if [ "$$($(kind-docker-host) docker inspect --format '{{.State.Running}}' registry-k8s-mirror)" = "true" ]; then \
+	$(call registry-mirror-connect,registry-mirror)
+	@if $(kind-docker-host) $(CONTAINER_CLI) inspect registry-k8s-mirror >/dev/null 2>&1; then \
+		if [ "$$($(kind-docker-host) $(CONTAINER_CLI) inspect --format '{{.State.Running}}' registry-k8s-mirror)" = "true" ]; then \
 			echo "✅ registry.k8s.io mirror already running"; \
 		else \
 			echo "Starting existing registry.k8s.io pull-through cache..."; \
-			$(kind-docker-host) docker start registry-k8s-mirror >/dev/null; \
+			$(kind-docker-host) $(CONTAINER_CLI) start registry-k8s-mirror >/dev/null; \
 			echo "✅ registry.k8s.io mirror started"; \
 		fi; \
 	else \
 		echo "Starting registry.k8s.io pull-through cache..."; \
-		$(kind-docker-host) docker run -d \
+		$(kind-docker-host) $(CONTAINER_CLI) run -d \
 			--name registry-k8s-mirror \
-			--restart=always \
+			--restart=always $(registry-mirror-network) \
 			-e REGISTRY_PROXY_REMOTEURL=https://registry.k8s.io \
 			$(REGISTRY_MIRROR_IMAGE) >/dev/null && \
 		echo "✅ registry.k8s.io mirror started"; \
 	fi
-	@$(kind-docker-host) docker network connect kind registry-k8s-mirror 2>/dev/null || true
+	$(call registry-mirror-connect,registry-k8s-mirror)
 
 # The rollout waits below are 300s, not 120s. These pods mount a secret
 # cert-manager issues, and cert-manager pulls from quay.io with no mirror in
 # front of it; one ImagePullBackOff there stalls the chain, and that backoff
 # grows to 5 minutes. A healthy rollout takes 4 seconds either way.
 .PHONY: capd-up
-capd-up: kind-up clusterctl-install capd-image registry-mirror ## Bring up the local CAPD management cluster workflow (builds the CAPD node image first)
+capd-up: $(docker-engine-only) kind-up clusterctl-install capd-image registry-mirror ## Bring up the local CAPD management cluster workflow (builds the CAPD node image first)
 	@echo "Installing CAPI core + CAPD providers..."
 	@PATH="$(LOCAL_BIN):$$PATH" $(kind-docker-host) CLUSTER_TOPOLOGY=true clusterctl init \
 		--core cluster-api:$(CAPI_CORE_VERSION) \
@@ -640,14 +683,14 @@ bgp-containers-verify: ## Print FRR BGP peer and route state for local container
 	@cd "$(CURDIR)" && $(kind-docker-host) ./hack/bgp-containers/verify-routes.sh
 
 .PHONY: capd-create-cluster
-capd-create-cluster: bgp-containers-up ## Create a local CAPD workload cluster with a stable kube-vip API endpoint
+capd-create-cluster: $(docker-engine-only) bgp-containers-up ## Create a local CAPD workload cluster with a stable kube-vip API endpoint
 	@cd "$(CURDIR)" && $(kind-docker-host) \
 		DEFAULT_VIP_RANGE="$(DEFAULT_VIP_RANGE)" \
 		CAPD_KINDEST_NODE_IMAGE="$(CAPD_KINDEST_NODE_IMAGE)" \
 		./hack/create-capd-cluster.sh
 
 .PHONY: capd-upgrade
-capd-upgrade: ## Rebuild CAPD node image for TARGET_VERSION and PATCH the cluster to upgrade (see hack/capd-upgrade.sh)
+capd-upgrade: $(docker-engine-only) ## Rebuild CAPD node image for TARGET_VERSION and PATCH the cluster to upgrade (see hack/capd-upgrade.sh)
 	@cd "$(CURDIR)" && $(kind-docker-host) \
 		CAPD_KINDEST_NODE_IMAGE="$(CAPD_KINDEST_NODE_IMAGE)" \
 		CAPD_KINDEST_NODE_TAG="$(CAPD_KINDEST_NODE_TAG)" \
@@ -663,7 +706,7 @@ capd-upgrade: ## Rebuild CAPD node image for TARGET_VERSION and PATCH the cluste
 	@$(MAKE) capi-spiffe-exec-auth
 
 .PHONY: capd-kubeconfig
-capd-kubeconfig: ## Write CAPD workload kubeconfig for kubectl on this host (CLUSTER_NAME=capd OUTPUT=path ./hack/fetch-capd-kubeconfig.sh)
+capd-kubeconfig: $(docker-engine-only) ## Write CAPD workload kubeconfig for kubectl on this host (CLUSTER_NAME=capd OUTPUT=path ./hack/fetch-capd-kubeconfig.sh)
 	@cd "$(CURDIR)" && DOCKER_HOST="$(COLIMA_DOCKER_HOST)" ./hack/fetch-capd-kubeconfig.sh "$(or $(CLUSTER_NAME),capd)" $(if $(OUTPUT),"$(OUTPUT)",)
 
 # Local nodes install CNI from a Debian package after kubeadm init.
@@ -689,7 +732,7 @@ capd-image: $(CAPD_IMAGE_DEPS) ## Build the custom CAPD node image for DockerMac
 			case "$$cni_plugin" in \
 			ovn-kubernetes) \
 				CAPD_CNI_MANIFESTS_DEB_PATH=""; \
-				server_arch="$$($(kind-docker-host) docker version --format '{{.Server.Arch}}')"; \
+				server_arch="$$($(container-server-arch))"; \
 				case "$$server_arch" in \
 					amd64|x86_64) bundle_arch=amd64 ;; \
 					arm64|aarch64) bundle_arch=arm64 ;; \

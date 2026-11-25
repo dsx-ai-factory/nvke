@@ -13,6 +13,10 @@ set -euo pipefail
 : "${KIND_CLUSTER_NAME:?KIND_CLUSTER_NAME is required}"
 : "${KIND_BIN:=kind}"
 
+# shellcheck source=../container-engine/lib.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../container-engine/lib.sh"
+ce_init || exit 1
+
 adopt_namespace() {
   kubectl create namespace "${CAPNICO_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f -
   kubectl label namespace "${CAPNICO_NAMESPACE}" app.kubernetes.io/managed-by=Helm --overwrite
@@ -88,7 +92,7 @@ install_source_chart() {
   # BuildKit does not retry that. The second attempt finds the blob cached.
   built=false
   for attempt in 1 2; do
-    if DOCKER_BUILDKIT=1 docker build -t "${CAPNICO_IMAGE}" -f "${rendered_dockerfile}" "${source_dir}"; then
+    if ce_build -t "${CAPNICO_IMAGE}" -f "${rendered_dockerfile}" "${source_dir}"; then
       built=true
       break
     fi
@@ -100,7 +104,7 @@ install_source_chart() {
     echo "CAPNICo image build failed twice." >&2
     exit 1
   fi
-  "${KIND_BIN}" load docker-image "${CAPNICO_IMAGE}" --name "${KIND_CLUSTER_NAME}"
+  ce_kind_load "${CAPNICO_IMAGE}" "${KIND_CLUSTER_NAME}"
 
   rm -rf "${CAPNICO_STAGED_CHART_DIR}"
   mkdir -p "$(dirname "${CAPNICO_STAGED_CHART_DIR}")"

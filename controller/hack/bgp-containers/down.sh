@@ -10,14 +10,21 @@
 
 set -euo pipefail
 CONTAINER_NAME="${CONTAINER_NAME:-bgp-containers}"
+NETWORK_NAME="${NETWORK_NAME:-kind}"
+# shellcheck source=../container-engine/lib.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../container-engine/lib.sh"
+ce_init || exit 1
+ENGINE="$(ce_cli)"
 
 info() { echo "[bgp-containers:down] $*"; }
 
-if docker ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
+ce_remove_same_bridge_forwarding "${NETWORK_NAME}"
+
+if "${ENGINE}" ps -a --format '{{.Names}}' | grep -qx "${CONTAINER_NAME}"; then
   # Try graceful stop first so zebra has a chance to retract its routes.
   info "Stopping ${CONTAINER_NAME} (SIGTERM, 10s grace)..."
-  docker stop --time 10 "${CONTAINER_NAME}" >/dev/null || true
-  docker rm -f "${CONTAINER_NAME}" >/dev/null || true
+  "${ENGINE}" stop --time 10 "${CONTAINER_NAME}" >/dev/null || true
+  "${ENGINE}" rm -f "${CONTAINER_NAME}" >/dev/null || true
   info "Removed ${CONTAINER_NAME}."
 else
   info "${CONTAINER_NAME} not present."

@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# nerdctl, run as root, for the local dev flow (CONTAINER_CLI=nerdctl).
+#
+# containerd is the rootful system service and only root can talk to it, while
+# Tilt, kind, make and nico-sim run as the invoking user. Putting this directory
+# first on PATH (hack/container-engine/lib.sh does it) makes every bare `nerdctl`
+# those tools exec -- kind's nerdctl provider among them, which takes no sudo
+# setting -- reach containerd through `sudo -n`. It is not a way to run nerdctl
+# rootless: that needs a rootless containerd, which this flow does not set up.
+#
+# The user's PATH is not passed to root: the commands nerdctl execs (buildctl,
+# the CNI plugins' helpers) are looked up on sudo's secure_path.
+#
+# NERDCTL_REAL names the binary to run, for hosts where it is not on PATH.
+
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+real="${NERDCTL_REAL:-}"
+if [[ -z "${real}" ]]; then
+  IFS=: read -r -a path_dirs <<<"${PATH}"
+  for dir in "${path_dirs[@]}"; do
+    [[ -n "${dir}" && -x "${dir}/nerdctl" ]] || continue
+    [[ "$(cd "${dir}" && pwd)" != "${here}" ]] || continue
+    real="${dir}/nerdctl"
+    break
+  done
+fi
+if [[ -z "${real}" ]]; then
+  echo "nerdctl: no nerdctl on PATH besides ${here}/nerdctl; install it or set NERDCTL_REAL" >&2
+  exit 127
+fi
+
+if (( EUID == 0 )); then
+  exec "${real}" "$@"
+fi
+
+# What nerdctl reads from the environment to find containerd, buildkitd and the
+# CNI configuration, and to pull through a proxy. sudo drops all of it.
+keep=()
+for name in CONTAINERD_ADDRESS CONTAINERD_NAMESPACE BUILDKIT_HOST NETCONFPATH CNI_PATH NERDCTL_TOML \
+  HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy; do
+  if [[ -n "${!name:-}" ]]; then
+    keep+=("${name}")
+  fi
+done
+
+sudo_args=(-n)
+if (( ${#keep[@]} > 0 )); then
+  sudo_args+=("--preserve-env=$(IFS=,; echo "${keep[*]}")")
+fi
+exec sudo "${sudo_args[@]}" "${real}" "$@"

@@ -1,7 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-// Package container manages NICo container instances with Docker.
+// Package container manages NICo container instances with Docker, or with
+// nerdctl when Config.DockerBinary names it.
 package container
 
 import (
