@@ -21,6 +21,8 @@ import (
 // NodeAgentConfig stores the exact desired agent release.
 type NodeAgentConfig struct {
 	Version string `json:"version,omitempty"`
+	// TokenSource is fixed at creation and pinned onto each control-plane node.
+	TokenSource NodeAgentTokenSource `json:"token_source,omitempty"`
 }
 
 // ControlPlaneConfigSpec is the snapshot payload stored in
@@ -65,7 +67,6 @@ type CAPIControlPlaneProvider struct {
 	SpireAttestationMethod          SpireAttestationMethod `json:"spire_attestation_method,omitempty"`
 	BootstrapFiles                  []CloudInitFile        `json:"bootstrap_files,omitempty"`
 	PreKubeadmCommands              []string               `json:"pre_kubeadm_commands,omitempty"`
-	NodeIdentity                    NodeIdentity           `json:"node_identity,omitempty"`
 }
 
 // LaunchLayerControlPlaneProvider is the LaunchLayer-specific control-plane
@@ -112,12 +113,9 @@ func (c ControlPlaneConfigSpec) CAPIProvider() (CAPIControlPlaneProvider, error)
 	return *cloneCAPIControlPlaneProvider(c.Capi), nil
 }
 
-// NodeIdentity returns where new control-plane nodes' agents get their identity.
-func (c ControlPlaneConfigSpec) NodeIdentity() NodeIdentity {
-	if c.Capi == nil {
-		return ""
-	}
-	return c.Capi.NodeIdentity
+// NodeAgentTokenSource returns where new control-plane nodes' agents get their token.
+func (c ControlPlaneConfigSpec) NodeAgentTokenSource() NodeAgentTokenSource {
+	return c.NodeAgentConfig.TokenSource
 }
 
 func (c ControlPlaneConfigSpec) LaunchLayerProvider() (LaunchLayerControlPlaneProvider, error) {
@@ -238,7 +236,6 @@ func cloneCAPIControlPlaneProvider(provider *CAPIControlPlaneProvider) *CAPICont
 		SpireAttestationMethod:          provider.SpireAttestationMethod,
 		BootstrapFiles:                  append([]CloudInitFile(nil), provider.BootstrapFiles...),
 		PreKubeadmCommands:              append([]string(nil), provider.PreKubeadmCommands...),
-		NodeIdentity:                    provider.NodeIdentity,
 	}
 }
 

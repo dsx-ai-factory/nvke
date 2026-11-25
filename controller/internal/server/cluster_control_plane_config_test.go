@@ -828,14 +828,14 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 	})
 
 	t.Run("nested infra lands on the stored provider payload", func(t *testing.T) {
-		metadataService := api.NodeIdentityMetadataService
+		metadataService := api.NodeAgentTokenSourceMetadataService
 		cfg := &api.CreateClusterControlPlaneConfig{
-			DesiredCount: 3,
-			NodeLabels:   map[string]string{"role": "cp"},
+			DesiredCount:    3,
+			NodeLabels:      map[string]string{"role": "cp"},
+			NodeAgentConfig: &api.NodeAgentConfig{TokenFrom: &metadataService},
 			Infra: &api.InfraControlPlaneProvider{
 				MachineTemplate:    tmpl,
 				PreKubeadmCommands: []string{"prep"},
-				NodeIdentity:       &metadataService,
 			},
 		}
 
@@ -847,8 +847,8 @@ func TestControlPlaneConfigSpecFromCreateAPI_NestedProviders(t *testing.T) {
 		assert.JSONEq(t, `{"kind":"DockerMachineTemplate"}`, string(spec.Capi.InfraMachineTemplatePreferences[0]))
 		assert.Empty(t, spec.Capi.SpireAttestationMethod)
 		assert.Equal(t, []string{"prep"}, spec.Capi.PreKubeadmCommands)
-		assert.Equal(t, db.NodeIdentityMetadataService, spec.NodeIdentity())
-		assert.Equal(t, &metadataService, apiInfraControlPlaneProviderFromDB(spec.Capi).NodeIdentity)
+		assert.Equal(t, db.NodeAgentTokenSourceMetadataService, spec.NodeAgentTokenSource())
+		assert.Equal(t, &metadataService, apiNodeAgentConfigFromDB(spec.NodeAgentConfig).TokenFrom)
 	})
 }
 

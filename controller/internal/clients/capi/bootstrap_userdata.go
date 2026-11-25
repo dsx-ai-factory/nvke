@@ -82,7 +82,7 @@ func (*Client) renderBootstrapUserData(
 	if err != nil {
 		return "", err
 	}
-	if !node.UsesMetadataServiceIdentity() && node.SpireAttestationMethod == db.SpireAttestationMethodJoinToken && spireJoinToken == "" {
+	if !node.UsesMetadataServiceToken() && node.SpireAttestationMethod == db.SpireAttestationMethodJoinToken && spireJoinToken == "" {
 		return "", fmt.Errorf("spire join token is required when SPIRE attestation method is joinToken")
 	}
 
@@ -90,7 +90,7 @@ func (*Client) renderBootstrapUserData(
 	// read a bundle from, so a node gets neither the bundle nor a SPIRE agent
 	// config. Asking anyway blocks provisioning: the dial fails, the activity
 	// retries forever, and the cluster never leaves Provisioning.
-	spireAgent := node.SpiffeEnabled && !node.UsesMetadataServiceIdentity()
+	spireAgent := node.SpiffeEnabled && !node.UsesMetadataServiceToken()
 	var trustDomain, trustBundle string
 	if spireAgent {
 		trustDomain, trustBundle, err = deps.GetTrustDomainBundle(ctx, deps.Config)

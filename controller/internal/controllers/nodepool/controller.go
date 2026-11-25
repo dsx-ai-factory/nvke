@@ -257,6 +257,7 @@ func buildBaseNodeSet(nodePool db.NodePool) *db.NodeSet {
 		SystemReservedMemory: nodePool.SystemReservedMemory,
 		KubeReservedMemory:   nodePool.KubeReservedMemory,
 		TeleportEnabled:      nodePool.TeleportEnabled,
+		NodeAgent:            db.CloneNodeAgentSettings(nodePool.NodeAgent),
 	}
 }
 

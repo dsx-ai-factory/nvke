@@ -67,18 +67,18 @@ func TestUnit_UpdateNodePreservesSecurityProfile(t *testing.T) {
 	created.SpireAttestationMethod = db.SpireAttestationMethodDSXIMDS
 	created.NodeAgentExternalMTLSEnabled = true
 	created.NodeAgentTLSJWTEnabled = true
-	created.NodeIdentity = db.NodeIdentityMetadataService
+	created.NodeAgentTokenSource = db.NodeAgentTokenSourceMetadataService
 	updated, err := database.UpdateNode(ctx, &created)
 	require.NoError(t, err)
 	require.Equal(t, db.SpireAttestationMethodTPM, updated.SpireAttestationMethod)
 	require.False(t, updated.NodeAgentExternalMTLSEnabled)
 	require.False(t, updated.NodeAgentTLSJWTEnabled)
-	require.Empty(t, updated.NodeIdentity)
+	require.Empty(t, updated.NodeAgentTokenSource)
 
 	stored, err := database.GetNode(ctx, node.ID)
 	require.NoError(t, err)
 	require.Equal(t, updated.SpireAttestationMethod, stored.SpireAttestationMethod)
-	require.Empty(t, stored.NodeIdentity)
+	require.Empty(t, stored.NodeAgentTokenSource)
 }
 
 func TestUnit_NodeValidateSecurityProfile(t *testing.T) {
@@ -101,18 +101,18 @@ func TestUnit_NodeValidateSecurityProfile(t *testing.T) {
 		}, wantErr: "requires a TLS transport"},
 		"metadata service with external mTLS and TLS JWT": {node: db.Node{
 			SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS,
-			NodeAgentExternalMTLSEnabled: true, NodeAgentTLSJWTEnabled: true, NodeIdentity: db.NodeIdentityMetadataService,
+			NodeAgentExternalMTLSEnabled: true, NodeAgentTLSJWTEnabled: true, NodeAgentTokenSource: db.NodeAgentTokenSourceMetadataService,
 		}},
 		"metadata service without external mTLS": {node: db.Node{
 			SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS,
-			NodeAgentTLSJWTEnabled: true, NodeIdentity: db.NodeIdentityMetadataService,
+			NodeAgentTLSJWTEnabled: true, NodeAgentTokenSource: db.NodeAgentTokenSourceMetadataService,
 		}, wantErr: "requires TLS/JWT with external mTLS"},
 		"metadata service without TLS JWT": {node: db.Node{
-			SpireAttestationMethod: db.SpireAttestationMethodTPM, NodeAgentExternalMTLSEnabled: true, NodeIdentity: db.NodeIdentityMetadataService,
+			SpireAttestationMethod: db.SpireAttestationMethodTPM, NodeAgentExternalMTLSEnabled: true, NodeAgentTokenSource: db.NodeAgentTokenSourceMetadataService,
 		}, wantErr: "requires TLS/JWT with external mTLS"},
-		"unknown node identity": {node: db.Node{
-			SpireAttestationMethod: db.SpireAttestationMethodTPM, NodeIdentity: "other",
-		}, wantErr: "invalid node identity"},
+		"unknown token source": {node: db.Node{
+			SpireAttestationMethod: db.SpireAttestationMethodTPM, NodeAgentTokenSource: "other",
+		}, wantErr: "invalid node agent token source"},
 	}
 	for name, params := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -82,7 +82,7 @@ func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, 
 	}
 	if node.NodeAgentTLSJWTEnabled {
 		args = append(args, "--grpc-auth-mode=tls-jwt")
-		if node.UsesMetadataServiceIdentity() {
+		if node.UsesMetadataServiceToken() {
 			args = append(args, "--dsx-identity-metadata-url="+constants.DSXMetadataServiceURL)
 		} else {
 			args = append(args, "--dsx-identity-exchange-url="+a.cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)

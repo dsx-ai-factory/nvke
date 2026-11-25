@@ -28,7 +28,6 @@ func (*Client) ApplyControlPlaneConfigPayloads(_ db.Node, snapshotCfg db.Control
 		SpireAttestationMethod: snapshotCfg.Capi.SpireAttestationMethod,
 		BootstrapFiles:         append([]db.CloudInitFile(nil), snapshotCfg.Capi.BootstrapFiles...),
 		PreKubeadmCommands:     append([]string(nil), snapshotCfg.Capi.PreKubeadmCommands...),
-		NodeIdentity:           snapshotCfg.Capi.NodeIdentity,
 	}
 	nodeSet.SetCapi(payload)
 	nodePool.SetCapi(payload)

@@ -80,7 +80,7 @@ func updateSpireServer(ctx workflow.Context, input UpdateSpireServerInput) error
 	// workflow that recorded a schedule for a metadata-service node, or a
 	// failure for a node reachable only at a dial address, must replay that
 	// decision rather than make it again from this node selection.
-	selectsByNodeIdentityAndDialHost := workflow.GetVersion(
+	selectsByNodeAgentTokenSourceAndDialHost := workflow.GetVersion(
 		ctx,
 		spireServerUpdateNodeSelectionChangeID,
 		workflow.DefaultVersion,
@@ -98,12 +98,12 @@ func updateSpireServer(ctx workflow.Context, input UpdateSpireServerInput) error
 			logger.Info("skipping SPIRE server update on node without SPIFFE", "node", node.Name)
 			continue
 		}
-		if selectsByNodeIdentityAndDialHost && node.UsesMetadataServiceIdentity() {
+		if selectsByNodeAgentTokenSourceAndDialHost && node.UsesMetadataServiceToken() {
 			logger.Info("skipping SPIRE server update on node without a SPIRE agent", "node", node.Name)
 			continue
 		}
 		dialHost := node.IP
-		if selectsByNodeIdentityAndDialHost {
+		if selectsByNodeAgentTokenSourceAndDialHost {
 			dialHost = node.AgentDialHost()
 		}
 		if dialHost == "" {

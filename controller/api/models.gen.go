@@ -116,16 +116,16 @@ const (
 	LaunchLayerSecurityGroupTypeVIRTUALIZED LaunchLayerSecurityGroupType = "VIRTUALIZED"
 )
 
+// Defines values for NodeAgentTokenSource.
+const (
+	NodeAgentTokenSourceMetadataService NodeAgentTokenSource = "metadataService"
+	NodeAgentTokenSourceTokenExchange   NodeAgentTokenSource = "tokenExchange"
+)
+
 // Defines values for NodeAgentUpgradeStatusPhase.
 const (
 	NodeAgentUpgradeStatusPhasePending NodeAgentUpgradeStatusPhase = "Pending"
 	NodeAgentUpgradeStatusPhaseRunning NodeAgentUpgradeStatusPhase = "Running"
-)
-
-// Defines values for NodeIdentity.
-const (
-	NodeIdentityMetadataService NodeIdentity = "metadataService"
-	NodeIdentitySpireAgent      NodeIdentity = "spireAgent"
 )
 
 // Defines values for NodeTaintEffect.
@@ -700,6 +700,9 @@ type CreateNodePoolRequest struct {
 	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
 	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
 
+	// RecycleBudget Maximum number of nodes recycled at once.
+	RecycleBudget *int `json:"recycleBudget,omitempty"`
+
 	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
 
@@ -723,11 +726,11 @@ type CreateNodePoolRequest struct {
 	// Maximum prefix length depends on cluster name length.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
 
-	// RecycleBudget Maximum number of nodes recycled at once.
-	RecycleBudget *int `json:"recycleBudget,omitempty"`
-
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this pool. When omitted, the server-side default for the site is applied based on pool role.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
+
+	// NodeAgentConfig Node-agent settings for the pool's nodes.
+	NodeAgentConfig *NodeAgentSettings `json:"nodeAgentConfig,omitempty"`
 }
 
 // DeleteNodeRequest Optional body of a node delete.
@@ -802,12 +805,6 @@ type InfraControlPlaneProvider struct {
 	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource used for control plane nodes
 	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
 
-	// NodeIdentity Where a node's agent gets its identity. spireAgent runs a SPIRE agent on the node.
-	// metadataService runs none: the agent gets its token from the DSX metadata service,
-	// which the node's infrastructure must provide, and requires TLS/JWT with external
-	// mTLS. Defaults to spireAgent. Set at creation and cannot be changed.
-	NodeIdentity *NodeIdentity `json:"nodeIdentity,omitempty"`
-
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed control plane nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
 }
@@ -834,12 +831,6 @@ type InfraNodePoolProvider struct {
 	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
 	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
 
-	// NodeIdentity Where a node's agent gets its identity. spireAgent runs a SPIRE agent on the node.
-	// metadataService runs none: the agent gets its token from the DSX metadata service,
-	// which the node's infrastructure must provide, and requires TLS/JWT with external
-	// mTLS. Defaults to spireAgent. Set at creation and cannot be changed.
-	NodeIdentity *NodeIdentity `json:"nodeIdentity,omitempty"`
-
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
 }
@@ -865,12 +856,6 @@ type InfraNodeSetProvider struct {
 
 	// MachineTemplate Arbitrary JSON manifest for the CAPI infrastructure provider MachineTemplate resource
 	MachineTemplate map[string]interface{} `json:"machineTemplate,omitempty"`
-
-	// NodeIdentity Where a node's agent gets its identity. spireAgent runs a SPIRE agent on the node.
-	// metadataService runs none: the agent gets its token from the DSX metadata service,
-	// which the node's infrastructure must provide, and requires TLS/JWT with external
-	// mTLS. Defaults to spireAgent. Set at creation and cannot be changed.
-	NodeIdentity *NodeIdentity `json:"nodeIdentity,omitempty"`
 
 	// PreKubeadmCommands Cloud-init runcmd entries for CAPI-backed nodes
 	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
@@ -1328,9 +1313,37 @@ type Node struct {
 
 // NodeAgentConfig Desired control-plane node-agent configuration.
 type NodeAgentConfig struct {
+	// TokenFrom Where a node's agent gets the token it authenticates to the controller with.
+	// tokenExchange runs a SPIRE agent on the node and exchanges its JWT-SVID.
+	// metadataService runs no SPIRE agent: the agent reads an already-exchanged token
+	// from the DSX metadata service, which the node's infrastructure must provide, and
+	// requires TLS/JWT with external mTLS. Defaults to tokenExchange. Set at creation
+	// and cannot be changed.
+	TokenFrom *NodeAgentTokenSource `json:"tokenFrom,omitempty"`
+
 	// Version Exact agent release version. An empty value disables agent convergence.
 	Version *string `json:"version,omitempty"`
 }
+
+// NodeAgentSettings Node-agent settings for a node pool's nodes, independent of the infrastructure
+// provider that creates them. Set at creation and cannot be changed.
+type NodeAgentSettings struct {
+	// TokenFrom Where a node's agent gets the token it authenticates to the controller with.
+	// tokenExchange runs a SPIRE agent on the node and exchanges its JWT-SVID.
+	// metadataService runs no SPIRE agent: the agent reads an already-exchanged token
+	// from the DSX metadata service, which the node's infrastructure must provide, and
+	// requires TLS/JWT with external mTLS. Defaults to tokenExchange. Set at creation
+	// and cannot be changed.
+	TokenFrom *NodeAgentTokenSource `json:"tokenFrom,omitempty"`
+}
+
+// NodeAgentTokenSource Where a node's agent gets the token it authenticates to the controller with.
+// tokenExchange runs a SPIRE agent on the node and exchanges its JWT-SVID.
+// metadataService runs no SPIRE agent: the agent reads an already-exchanged token
+// from the DSX metadata service, which the node's infrastructure must provide, and
+// requires TLS/JWT with external mTLS. Defaults to tokenExchange. Set at creation
+// and cannot be changed.
+type NodeAgentTokenSource string
 
 // NodeAgentUpgradeStatus The active agent upgrade and latest retry error.
 type NodeAgentUpgradeStatus struct {
@@ -1411,12 +1424,6 @@ type NodeConditions struct {
 	TeleportRegistered *Condition `json:"teleportRegistered,omitempty"`
 }
 
-// NodeIdentity Where a node's agent gets its identity. spireAgent runs a SPIRE agent on the node.
-// metadataService runs none: the agent gets its token from the DSX metadata service,
-// which the node's infrastructure must provide, and requires TLS/JWT with external
-// mTLS. Defaults to spireAgent. Set at creation and cannot be changed.
-type NodeIdentity string
-
 // NodeNamePrefix Prefix for generated node names: `<cluster name>-<nodeNamePrefix>-<suffix>`.
 // The controller assigns suffix as a 4-digit decimal number (0000–9999).
 // Generated names must fit within 63 characters (Kubernetes Node name limit).
@@ -1480,6 +1487,12 @@ type NodePool struct {
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this pool.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
 
+	// NodeAgentConfig Node-agent settings for the pool's nodes.
+	NodeAgentConfig *NodeAgentSettings `json:"nodeAgentConfig,omitempty"`
+
+	// ObservedNodeCount Observed number of nodes in the pool, including pending and deleting nodes. May exceed desiredNodeCount during a rollout or after a scale-down request. Omitted when not observed.
+	ObservedNodeCount *int `json:"observedNodeCount,omitempty"`
+
 	// Conditions Lifecycle conditions: provisioning, provisioned, deleting.
 	Conditions NodePoolConditions `json:"conditions"`
 
@@ -1500,9 +1513,6 @@ type NodePool struct {
 
 	// NodeNamePrefix Node names are `<cluster>-<prefix>-<NNNN>` (four-digit suffix), at most 63 characters in total.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
-
-	// ObservedNodeCount Observed number of nodes in the pool, including pending and deleting nodes. May exceed desiredNodeCount during a rollout or after a scale-down request. Omitted when not observed.
-	ObservedNodeCount *int `json:"observedNodeCount,omitempty"`
 
 	// ReadyNodeCount Number of nodes in the pool whose observed Kubernetes Ready condition is True. Does not additionally require provisioning completion or schedulability. Omitted when not observed.
 	ReadyNodeCount *int `json:"readyNodeCount,omitempty"`
@@ -1556,6 +1566,9 @@ type NodePoolCreateConfig struct {
 	// AutoModeDisabled Disables auto-mode (automatic node recycling).
 	AutoModeDisabled *bool `json:"autoModeDisabled,omitempty"`
 
+	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
+	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
+
 	// Infra Infra provider fields for a node pool. Mutually exclusive with `nico`.
 	Infra *InfraNodePoolProvider `json:"infra,omitempty"`
 
@@ -1579,14 +1592,14 @@ type NodePoolCreateConfig struct {
 	// Maximum prefix length depends on cluster name length.
 	NodeNamePrefix NodeNamePrefix `json:"nodeNamePrefix"`
 
-	// ProvisioningMonitorDisabled When true, nodes stuck in provisioning past the timeout are not recycled automatically.
-	ProvisioningMonitorDisabled *bool `json:"provisioningMonitorDisabled,omitempty"`
-
 	// RecycleBudget Maximum number of nodes recycled at once.
 	RecycleBudget *int `json:"recycleBudget,omitempty"`
 
 	// TeleportEnabled Whether Teleport SSH enrollment is enabled for nodes in this pool. When omitted, the server-side default for the site is applied based on pool role.
 	TeleportEnabled *bool `json:"teleportEnabled,omitempty"`
+
+	// NodeAgentConfig Node-agent settings for the pool's nodes.
+	NodeAgentConfig *NodeAgentSettings `json:"nodeAgentConfig,omitempty"`
 }
 
 // NodeSet Read-only, immutable snapshot of a node pool's configuration at a point in time.
@@ -1611,6 +1624,9 @@ type NodeSet struct {
 
 	// Nico NICo settings in the snapshot.
 	Nico *NicoNodeSetProvider `json:"nico,omitempty"`
+
+	// NodeAgentConfig Node-agent settings in the snapshot.
+	NodeAgentConfig *NodeAgentSettings `json:"nodeAgentConfig,omitempty"`
 
 	// NodePoolID Owning node pool.
 	NodePoolID openapi_types.UUID `json:"nodePoolID"`

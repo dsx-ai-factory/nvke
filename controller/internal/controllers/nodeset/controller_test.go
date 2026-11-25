@@ -122,10 +122,11 @@ func TestUnit_Reconcile(t *testing.T) {
 				mockDB.AssertNotCalled(t, "ListNodeSets", mock.Anything, mock.Anything)
 			},
 		},
-		"pins the node set's node identity on a new node": {
+		"pins the node set's node-agent token source on a new node": {
 			nodeSet: func() db.NodeSet {
 				nodeSet := baseNodeSet
-				nodeSet.SetCapi(db.CAPINodePoolProvider{NodeIdentity: db.NodeIdentityMetadataService})
+				nodeSet.SetCapi(db.CAPINodePoolProvider{})
+				nodeSet.NodeAgent = &db.NodeAgentSettings{TokenSource: db.NodeAgentTokenSourceMetadataService}
 				return nodeSet
 			}(),
 			cfg: config.Config{
@@ -134,7 +135,8 @@ func TestUnit_Reconcile(t *testing.T) {
 			},
 			setup: func(mockDB *testutil.MockDB, mockTx *testutil.MockTx, nodeSet db.NodeSet) {
 				capiNodePool := baseNodePool
-				capiNodePool.SetCapi(db.CAPINodePoolProvider{NodeIdentity: db.NodeIdentityMetadataService})
+				capiNodePool.SetCapi(db.CAPINodePoolProvider{})
+				capiNodePool.NodeAgent = &db.NodeAgentSettings{TokenSource: db.NodeAgentTokenSourceMetadataService}
 				mockDB.MockTx = mockTx
 				mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
 				mockTx.On("GetNodeSet", mock.Anything, nodeSet.ID).Return(nodeSet, nil)
@@ -143,7 +145,7 @@ func TestUnit_Reconcile(t *testing.T) {
 				mockTx.On("GetCluster", mock.Anything, clusterID).Return(db.Cluster{ID: clusterID, Name: "c", ProviderType: db.ProviderTypeCAPI}, nil).Once()
 				mockTx.On("ListClusterNodeNames", mock.Anything, clusterID).Return([]string{}, nil).Once()
 				mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
-					return node.NodeIdentity == db.NodeIdentityMetadataService
+					return node.NodeAgentTokenSource == db.NodeAgentTokenSourceMetadataService
 				})).Return(db.Node{}, nil).Once()
 			},
 		},

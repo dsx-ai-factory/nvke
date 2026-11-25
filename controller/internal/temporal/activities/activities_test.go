@@ -71,7 +71,7 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 				NodeAgentTLSJWTEnabled:       params.tlsJWT,
 			}
 			if params.metadataService {
-				node.NodeIdentity = db.NodeIdentityMetadataService
+				node.NodeAgentTokenSource = db.NodeAgentTokenSourceMetadataService
 			}
 			files, err := activities.nodeAgentBootstrapFiles(node)
 			require.NoError(t, err)

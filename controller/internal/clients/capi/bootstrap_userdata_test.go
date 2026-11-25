@@ -43,7 +43,7 @@ func testNodeAgentBootstrapFiles(cfg config.Config, controllerClientCABundle str
 		}
 		if node.NodeAgentTLSJWTEnabled {
 			args = append(args, "--grpc-auth-mode=tls-jwt")
-			if node.UsesMetadataServiceIdentity() {
+			if node.UsesMetadataServiceToken() {
 				args = append(args, "--dsx-identity-metadata-url="+constants.DSXMetadataServiceURL)
 			} else {
 				args = append(args, "--dsx-identity-exchange-url="+cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
@@ -340,7 +340,7 @@ func TestUnit_RenderCAPIBootstrapUserData(t *testing.T) {
 				node = *params.node
 			}
 			if params.metadataService {
-				node.NodeIdentity = db.NodeIdentityMetadataService
+				node.NodeAgentTokenSource = db.NodeAgentTokenSourceMetadataService
 			}
 
 			userData, err := (&Client{}).renderBootstrapUserData(

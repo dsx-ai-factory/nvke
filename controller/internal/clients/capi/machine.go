@@ -76,7 +76,7 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	}
 
 	var spireJoinToken, spireAgentAlternateIDPath string
-	if !node.UsesMetadataServiceIdentity() {
+	if !node.UsesMetadataServiceToken() {
 		spireJoinToken, spireAgentAlternateIDPath, err = deps.CreateSpireJoinToken(ctx, node)
 		if err != nil {
 			return err

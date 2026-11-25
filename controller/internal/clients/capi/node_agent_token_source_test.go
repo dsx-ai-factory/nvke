@@ -25,54 +25,11 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
-func TestClient_ValidateNodeAgentProfile_NodeIdentity(t *testing.T) {
-	t.Parallel()
-
-	metadataServicePool := db.NodePool{Capi: &db.CAPINodePoolProvider{NodeIdentity: db.NodeIdentityMetadataService}}
-	spireAgentPool := db.NodePool{Capi: &db.CAPINodePoolProvider{}}
-
-	tests := map[string]struct {
-		profile  db.Node
-		nodePool db.NodePool
-		wantErr  error
-	}{
-		"metadata service without external mTLS": {
-			profile:  db.Node{SpiffeEnabled: true, NodeAgentTLSJWTEnabled: true},
-			nodePool: metadataServicePool,
-			wantErr:  db.ErrMetadataServiceIdentityRequiresTLSJWT,
-		},
-		"metadata service without TLS/JWT": {
-			profile:  db.Node{SpiffeEnabled: true, NodeAgentExternalMTLSEnabled: true},
-			nodePool: metadataServicePool,
-			wantErr:  db.ErrMetadataServiceIdentityRequiresTLSJWT,
-		},
-		"metadata service with TLS/JWT and external mTLS": {
-			profile:  db.Node{SpiffeEnabled: true, NodeAgentExternalMTLSEnabled: true, NodeAgentTLSJWTEnabled: true},
-			nodePool: metadataServicePool,
-		},
-		"SPIRE agent without external mTLS": {
-			profile:  db.Node{SpiffeEnabled: true},
-			nodePool: spireAgentPool,
-		},
-	}
-	for name, tt := range tests {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			err := New().ValidateNodeAgentProfile(tt.profile, tt.nodePool)
-			if tt.wantErr != nil {
-				require.ErrorIs(t, err, tt.wantErr)
-				return
-			}
-			require.NoError(t, err)
-		})
-	}
-}
-
-// newNodeIdentityCreateMachineFixture builds a CreateMachine fixture over a
-// provider-neutral machine template: node identity is not specific to any
+// newNodeAgentTokenSourceCreateMachineFixture builds a CreateMachine fixture over a
+// provider-neutral machine template: the token source is not specific to any
 // infrastructure provider.
-func newNodeIdentityCreateMachineFixture(
-	t *testing.T, identity db.NodeIdentity,
+func newNodeAgentTokenSourceCreateMachineFixture(
+	t *testing.T, tokenSource db.NodeAgentTokenSource,
 ) (client.Client, shared.MachineCreateDeps, db.NodeSet, *[]bool, *int) {
 	t.Helper()
 	scheme := runtime.NewScheme()
@@ -87,8 +44,11 @@ func newNodeIdentityCreateMachineFixture(
 	rawTemplate, err := json.Marshal(template.Object)
 	require.NoError(t, err)
 
-	nodeSet := db.NodeSet{KubernetesVersion: "1.32.1"}
-	nodeSet.SetCapi(db.CAPINodePoolProvider{InfraMachineTemplate: rawTemplate, NodeIdentity: identity})
+	nodeSet := db.NodeSet{
+		KubernetesVersion: "1.32.1",
+		NodeAgent:         &db.NodeAgentSettings{TokenSource: tokenSource},
+	}
+	nodeSet.SetCapi(db.CAPINodePoolProvider{InfraMachineTemplate: rawTemplate})
 
 	var metadataServiceArgs []bool
 	joinTokenCalls := 0
@@ -99,7 +59,7 @@ func newNodeIdentityCreateMachineFixture(
 			return "join-token", "/join-token-spire-agent/host-id/x", nil
 		},
 		NodeAgentBootstrapFiles: func(node db.Node) ([]db.CloudInitFile, error) {
-			metadataServiceArgs = append(metadataServiceArgs, node.UsesMetadataServiceIdentity())
+			metadataServiceArgs = append(metadataServiceArgs, node.UsesMetadataServiceToken())
 			return nil, nil
 		},
 		GetTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
@@ -109,10 +69,10 @@ func newNodeIdentityCreateMachineFixture(
 	return k8sClient, deps, nodeSet, &metadataServiceArgs, &joinTokenCalls
 }
 
-func TestClient_CreateMachine_MetadataServiceIdentity(t *testing.T) {
+func TestClient_CreateMachine_MetadataServiceToken(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	k8sClient, deps, nodeSet, metadataServiceArgs, joinTokenCalls := newNodeIdentityCreateMachineFixture(t, db.NodeIdentityMetadataService)
+	k8sClient, deps, nodeSet, metadataServiceArgs, joinTokenCalls := newNodeAgentTokenSourceCreateMachineFixture(t, db.NodeAgentTokenSourceMetadataService)
 	deps.GetTrustDomainBundle = func(context.Context, config.Config) (string, string, error) {
 		return "", "", errors.New("a node without a SPIRE agent needs no trust bundle")
 	}
@@ -124,7 +84,7 @@ func TestClient_CreateMachine_MetadataServiceIdentity(t *testing.T) {
 		SpireAttestationMethod:       db.SpireAttestationMethodJoinToken,
 		NodeAgentExternalMTLSEnabled: true,
 		NodeAgentTLSJWTEnabled:       true,
-		NodeIdentity:                 db.NodeIdentityMetadataService,
+		NodeAgentTokenSource:         db.NodeAgentTokenSourceMetadataService,
 	}
 	require.NoError(t, New().CreateMachine(ctx, deps, node, nodeSet, db.NodePool{ControlPlane: true}, db.Cluster{Name: "cluster-a"}))
 
@@ -135,14 +95,14 @@ func TestClient_CreateMachine_MetadataServiceIdentity(t *testing.T) {
 	assert.Empty(t, machine.Annotations[keys.MachineSpireAgentSpiffeIDPath.String()])
 }
 
-func TestClient_CreateMachine_SpireAgentIdentityJoinsWithAToken(t *testing.T) {
+func TestClient_CreateMachine_TokenExchangeJoinsWithASpireJoinToken(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	_, deps, nodeSet, metadataServiceArgs, joinTokenCalls := newNodeIdentityCreateMachineFixture(t, "")
+	_, deps, nodeSet, metadataServiceArgs, joinTokenCalls := newNodeAgentTokenSourceCreateMachineFixture(t, "")
 
 	node := db.Node{ID: uuid.New(), Name: "cp-0", SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodJoinToken}
 	require.NoError(t, New().CreateMachine(ctx, deps, node, nodeSet, db.NodePool{ControlPlane: true}, db.Cluster{Name: "cluster-a"}))
 
 	assert.Equal(t, []bool{false}, *metadataServiceArgs)
-	assert.Equal(t, 1, *joinTokenCalls, "the default identity still mints a join token")
+	assert.Equal(t, 1, *joinTokenCalls, "the default token source still mints a join token")
 }

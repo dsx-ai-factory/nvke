@@ -23,7 +23,7 @@ func TestUpdateSpireServerWorkflow(t *testing.T) {
 	nodeB := db.Node{ID: uuid.New(), Name: "b", IP: "10.0.0.2", SpiffeEnabled: true}
 	noSpiffe := db.Node{ID: uuid.New(), Name: "no-spiffe", IP: "10.0.0.3"}
 	noIP := db.Node{ID: uuid.New(), Name: "no-ip", SpiffeEnabled: true}
-	noSpireAgent := db.Node{ID: uuid.New(), Name: "no-spire-agent", IP: "10.0.0.4", SpiffeEnabled: true, NodeIdentity: db.NodeIdentityMetadataService}
+	noSpireAgent := db.Node{ID: uuid.New(), Name: "no-spire-agent", IP: "10.0.0.4", SpiffeEnabled: true, NodeAgentTokenSource: db.NodeAgentTokenSourceMetadataService}
 	dialAddressOnly := db.Node{
 		ID: uuid.New(), Name: "dial-address-only", SpiffeEnabled: true,
 		Capi: &db.CAPINodeProvider{AgentDialAddress: "10.1.0.5"},

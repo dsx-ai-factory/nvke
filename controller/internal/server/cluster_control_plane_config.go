@@ -358,8 +358,11 @@ func controlPlaneConfigSpecFromCreateAPI(
 		SchedulerExtraArgs:          componentExtraArgsFromAPI(c.Scheduler),
 	}
 
-	if c.NodeAgentConfig != nil && c.NodeAgentConfig.Version != nil {
-		spec.NodeAgentConfig.Version = *c.NodeAgentConfig.Version
+	if c.NodeAgentConfig != nil {
+		if c.NodeAgentConfig.Version != nil {
+			spec.NodeAgentConfig.Version = *c.NodeAgentConfig.Version
+		}
+		spec.NodeAgentConfig.TokenSource = dbNodeAgentTokenSourceFromAPI(c.NodeAgentConfig.TokenFrom)
 	}
 	switch providerType {
 	case db.ProviderTypeNico:
@@ -381,7 +384,6 @@ func controlPlaneConfigSpecFromCreateAPI(
 		if c.Infra != nil {
 			capiControlPlaneProvider.BootstrapFiles = dbCloudInitFilesFromAPI(c.Infra.BootstrapFiles)
 			capiControlPlaneProvider.PreKubeadmCommands = append([]string(nil), c.Infra.PreKubeadmCommands...)
-			capiControlPlaneProvider.NodeIdentity = dbNodeIdentityFromAPI(c.Infra.NodeIdentity)
 			if prefs, err := infraMachineTemplatePrefsFromAPI(c.Infra.MachineTemplate); err == nil {
 				capiControlPlaneProvider.InfraMachineTemplatePreferences = prefs
 			}
@@ -465,7 +467,6 @@ func apiInfraControlPlaneProviderFromDB(capiControlPlaneProvider *db.CAPIControl
 	out := &api.InfraControlPlaneProvider{
 		MachineTemplate:    firstInfraMachineTemplateObject(capiControlPlaneProvider.InfraMachineTemplatePreferences),
 		PreKubeadmCommands: append([]string(nil), capiControlPlaneProvider.PreKubeadmCommands...),
-		NodeIdentity:       apiNodeIdentityFromDB(capiControlPlaneProvider.NodeIdentity),
 	}
 	if files := apiCloudInitFilesFromDB(capiControlPlaneProvider.BootstrapFiles); files != nil {
 		out.BootstrapFiles = *files

@@ -30,6 +30,7 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/kubeadmconfig"
 	"github.com/dsx-ai-factory/nvke/controller/internal/naming"
+	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/otelx"
 )
 
@@ -352,6 +353,12 @@ func (s *clusterService) preflightCheckCreateClusterRequest(
 // validateNodeAgentProfile rejects new nodes of nodePool that could never
 // join under this deployment's node-agent settings, profile.
 func validateNodeAgentProfile(profile db.Node, cluster db.Cluster, nodePool db.NodePool) error {
+	// The pool's token source is provider-independent, so it is checked here
+	// rather than by each provider's validator.
+	profile.NodeAgentTokenSource = nodePool.NodeAgentTokenSource()
+	if err := profile.ValidateNodeAgentTokenSource(); err != nil {
+		return fmt.Errorf("this deployment's node-agent settings do not support the pool's token source: %w", err)
+	}
 	validator, err := clients.GetNodeAgentProfileValidator(cluster)
 	if err != nil {
 		return err
@@ -366,13 +373,10 @@ func validateNodeAgentProfile(profile db.Node, cluster db.Cluster, nodePool db.N
 // control plane, whose nodes belong to the node pool the provider builds from
 // spec.
 func validateControlPlaneNodeAgentProfile(profile db.Node, cluster db.Cluster, spec db.ControlPlaneConfigSpec) error {
-	nodeProvider, err := clients.GetControlPlaneConfigNodeProvider(cluster)
+	_, nodePool, err := nodes.ControlPlaneConfigNodeContext(cluster, db.Node{}, spec)
 	if err != nil {
 		return err
 	}
-	var nodeSet db.NodeSet
-	var nodePool db.NodePool
-	nodeProvider.ApplyControlPlaneConfigPayloads(db.Node{}, spec, &nodeSet, &nodePool)
 	return validateNodeAgentProfile(profile, cluster, nodePool)
 }
 
@@ -578,6 +582,7 @@ func (s *clusterService) createInitialNodePools(ctx context.Context, tx db.Tx, c
 			ProvisioningMonitorDisabled: nodePoolConfig.ProvisioningMonitorDisabled,
 			RecycleBudget:               nodePoolConfig.RecycleBudget,
 			TeleportEnabled:             nodePoolConfig.TeleportEnabled,
+			NodeAgentConfig:             nodePoolConfig.NodeAgentConfig,
 			Nico:                        nodePoolConfig.Nico,
 			Infra:                       nodePoolConfig.Infra,
 			MachineAnnotations:          nodePoolConfig.MachineAnnotations,
@@ -1062,6 +1067,10 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 		cluster.ControlPlaneConfig.DesiredCount = *req.DesiredCount
 	}
 
+	if req.NodeAgentConfig != nil && req.NodeAgentConfig.TokenFrom != nil &&
+		db.NodeAgentTokenSource(*req.NodeAgentConfig.TokenFrom) != spec.NodeAgentTokenSource() {
+		return newBadRequestErrorf("nodeAgentConfig.tokenFrom is set at creation and cannot be changed")
+	}
 	if req.NodeAgentConfig != nil && req.NodeAgentConfig.Version != nil {
 		version, err := canonicalNodeAgentVersion(*req.NodeAgentConfig.Version)
 		if err != nil {
@@ -1682,10 +1691,14 @@ func apiNodeAgentUpgradeFromDB(upgrade *db.NodeAgentUpgrade) *api.NodeAgentUpgra
 }
 
 func apiNodeAgentConfigFromDB(config db.NodeAgentConfig) *api.NodeAgentConfig {
-	if config.Version == "" {
+	if config.Version == "" && config.TokenSource == "" {
 		return nil
 	}
-	return &api.NodeAgentConfig{Version: &config.Version}
+	out := &api.NodeAgentConfig{TokenFrom: apiNodeAgentTokenSourceFromDB(config.TokenSource)}
+	if config.Version != "" {
+		out.Version = &config.Version
+	}
+	return out
 }
 
 func agentUpgradeBlocksMaintenance(cluster db.Cluster, request *api.UpdateClusterJSONRequestBody) bool {

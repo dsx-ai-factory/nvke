@@ -12,13 +12,10 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// ValidateNodeAgentProfile accepts every profile that supports the pool's
-// node identity.
-func (*Client) ValidateNodeAgentProfile(profile db.Node, nodePool db.NodePool) error {
-	if nodePool.Capi != nil {
-		profile.NodeIdentity = nodePool.Capi.NodeIdentity
-	}
-	return profile.ValidateNodeIdentity()
+// ValidateNodeAgentProfile accepts every profile: an operator-supplied machine
+// template can render a machine for any of them.
+func (*Client) ValidateNodeAgentProfile(db.Node, db.NodePool) error {
+	return nil
 }
 
 // SpireAgentPath supplies no path: CreateMachine writes a join-token node's

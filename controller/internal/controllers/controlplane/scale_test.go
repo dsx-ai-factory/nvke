@@ -77,12 +77,12 @@ func TestCreatePendingNodeSetsFailureDomainButLeavesInstanceTypeUnset(t *testing
 	mockTx.AssertExpectations(t)
 }
 
-func TestCreatePendingNode_PinsNodeIdentity(t *testing.T) {
+func TestCreatePendingNode_PinsNodeAgentTokenSource(t *testing.T) {
 	t.Parallel()
 
 	mockTx := &testutil.MockTx{}
 	mockTx.On("CreateNode", mock.Anything, mock.MatchedBy(func(node *db.Node) bool {
-		return node.NodeIdentity == db.NodeIdentityMetadataService
+		return node.NodeAgentTokenSource == db.NodeAgentTokenSourceMetadataService
 	})).Return(db.Node{}, nil).Once()
 
 	r := &reconciler{db: mockTx, logger: slog.Default()}
@@ -93,7 +93,8 @@ func TestCreatePendingNode_PinsNodeIdentity(t *testing.T) {
 		ControlPlaneConfig: db.ControlPlaneConfig{
 			ConfigurationID: uuid.New(),
 			ControlPlaneConfigSpec: db.ControlPlaneConfigSpec{
-				Capi: &db.CAPIControlPlaneProvider{NodeIdentity: db.NodeIdentityMetadataService},
+				Capi:            &db.CAPIControlPlaneProvider{},
+				NodeAgentConfig: db.NodeAgentConfig{TokenSource: db.NodeAgentTokenSourceMetadataService},
 			},
 		},
 	}

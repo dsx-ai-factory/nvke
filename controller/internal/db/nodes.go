@@ -39,7 +39,7 @@ type Node struct {
 	SpireAttestationMethod       SpireAttestationMethod `bun:"type:text,notnull"`
 	NodeAgentExternalMTLSEnabled bool                   `bun:"node_agent_external_mtls_enabled,type:boolean,notnull,default:false"`
 	NodeAgentTLSJWTEnabled       bool                   `bun:"node_agent_tls_jwt_enabled,type:boolean,notnull,default:false"`
-	NodeIdentity                 NodeIdentity           `bun:"node_identity,type:text,notnull,default:''"`
+	NodeAgentTokenSource         NodeAgentTokenSource   `bun:"node_agent_token_source,type:text,notnull,default:''"`
 	Conditions                   NodeConditions         `bun:"type:jsonb"`
 	AgentVersion                 string                 `bun:"type:text,notnull,default:''"`
 	ControlPlaneConfigurationID  uuid.UUID              `bun:"configuration_id,type:uuid,nullzero"`
@@ -81,10 +81,10 @@ type CAPINodeProvider struct {
 	AgentDialAddress string `json:"agent_dial_address,omitempty"`
 }
 
-// UsesMetadataServiceIdentity reports whether the node runs no SPIRE agent
-// and its agent gets its identity from the DSX metadata service.
-func (n Node) UsesMetadataServiceIdentity() bool {
-	return n.NodeIdentity == NodeIdentityMetadataService
+// UsesMetadataServiceToken reports whether the node runs no SPIRE agent and
+// its agent reads its token from the DSX metadata service.
+func (n Node) UsesMetadataServiceToken() bool {
+	return n.NodeAgentTokenSource == NodeAgentTokenSourceMetadataService
 }
 
 // AgentDialHost returns the host the controller dials the node agent at.
@@ -110,29 +110,29 @@ func (n Node) ValidateSecurityProfile() error {
 	if n.NodeAgentTLSJWTEnabled && !n.SpiffeEnabled && !n.NodeAgentExternalMTLSEnabled {
 		return fmt.Errorf("node %s requires a TLS transport for TLS/JWT", n.ID)
 	}
-	if err := n.ValidateNodeIdentity(); err != nil {
+	if err := n.ValidateNodeAgentTokenSource(); err != nil {
 		return fmt.Errorf("node %s: %w", n.ID, err)
 	}
 	return nil
 }
 
-// ErrMetadataServiceIdentityRequiresTLSJWT rejects a metadataService node
-// whose agent could not authenticate.
-var ErrMetadataServiceIdentityRequiresTLSJWT = errors.New("metadataService node identity requires TLS/JWT with external mTLS: the node runs no SPIRE agent")
+// ErrMetadataServiceTokenRequiresTLSJWT rejects a metadataService node whose
+// agent could not authenticate.
+var ErrMetadataServiceTokenRequiresTLSJWT = errors.New("metadataService token source requires TLS/JWT with external mTLS: the node runs no SPIRE agent")
 
-// ValidateNodeIdentity rejects a node identity the node's agent settings
-// cannot support.
-func (n Node) ValidateNodeIdentity() error {
-	switch n.NodeIdentity {
-	case "", NodeIdentitySpireAgent:
+// ValidateNodeAgentTokenSource rejects a token source the node's agent
+// settings cannot support.
+func (n Node) ValidateNodeAgentTokenSource() error {
+	switch n.NodeAgentTokenSource {
+	case "", NodeAgentTokenSourceTokenExchange:
 		return nil
-	case NodeIdentityMetadataService:
+	case NodeAgentTokenSourceMetadataService:
 		if !n.NodeAgentTLSJWTEnabled || !n.NodeAgentExternalMTLSEnabled {
-			return ErrMetadataServiceIdentityRequiresTLSJWT
+			return ErrMetadataServiceTokenRequiresTLSJWT
 		}
 		return nil
 	default:
-		return fmt.Errorf("invalid node identity %q", n.NodeIdentity)
+		return fmt.Errorf("invalid node agent token source %q", n.NodeAgentTokenSource)
 	}
 }
 
@@ -582,8 +582,8 @@ func (q *queriesImpl) CreateNode(ctx context.Context, node *Node) (Node, error) 
 func (q *queriesImpl) UpdateNode(ctx context.Context, node *Node) (Node, error) {
 	node.UpdatedAt = time.Now()
 	res, err := q.db.NewUpdate().Model(node).
-		ExcludeColumn("spiffe_enabled", "spire_attestation_method", "node_agent_external_mtls_enabled", "node_agent_tls_jwt_enabled", "node_identity").
-		WherePK().Returning("id, spiffe_enabled, spire_attestation_method, node_agent_external_mtls_enabled, node_agent_tls_jwt_enabled, node_identity").Exec(ctx)
+		ExcludeColumn("spiffe_enabled", "spire_attestation_method", "node_agent_external_mtls_enabled", "node_agent_tls_jwt_enabled", "node_agent_token_source").
+		WherePK().Returning("id, spiffe_enabled, spire_attestation_method, node_agent_external_mtls_enabled, node_agent_tls_jwt_enabled, node_agent_token_source").Exec(ctx)
 	if err != nil {
 		return Node{}, err
 	}

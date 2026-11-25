@@ -987,6 +987,7 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool, count db.NodePoolCounts) api.Nod
 		MaxSurge:                    maxSurge,
 		CurrentNodeSetID:            dbNodePool.CurrentNodeSetID,
 		TeleportEnabled:             &dbNodePool.TeleportEnabled,
+		NodeAgentConfig:             apiNodeAgentSettingsFromDB(dbNodePool.NodeAgent),
 
 		Nico:        apiNicoNodePoolProviderFromDB(dbNodePool.Nico),
 		Infra:       apiInfraNodePoolProviderFromDB(dbNodePool.Capi),
@@ -1033,7 +1034,6 @@ func apiInfraNodePoolProviderFromDB(capiNodePoolProvider *db.CAPINodePoolProvide
 	out := &api.InfraNodePoolProvider{
 		MachineTemplate:    obj,
 		PreKubeadmCommands: append([]string(nil), capiNodePoolProvider.PreKubeadmCommands...),
-		NodeIdentity:       apiNodeIdentityFromDB(capiNodePoolProvider.NodeIdentity),
 	}
 	if apiFiles := apiCloudInitFilesFromDB(capiNodePoolProvider.BootstrapFiles); apiFiles != nil {
 		out.BootstrapFiles = *apiFiles
@@ -1149,6 +1149,7 @@ func dbNodePoolFromAPI(
 		TeleportEnabled:             teleportEnabled,
 		MachineAnnotations:          db.CloneStringMap(req.MachineAnnotations),
 		MachineLabels:               db.CloneStringMap(req.MachineLabels),
+		NodeAgent:                   dbNodeAgentSettingsFromAPI(req.NodeAgentConfig),
 	}
 
 	switch {
@@ -1185,7 +1186,6 @@ func dbNodePoolFromAPI(
 			InfraMachineTemplate: infraMachineTemplate,
 			BootstrapFiles:       dbCloudInitFilesFromAPI(req.Infra.BootstrapFiles),
 			PreKubeadmCommands:   append([]string(nil), req.Infra.PreKubeadmCommands...),
-			NodeIdentity:         dbNodeIdentityFromAPI(req.Infra.NodeIdentity),
 		})
 	case req.LaunchLayer != nil:
 		nodePool.SetLaunchLayer(dbLaunchLayerNodePoolProviderFromAPI(*req.LaunchLayer))

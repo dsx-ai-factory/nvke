@@ -97,6 +97,7 @@ func apiNodeSetFromDB(dbNodeSet *db.NodeSet) (api.NodeSet, error) {
 		KubeReservedMemory:   kubeReservedMemory,
 		KubernetesVersion:    dbNodeSet.KubernetesVersion,
 		TeleportEnabled:      &dbNodeSet.TeleportEnabled,
+		NodeAgentConfig:      apiNodeAgentSettingsFromDB(dbNodeSet.NodeAgent),
 		Nico:                 apiNicoNodeSetProviderFromDB(dbNodeSet.Nico),
 		Infra:                apiInfraNodeSetProviderFromDB(dbNodeSet.Capi),
 		LaunchLayer:          apiLaunchLayerNodeSetProviderFromDB(dbNodeSet.LaunchLayer),
@@ -137,7 +138,6 @@ func apiInfraNodeSetProviderFromDB(capiNodeSetProvider *db.CAPINodePoolProvider)
 	out := &api.InfraNodeSetProvider{
 		MachineTemplate:    obj,
 		PreKubeadmCommands: append([]string(nil), capiNodeSetProvider.PreKubeadmCommands...),
-		NodeIdentity:       apiNodeIdentityFromDB(capiNodeSetProvider.NodeIdentity),
 	}
 	if apiFiles := apiCloudInitFilesFromDB(capiNodeSetProvider.BootstrapFiles); apiFiles != nil {
 		out.BootstrapFiles = *apiFiles
