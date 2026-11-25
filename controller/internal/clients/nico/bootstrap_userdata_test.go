@@ -334,6 +334,42 @@ autoinstall:
 			emptyControllerCA: true,
 			wantErr:           "controller client CA bundle is required when external node-agent mTLS is enabled",
 		},
+		"a template that guards its CNI install installs only for calico": {
+			config: baseConfig,
+			template: "start\n" +
+				"{{- if .CalicoEnabled }}\ncalico {{ .CNIImagePackage }} {{ .CNIChartsPackage }}\n{{- end }}\n" +
+				"{{- if .OvnEnabled }}\novn {{ .CNIImagePackage }} {{ .CNIChartsPackage }}\n{{- end }}\n" +
+				"done\n",
+			node:              db.Node{Name: "test-node", AgentVersion: nodecontract.NewFormMinAgentVersion},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Equal(t, "start\ncalico nvke-cni-calico-images-3.31.5 nvke-cni-calico-manifests-3.31.5\ndone\n", userData)
+			},
+		},
+		"a template that guards its CNI install installs only for ovn-kubernetes": {
+			config: baseConfig,
+			template: "start\n" +
+				"{{- if .CalicoEnabled }}\ncalico {{ .CNIImagePackage }} {{ .CNIChartsPackage }}\n{{- end }}\n" +
+				"{{- if .OvnEnabled }}\novn {{ .CNIImagePackage }} {{ .CNIChartsPackage }}\n{{- end }}\n" +
+				"done\n",
+			node:              db.Node{Name: "test-node", AgentVersion: nodecontract.NewFormMinAgentVersion},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: "1.4.1"},
+			verify: func(t *testing.T, userData string) {
+				t.Helper()
+				assert.Equal(t, "start\novn nvke-cni-ovn-images-1.4.1 nvke-cni-ovn-charts-1.4.1\ndone\n", userData)
+			},
+		},
+		"an unknown CNI plugin is refused": {
+			config:            baseConfig,
+			template:          "files={{ len .Files }}\n",
+			node:              db.Node{Name: "test-node"},
+			kubernetesVersion: "1.33.0",
+			cluster:           db.Cluster{CniPlugin: db.CniPlugin("flannel")},
+			wantErr:           "unsupported CNI plugin: flannel",
+		},
 	}
 
 	for name, params := range tests {
@@ -403,25 +439,7 @@ func parseAutoinstallWriteFiles(t *testing.T, userData string) []testWriteFile {
 func TestUnit_RenderUserData_ProfileFixturesSupportGenericFiles(t *testing.T) {
 	t.Parallel()
 
-	releasesDir := filepath.Join("..", "..", "..", "test", "fixtures", "releases")
-	fixtureTemplates := map[string]func(t *testing.T) string{}
-	for _, name := range []string{
-		"nvke-local-dev-kindest-arm64",
-		"nvke-nico-vms-24.04-amd64-fde",
-		"nvke-nico-vms-24.04-arm64-fde",
-		"test-fixture-amd64",
-	} {
-		fixtureTemplates["release "+name] = func(t *testing.T) string {
-			t.Helper()
-			return releaseUserDataTemplate(t, filepath.Join(releasesDir, name+"-nodepoolrelease.yaml"))
-		}
-	}
-	fixtureTemplates["nico-sim prod-userdata"] = func(t *testing.T) string {
-		t.Helper()
-		data, err := os.ReadFile(filepath.Join("..", "..", "..", "nico-sim", "test", "integration", "testutil", "testdata", "prod-userdata.tmpl"))
-		require.NoError(t, err)
-		return string(data)
-	}
+	fixtureTemplates := userDataFixtureTemplates()
 
 	for fixtureName, load := range fixtureTemplates {
 		t.Run(fixtureName, func(t *testing.T) {
@@ -562,6 +580,68 @@ func parseWriteFiles(t *testing.T, userData string) []testWriteFile {
 	return cloudConfig.Autoinstall.UserData.WriteFiles
 }
 
+func TestUnit_RenderUserData_ProfileFixturesRenderPerPlugin(t *testing.T) {
+	t.Parallel()
+
+	plugins := map[string]struct {
+		cluster    db.Cluster
+		wantNamed  string
+		wantAbsent []string
+	}{
+		"calico":         {cluster: db.Cluster{CniPlugin: db.CNICalico, CniVersion: "3.31.5"}, wantNamed: "cni-calico", wantAbsent: []string{"cni-ovn"}},
+		"ovn-kubernetes": {cluster: db.Cluster{CniPlugin: db.CNIOvnKubernetes, CniVersion: "1.4.1"}, wantNamed: "cni-ovn", wantAbsent: []string{"cni-calico"}},
+	}
+
+	installsCNIPackages := map[string]bool{
+		"release nvke-nico-vms-24.04-amd64-fde": true,
+		"release nvke-nico-vms-24.04-arm64-fde": true,
+		"release test-fixture-amd64":            true,
+	}
+
+	for fixtureName, load := range userDataFixtureTemplates() {
+		for pluginName, plugin := range plugins {
+			t.Run(fixtureName+"/"+pluginName, func(t *testing.T) {
+				t.Parallel()
+
+				template := load(t)
+				cfg := config.Config{
+					DgxcTenantUser:               "test-admin",
+					DgxcTenantPassword:           "test-password",
+					NodeAgentExternalMTLSEnabled: true,
+					NodeAgent: config.NodeAgentConfig{
+						Port:                   "15005",
+						SpireAttestationMethod: config.SpireAttestationMethodTPM,
+					},
+				}
+				deps := shared.MachineCreateDeps{
+					Config:                   cfg,
+					ControllerClientCABundle: testControllerClientCA,
+					NodeAgentBootstrapFiles:  testNodeAgentBootstrapFiles(cfg, testControllerClientCA),
+					GetTrustDomainBundle: func(context.Context, config.Config) (string, string, error) {
+						return "example.com", "first certificate\nsecond certificate\n", nil
+					},
+				}
+				userData, err := renderUserData(
+					context.Background(),
+					deps,
+					template,
+					db.Node{Name: "test-node", SpiffeEnabled: true, NodeAgentExternalMTLSEnabled: true},
+					db.DiskSelectionStrategyLargest,
+					"1.33.0",
+					&TeleportUserDataConfig{},
+					plugin.cluster,
+				)
+				require.NoError(t, err)
+
+				for _, absent := range plugin.wantAbsent {
+					assert.NotContains(t, userData, absent)
+				}
+				assert.Equal(t, installsCNIPackages[fixtureName], strings.Contains(userData, plugin.wantNamed))
+			})
+		}
+	}
+}
+
 func TestBuildTeleportLabels(t *testing.T) {
 	nodeID := uuid.MustParse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee")
 	siteID := uuid.MustParse("11111111-2222-3333-4444-555555555555")
@@ -619,4 +699,28 @@ func TestBuildTeleportLabels(t *testing.T) {
 		assert.NotContains(t, got, "node-pool:")
 		assert.NotContains(t, got, uuid.Nil.String())
 	})
+}
+
+func userDataFixtureTemplates() map[string]func(t *testing.T) string {
+	releasesDir := filepath.Join("..", "..", "..", "test", "fixtures", "releases")
+	fixtureTemplates := map[string]func(t *testing.T) string{}
+	for _, name := range []string{
+		"nvke-local-dev-kindest-arm64",
+		"nvke-nico-vms-24.04-amd64-fde",
+		"nvke-nico-vms-24.04-arm64-fde",
+		"test-fixture-amd64",
+	} {
+		fixtureTemplates["release "+name] = func(t *testing.T) string {
+			t.Helper()
+			return releaseUserDataTemplate(t, filepath.Join(releasesDir, name+"-nodepoolrelease.yaml"))
+		}
+	}
+	fixtureTemplates["nico-sim prod-userdata"] = func(t *testing.T) string {
+		t.Helper()
+		data, err := os.ReadFile(filepath.Join("..", "..", "..", "nico-sim", "test", "integration", "testutil", "testdata", "prod-userdata.tmpl"))
+		require.NoError(t, err)
+		return string(data)
+	}
+
+	return fixtureTemplates
 }
