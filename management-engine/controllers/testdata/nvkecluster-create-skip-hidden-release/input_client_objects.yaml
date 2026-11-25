@@ -38,13 +38,11 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: hidden-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo hidden-release
   lifecycle:
     hidden: true
@@ -59,13 +57,11 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: eligible-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo eligible-release
 ---
 apiVersion: v1
@@ -87,7 +83,7 @@ data:
   controlplaneTmpl: &machineTemplate |
     {
       "bootstrapFiles": {{ .BootstrapFilesJSON }},
-      "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
+      "preKubeadmCommands": {{ .PreBootstrapCommandsJSON }},
       "machineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
         "kind": "NicoMachineTemplate",

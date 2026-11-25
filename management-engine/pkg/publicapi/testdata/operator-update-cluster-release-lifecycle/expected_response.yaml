@@ -12,14 +12,19 @@ body:
     machine_image_ref:
       name: ubuntu-2404-amd64
     machine_init:
-      user_data_template: |
-        #cloud-config
-        hostname: nvke-control-plane
+      bootstrap:
+        bootstrap_files:
+        - content: control-plane-v1
+          owner: root:root
+          path: /etc/nvke/release
+          permissions: "0644"
+        pre_bootstrap_commands:
+        - hostnamectl set-hostname nvke-control-plane
 headers:
   Cache-Control:
   - no-store
   Content-Length:
-  - "355"
+  - "492"
   Content-Type:
   - application/json
   Date:

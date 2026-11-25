@@ -27,16 +27,14 @@
         hidden: false
       machine_image_ref:
         name: img-ubuntu
-      machine_init:
-        user_data_template: |
-          #cloud-config
+      machine_init: {}
       profile: ubuntu-cpu
       tag: "2026.11"
   headers:
     Cache-Control:
     - no-store
     Content-Length:
-    - "326"
+    - "288"
     Content-Type:
     - application/json
     Date:
@@ -55,16 +53,14 @@
         hidden: false
       machine_image_ref:
         name: img-ubuntu
-      machine_init:
-        user_data_template: |
-          #cloud-config
+      machine_init: {}
       profile: ubuntu-gpu
       tag: "2026.12"
   headers:
     Cache-Control:
     - no-store
     Content-Length:
-    - "326"
+    - "288"
     Content-Type:
     - application/json
     Date:

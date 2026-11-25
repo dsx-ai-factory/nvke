@@ -115,9 +115,6 @@
         hidden: true
       machine_image_ref:
         name: img-ubuntu
-      machine_init:
-        user_data_template: |
-          #cloud-config
-          {}
+      machine_init: {}
       profile: ubuntu-gpu
       tag: "2026.11"

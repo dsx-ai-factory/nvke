@@ -38,9 +38,7 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-bootstrap-example.conf
           owner: root:root
@@ -48,7 +46,7 @@ spec:
           content: |
             message="quoted value"
             literal={{ leave_this_untouched }}
-      preKubeadmCommands:
+      preBootstrapCommands:
         - "mkdir -p /run/cluster-api"
         - "echo success > /run/cluster-api/bootstrap-success.complete"
 ---
@@ -62,9 +60,7 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-bootstrap-example.conf
           owner: root:root
@@ -72,7 +68,7 @@ spec:
           content: |
             message="quoted value"
             literal={{ leave_this_untouched }}
-      preKubeadmCommands:
+      preBootstrapCommands:
         - "mkdir -p /run/cluster-api"
         - "echo success > /run/cluster-api/bootstrap-success.complete"
 ---
@@ -98,7 +94,7 @@ data:
   nodepoolTmpl: &machineTemplate |
     {
       "bootstrapFiles": {{ .BootstrapFilesJSON }},
-      "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
+      "preKubeadmCommands": {{ .PreBootstrapCommandsJSON }},
       "machineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
         "kind": "NicoMachineTemplate",
