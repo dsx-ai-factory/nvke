@@ -394,9 +394,23 @@ container report a new boot ID like a real machine.
 | `NICO_CONTAINERS_NODE_NETWORK` | `kind` | Docker network for container nodes |
 | `NICO_CONTAINERS_NODE_IMAGE` | `cwe-capd-kindest-node:local` | Container node image |
 | `NICO_CONTAINERS_DOCKER_BINARY` | `docker` | Docker CLI path |
+| `NICO_CONTAINERS_NODE_GPUS` | empty | Value for `docker create --gpus` on every container node, for example `all`. Empty passes no flag. Needs the NVIDIA container toolkit on the Docker host; Docker reports an invalid value itself |
 
 The default seed includes one container site. A custom seed without a container
 site must set `NICO_CONTAINERS_ENABLED=false`.
+
+#### GPUs and restarts
+
+Container nodes are privileged, so the host's `/dev/nvidia*` devices are visible
+inside them, but the driver's user-space libraries are not. Set
+`NICO_CONTAINERS_NODE_GPUS=all` (or any other `--gpus` value) to have the NVIDIA
+container toolkit inject them into every node.
+
+Nodes use `--restart always`, so a Docker or host restart restarts them. The
+node image re-reads the address Docker assigned before networkd starts. A
+control-plane node still does not survive a restart: `/var/lib/etcd` is a tmpfs,
+the base image's entrypoint drops the API server certificate when the address
+changes, and the kube-vip manifest keeps the old address.
 
 The container implementation was previously named `nico-mock`. Docker labels
 and in-container state paths now use `nico-containers`, so rebuild the node

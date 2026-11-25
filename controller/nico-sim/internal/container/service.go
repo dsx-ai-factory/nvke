@@ -72,6 +72,8 @@ type Config struct {
 	NodeImage              string
 	SpireAttestationMethod string
 	DockerBinary           string
+	// NodeGPUs is passed to `docker create --gpus` when not empty, for example "all".
+	NodeGPUs string
 }
 
 func (c Config) withDefaults() Config {
@@ -270,6 +272,9 @@ func (s *Service) createInstance(ctx context.Context, instanceID string, req nic
 		"--volume", "/lib/modules:/lib/modules:ro",
 		"--entrypoint", "/bin/sh",
 		"--tty",
+	}
+	if gpus := strings.TrimSpace(s.cfg.NodeGPUs); gpus != "" {
+		createArgs = append(createArgs, "--gpus", gpus)
 	}
 	for key, value := range labels {
 		createArgs = append(createArgs, "--label", key+"="+value)

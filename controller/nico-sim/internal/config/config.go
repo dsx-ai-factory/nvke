@@ -92,6 +92,7 @@ type Config struct {
 	ContainerSpireAttestationMethod string
 	ContainerDockerBinary           string
 	ContainerRequireHealth          bool
+	ContainerNodeGPUs               string
 }
 
 // UseLibvirtNetwork reports whether VMs should attach to a pre-existing
@@ -215,6 +216,7 @@ func Parse(logger *slog.Logger) (Config, error) {
 		ContainerSpireAttestationMethod: envOrDefault("NICO_CONTAINERS_SPIRE_ATTESTATION_METHOD", "tpm"),
 		ContainerDockerBinary:           envOrDefault("NICO_CONTAINERS_DOCKER_BINARY", "docker"),
 		ContainerRequireHealth:          strings.EqualFold(envOrDefault("NICO_CONTAINERS_REQUIRE_HEALTHY", "false"), "true"),
+		ContainerNodeGPUs:               strings.TrimSpace(os.Getenv("NICO_CONTAINERS_NODE_GPUS")),
 	}
 
 	if err := cfg.normalize(logger); err != nil {
