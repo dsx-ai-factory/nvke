@@ -101,6 +101,29 @@ func TestNodeAgentTokenSourceCannotBeChangedByAnUpdate(t *testing.T) {
 	require.Equal(t, db.NodeAgentTokenSourceMetadataService, spec.NodeAgentTokenSource())
 }
 
+// A cluster created without a tokenFrom stores the empty value, which stands
+// for tokenExchange, so resending the default is not a change and must not
+// take the version update down with it.
+func TestNodeAgentTokenSourceDefaultResentIsNotAChange(t *testing.T) {
+	service := clusterService{nodeAgentUpdateMethod: "apt"}
+	ctx := context.Background()
+	spec := db.ControlPlaneConfigSpec{}
+	cluster := db.Cluster{}
+
+	tokenExchange := api.NodeAgentTokenSourceTokenExchange
+	version := "v1.2.3"
+	req := &api.UpdateClusterControlPlaneConfig{
+		NodeAgentConfig: &api.NodeAgentConfig{TokenFrom: &tokenExchange, Version: &version},
+	}
+	require.NoError(t, service.applyClusterLevelControlPlaneSpecUpdate(ctx, &cluster, req, &spec))
+	require.Equal(t, "v1.2.3", spec.NodeAgentConfig.Version)
+
+	metadataService := api.NodeAgentTokenSourceMetadataService
+	req = &api.UpdateClusterControlPlaneConfig{NodeAgentConfig: &api.NodeAgentConfig{TokenFrom: &metadataService}}
+	err := service.applyClusterLevelControlPlaneSpecUpdate(ctx, &cluster, req, &spec)
+	require.ErrorContains(t, err, "set at creation and cannot be changed")
+}
+
 func TestClusterDeletionLeavesAcceptedAgentUpgradeAlone(t *testing.T) {
 	cluster := db.Cluster{ID: uuid.New(), NodeAgentUpgrade: &db.NodeAgentUpgrade{NodeID: uuid.New(), Phase: "Running"}}
 	database := &testutil.MockDB{MockTx: &testutil.MockTx{}}

@@ -1068,7 +1068,7 @@ func (s *clusterService) applyClusterLevelControlPlaneSpecUpdate(
 	}
 
 	if req.NodeAgentConfig != nil && req.NodeAgentConfig.TokenFrom != nil &&
-		db.NodeAgentTokenSource(*req.NodeAgentConfig.TokenFrom) != spec.NodeAgentTokenSource() {
+		db.NodeAgentTokenSource(*req.NodeAgentConfig.TokenFrom).Effective() != spec.NodeAgentTokenSource().Effective() {
 		return newBadRequestErrorf("nodeAgentConfig.tokenFrom is set at creation and cannot be changed")
 	}
 	if req.NodeAgentConfig != nil && req.NodeAgentConfig.Version != nil {

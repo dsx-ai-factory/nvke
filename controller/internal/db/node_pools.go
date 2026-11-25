@@ -43,6 +43,15 @@ const (
 	NodeAgentTokenSourceMetadataService NodeAgentTokenSource = "metadataService"
 )
 
+// Effective resolves the empty value to the default it stands for, so an
+// omitted source and an explicit tokenExchange compare equal.
+func (n NodeAgentTokenSource) Effective() NodeAgentTokenSource {
+	if n == "" {
+		return NodeAgentTokenSourceTokenExchange
+	}
+	return n
+}
+
 // NodeAgentSettings holds the node-agent settings a node pool or control plane
 // pins onto its nodes, independent of the infrastructure provider that creates
 // them.
