@@ -41,6 +41,7 @@ clusters:
     systemReservedMemory: 1Gi
   controlPlaneKubernetesVersion: 1.34.8
   createdAt: "0001-01-01T00:00:00Z"
+  enableCPNodeRecycling: true
   etcdEncrypted: true
   id: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
   infra:
@@ -129,6 +130,7 @@ requests:
       provisioningMonitorDisabled: false
       systemReservedMemory: 1Gi
     controlPlaneKubernetesVersion: 1.34.8
+    enableCPNodeRecycling: true
     etcdEncrypted: true
     infra:
       cluster:
