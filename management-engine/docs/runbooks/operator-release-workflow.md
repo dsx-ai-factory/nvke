@@ -1,11 +1,8 @@
 # Operator release workflow
 
-Operators use the Cluster Service APIs to publish releases and make them available
-through channels. This runbook uses the service-layer API (`service.nvke.nvidia.com/v1`):
-`ClusterRelease` and `ClusterReleaseChannel` select control-plane releases;
-`NodeProfile` selects worker releases. The controller's
-[node-image guide](../../../docs/operate/build-node-images.md) describes its separate
-`internal.nvke.nvidia.com/v1` resources, including `NodePoolRelease`.
+Operators are privileged users of Cluster Service who publish releases and make
+them available through channels. Release changes go through the Cluster Service
+APIs; the `kubectl` commands in this runbook inspect state and workload health.
 
 This runbook covers the routine release workflow:
 
@@ -17,6 +14,10 @@ This runbook covers the routine release workflow:
 Publishing adds a catalog record. Updating a channel changes the releases available
 to clusters following it, according to their version selection and eligibility
 rules. A cluster can also be moved to another channel or version selection.
+
+Administrators building node images and configuring the NVKE controller's
+lower-level catalog should use the [node-image guide](../../../docs/operate/build-node-images.md).
+That catalog is separate from the one managed through the Cluster Service APIs.
 
 For container images and Helm charts, see [package publication](../artifact-publication.md).
 For validation on one cluster, see [test a release before wider rollout](#test-a-release-before-wider-rollout).
