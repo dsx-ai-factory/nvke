@@ -119,6 +119,9 @@ type ClusterSpec struct {
 	ControlPlane       ControlPlane
 	Workers            []NodePoolSpec
 	Network            *ClusterNetworkSpec
+	// EnableCPNodeRecycling sets enableCPNodeRecycling true on the create request.
+	// False leaves the field out, so the controller default applies.
+	EnableCPNodeRecycling bool
 
 	// Infrastructure-specific cluster fields. Nico containers use SiteID and
 	// VpcID inside their CAPI manifests; NICo VMs use all three as API fields.
@@ -209,6 +212,19 @@ func shellQuote(value string) string {
 // creates it through the CLI. Sharing the builder is what keeps the CLI-driven
 // table entry differing from its REST counterpart in transport alone.
 func BuildCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
+	req, err := buildBackendCreateRequest(spec)
+	if err != nil {
+		return req, err
+	}
+	if spec.EnableCPNodeRecycling {
+		enable := true
+		req.EnableCPNodeRecycling = &enable
+	}
+	return req, nil
+}
+
+// buildBackendCreateRequest builds the backend-specific part of the create request.
+func buildBackendCreateRequest(spec ClusterSpec) (api.CreateClusterRequest, error) {
 	switch spec.Backend {
 	case BackendCAPD:
 		return buildCAPDRequest(spec)

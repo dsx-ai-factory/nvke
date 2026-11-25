@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/api"
+	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvke"
 	"github.com/dsx-ai-factory/nvke/controller/test/e2e/internal/nvkectl"
 )
@@ -89,6 +90,11 @@ func (t *tenantTest) closeNvkectl() {
 // cluster. initCluster already drove the create, list and provisioning wait
 // through nvkectl; these are the commands left over.
 func validateNvkectlPostCreate(test *tenantTest) {
+	// test.cfg is only assigned inside "creates the cluster", which runs after the
+	// tree is built. The reuse setting is read from the config file here instead.
+	cfg, err := config.Load(cfgPath)
+	Expect(err).NotTo(HaveOccurred(), "load e2e configuration")
+
 	Describe("nvkectl against the provisioned cluster", Label("nvkectl"), func() {
 		BeforeEach(func() {
 			// Assert rather than Skip: a missing runner here is a bug in this
@@ -127,20 +133,44 @@ func validateNvkectlPostCreate(test *tenantTest) {
 			Expect(nodes.Items).NotTo(BeEmpty(), "the tenant cluster should report at least one node")
 		}, SpecTimeout(5*time.Minute))
 
+		// initCluster created this cluster with enableCPNodeRecycling set, through
+		// `nvkectl create cluster`. Checking the stored value proves the create-time
+		// flag reaches the controller. This spec must run before the patch below.
+		//
+		// A reused cluster was not created by this run, so its create-time flag is
+		// unknown. The spec is left out of the tree rather than skipped at run time:
+		// a runtime skip from this file would trip e2e_assert_no_new_skips.
+		if cfg.Lifecycle.ReuseCluster == "" {
+			It("stores enableCPNodeRecycling set at create", func(ctx context.Context) {
+				cluster, err := test.lifecycle.GetByName(ctx, test.cluster.Name)
+				Expect(err).NotTo(HaveOccurred(), "should read the created cluster")
+
+				Expect(cluster.EnableCPNodeRecycling).NotTo(BeNil(), "the create-time field should be reported")
+				Expect(*cluster.EnableCPNodeRecycling).To(BeTrue(), "the create-time flag should be stored")
+			}, SpecTimeout(5*time.Minute))
+		}
+
 		// The CLI's unit tests cover the flag surface; what is left to e2e is a
 		// patch reaching the controller and sticking to a cluster that provisioned.
 		//
 		// enableCPNodeRecycling only changes what a later upgrade would do, so it
 		// starts nothing that could collide with the delete below. The one-way
 		// fields each hold the update lock for a workflow, and a version bump
-		// recycles nodes.
+		// recycles nodes. The patch sets the flag to the opposite of the stored
+		// value, so the assertion cannot pass when the patch was ignored. That holds
+		// on a reused cluster too, where the stored value is not known in advance.
 		It("applies a patch to the provisioned cluster", func(ctx context.Context) {
+			current, err := test.lifecycle.GetByName(ctx, test.cluster.Name)
+			Expect(err).NotTo(HaveOccurred(), "should read the cluster before patching")
+			Expect(current.EnableCPNodeRecycling).NotTo(BeNil(), "the current field should be reported")
+			want := !*current.EnableCPNodeRecycling
+
 			patched, err := test.nvkectlRunner.PatchCluster(ctx, test.cluster.Name,
-				[]byte("enableCPNodeRecycling: true\n"))
+				[]byte(fmt.Sprintf("enableCPNodeRecycling: %t\n", want)))
 			Expect(err).NotTo(HaveOccurred(), "should patch the cluster")
 
 			Expect(patched.EnableCPNodeRecycling).NotTo(BeNil(), "the patched field should be reported")
-			Expect(*patched.EnableCPNodeRecycling).To(BeTrue(), "the patch should have been applied")
+			Expect(*patched.EnableCPNodeRecycling).To(Equal(want), "the patch should have been applied")
 		}, SpecTimeout(5*time.Minute))
 
 		// The smoke asserts this too, but against a controller holding no clusters. A

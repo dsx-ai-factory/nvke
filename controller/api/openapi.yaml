@@ -1173,6 +1173,13 @@ components:
         infra:
           x-fern-ignore: true
           $ref: "#/components/schemas/InfraClusterProvider"
+        enableCPNodeRecycling:
+          type: boolean
+          default: false
+          description: |
+            When true, control-plane upgrades and configuration changes replace nodes
+            automatically. When false, the default, nodes needing replacement are reported as
+            pending and wait for an operator.
     NodeAgentConfig:
       description: Desired control-plane node-agent configuration.
       type: object

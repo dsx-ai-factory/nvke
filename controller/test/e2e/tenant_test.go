@@ -1216,6 +1216,9 @@ func setupTenantTest(ctx context.Context, mgmt managementCluster, timeouts nvke.
 func (t *tenantTest) initCluster(ctx context.Context, b testSpec) {
 	GinkgoHelper()
 	t.spec = b.buildSpec(t.cfg, clusterNamePrefix, b.shape)
+	// The CLI-driven entry sets enableCPNodeRecycling at create, so the create-time
+	// flag goes through `nvkectl create cluster`. validateNvkectlPostCreate checks it.
+	t.spec.EnableCPNodeRecycling = b.createVia == clientNvkectl
 	Expect(validateCAPDFailureDomainReuse(t.spec, b.validate.controlPlaneController, t.cfg.Lifecycle.ReuseCluster)).To(Succeed())
 	if b.validate.controlPlaneController && t.spec.Backend == nvke.BackendCAPD {
 		Expect(t.spec.CAPDFailureDomains).NotTo(BeEmpty(), "CAPD control-plane-controller rows must advertise failure domains")
