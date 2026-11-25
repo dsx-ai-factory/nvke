@@ -227,12 +227,12 @@ func validateAuthConfig(cfg AgentConfig) error {
 			return errors.New("--dsx-identity-metadata-url requires --nvke-controller-client-ca-bundle: " +
 				"there is no SPIRE agent to provide the agent's server certificate")
 		}
+		if cfg.DSXIdentityMetadataURL != "" {
+			return nil
+		}
 		// The exchange client applies these checks when the server starts, where
 		// a rejection costs the node its connection to the controller.
-		if err := tlsjwt.ValidateExchangeConfig(cfg.DSXIdentityExchangeURL, cfg.DSXIdentityCABundle, cfg.DSXIdentityTimeout); err != nil {
-			return err
-		}
-		return nil
+		return tlsjwt.ValidateExchangeConfig(cfg.DSXIdentityExchangeURL, cfg.DSXIdentityCABundle, cfg.DSXIdentityTimeout)
 	default:
 		return fmt.Errorf("--grpc-auth-mode must be %q or %q, got %q",
 			authModeSPIFFEMTLS, authModeTLSJWT, cfg.GRPCAuthMode)
