@@ -197,11 +197,13 @@ func (op *DefragOperation) ApplyToNode(ctx context.Context, node rollout.Node, p
 		return op.awaitDefrag(ctx, client, node, operationID)
 	case status.Code(probeErr) == codes.FailedPrecondition:
 		// An agent restart left the record non-terminal with no worker behind
-		// it. The agent put back whatever that attempt parked before it began
-		// serving, so the node is already restored, and StartEtcdDefrag is the
-		// only thing that clears the stale record. Falling through to start
-		// again is the recovery; returning here would wedge the node, because
-		// every retry would be answered the same way.
+		// it. StartEtcdDefrag is the only thing that clears a stale record, so
+		// falling through to start again is the recovery; returning here would
+		// wedge the node, because every retry would be answered the same way.
+		// The agent tries to put back whatever that attempt parked before it
+		// serves, but it logs and carries on when that fails, so this is not
+		// proof the node is back -- which is why the start that follows is
+		// still gated on the agent's own preconditions.
 		slog.WarnContext(ctx, "an earlier etcd defragmentation was interrupted by an agent restart; starting again",
 			"node", node.Name(), "operationID", operationID, "err", probeErr)
 	case status.Code(probeErr) != codes.NotFound:
@@ -231,10 +233,12 @@ func (op *DefragOperation) ApplyToNode(ctx context.Context, node rollout.Node, p
 // The retry is not a transport retry. StartEtcdDefrag never observes its RPC
 // context, so a client-side failure does not stop the handler, and a status
 // probe can be answered NotFound by an agent whose handler is still on its way
-// to recording the operation. A second start cannot be: the agent serializes
-// starts on a single mutex and returns the existing operation for an ID it has
-// already published, so the retry blocks behind any in-flight handler and
-// observes whatever that handler did.
+// to recording the operation. A second start is not answered that way: the
+// agent returns the operation it already holds for an ID it has published, so
+// the retry resumes a start whose reply was merely lost instead of restarting
+// etcd twice. It settles nothing when it fails, though -- the first start can
+// still be queued on the agent's mutex -- which is why only a retry that
+// succeeds decides anything.
 func (op *DefragOperation) startDefrag(
 	ctx context.Context,
 	client nodeAgentDefragClient,
@@ -379,7 +383,7 @@ func (op *DefragOperation) worthDefragmenting(
 	client nodeAgentDefragClient,
 	node rollout.Node,
 ) (bool, string, error) {
-	status, err := client.GetEtcdStatus(ctx, &nvkeproto.GetEtcdStatusRequest{})
+	etcdStatus, err := client.GetEtcdStatus(ctx, &nvkeproto.GetEtcdStatusRequest{})
 	if err != nil {
 		return false, "", fmt.Errorf("get etcd status from node %s: %w", node.Name(), err)
 	}
@@ -387,11 +391,11 @@ func (op *DefragOperation) worthDefragmenting(
 	// Zero is the agent's way of saying this member was provisioned before the
 	// threshold was configured. etcd treats the flag as disabled, so a restart
 	// would be downtime that reclaims nothing however fragmented the file is.
-	threshold := status.GetBootstrapDefragThresholdBytes()
+	threshold := etcdStatus.GetBootstrapDefragThresholdBytes()
 	if threshold <= 0 {
 		return false, "member has no bootstrap-defrag threshold configured", nil
 	}
-	if reclaimable := status.GetReclaimableBytes(); reclaimable < threshold {
+	if reclaimable := etcdStatus.GetReclaimableBytes(); reclaimable < threshold {
 		return false, fmt.Sprintf("reclaimable %d bytes is below the member's %d byte threshold", reclaimable, threshold), nil
 	}
 	return true, "", nil

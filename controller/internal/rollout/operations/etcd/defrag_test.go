@@ -497,6 +497,39 @@ func TestDefragOperationInterruptedAttemptThatAlreadyShrankTheMemberIsUnchanged(
 	assert.Empty(t, client.startReqs, "a member that no longer needs restarting must not be restarted")
 }
 
+// The eligibility read only runs once the resolve has established that nothing
+// is in flight under this key, so a failure there is a node this attempt has
+// provably not touched -- unlike the same failure on a retry, which the resolve
+// now intercepts before reaching here.
+func TestDefragOperationEligibilityReadFailureHaltsCleanly(t *testing.T) {
+	client := &fakeDefragClient{etcdStatusErr: status.Error(codes.Unavailable, "etcd is unreachable")}
+	op := newDefragOperationForTest(client)
+
+	outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+	assert.Equal(t, rollout.OutcomeFailedRestored, outcome)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "get etcd status from node cp-0")
+	assert.Empty(t, client.startReqs)
+}
+
+// A dialer that reports success but hands back no client is as unusable as one
+// that failed, and unlike an unconfigured dialer it may have reached the node.
+func TestDefragOperationNilClientDoesNotClaimRestoration(t *testing.T) {
+	cleanedUp := false
+	op := NewDefragOperation(WithDefragPollInterval(time.Millisecond), WithDefragTimeout(2*time.Second))
+	op.nodeAgentClientDialer = func(context.Context, rollout.Node) (nodeAgentDefragClient, func(), error) {
+		return nil, func() { cleanedUp = true }, nil
+	}
+
+	outcome, err := op.ApplyToNode(context.Background(), controlPlaneNode("cp-0"), defragPayload(t, "base"))
+
+	assert.Equal(t, rollout.OutcomeFailedNotRestored, outcome)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "returned nil client")
+	assert.True(t, cleanedUp, "the cleanup must run even when the client is unusable")
+}
+
 // A dial happens before the operation can be resolved, so it cannot tell a
 // first attempt from a retry whose earlier attempt has the member down. The
 // agent also listens independently of etcd and kube-apiserver, so failing to
@@ -697,10 +730,10 @@ func TestDefragOperationStartFailureIsClassifiedByStartingAgain(t *testing.T) {
 		assert.Len(t, client.startReqs, 1, "a refusal the agent authored needs no second attempt")
 	})
 
-	// The reply was lost but the agent is already restarting etcd. The second
-	// start returns the operation the first one published, so the rollout
-	// follows it instead of reporting a parked node as untouched.
-	t.Run("an ambiguous failure retried into an existing operation is followed", func(t *testing.T) {
+	// The first start never reached the agent, so the retry is what records the
+	// operation. Distinct from the lost-reply case below, where the first start
+	// did record it and the retry is answered with that record.
+	t.Run("a start that never arrived is recorded by the retry", func(t *testing.T) {
 		client := &fakeDefragClient{
 			etcdStatus:  fragmentedStatus(),
 			startErrs:   []error{unavailable},
@@ -713,6 +746,7 @@ func TestDefragOperationStartFailureIsClassifiedByStartingAgain(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, rollout.OutcomeApplied, outcome)
 		assert.Len(t, client.startReqs, 2, "an ambiguous failure must be retried exactly once")
+		assert.Equal(t, 1, client.startsAccepted, "the retry is the start that lands")
 	})
 
 	// Neither attempt reached the agent, so the node's state is unknown.
