@@ -166,7 +166,6 @@ func TestCEKindLoad(t *testing.T) {
 
 	t.Run("nerdctl saves an archive and loads that", func(t *testing.T) {
 		env, log := setup(t, `echo "nerdctl $*" >> "${CALLS}"
-case "$1" in save) : > "$3" ;; esac
 `)
 		env = append(env, "CALLS="+log)
 		out, err := runBash(t, env, `source "$1"; ce_init && ce_kind_load img:tag my-cluster`, lib)
@@ -175,14 +174,10 @@ case "$1" in save) : > "$3" ;; esac
 		require.NoError(t, err)
 		lines := strings.Split(strings.TrimSpace(string(got)), "\n")
 		require.Len(t, lines, 2, string(got))
-		save := strings.Fields(lines[0])
-		require.Len(t, save, 5, lines[0])
-		assert.Equal(t, []string{"nerdctl", "save", "-o"}, save[:3])
-		assert.Equal(t, "img:tag", save[4])
-		archive := save[3]
+		assert.Equal(t, "nerdctl save img:tag", lines[0])
+		archive := strings.Fields(lines[1])[3]
 		assert.Equal(t, "kind load image-archive "+archive+" --name my-cluster", lines[1])
-		// The archive's directory is gone: the engine wrote it as root, and the
-		// caller has no use for it.
+		// The archive's directory is gone once kind has loaded it.
 		assert.NoFileExists(t, archive)
 		assert.NoDirExists(t, filepath.Dir(archive))
 	})

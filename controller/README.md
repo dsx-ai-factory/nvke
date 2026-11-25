@@ -350,8 +350,9 @@ alone](#running-the-local-flow-on-containerd-alone).
 
   ```bash
   version="$(make --no-print-directory print-NERDCTL_VERSION)"
-  sha256="$(make --no-print-directory print-NERDCTL_FULL_SHA256_ARM64)"  # _AMD64 on amd64
-  curl -fsSLo /tmp/nerdctl-full.tar.gz "https://github.com/containerd/nerdctl/releases/download/v${version}/nerdctl-full-${version}-linux-arm64.tar.gz"
+  arch="$(uname -m | sed -e 's/x86_64/amd64/' -e 's/aarch64/arm64/')"
+  sha256="$(make --no-print-directory "print-NERDCTL_FULL_SHA256_${arch^^}")"
+  curl -fsSLo /tmp/nerdctl-full.tar.gz "https://github.com/containerd/nerdctl/releases/download/v${version}/nerdctl-full-${version}-linux-${arch}.tar.gz"
   echo "${sha256}  /tmp/nerdctl-full.tar.gz" | sha256sum -c -
   sudo tar -C /usr/local -xzf /tmp/nerdctl-full.tar.gz bin/buildkitd bin/buildctl
   ```

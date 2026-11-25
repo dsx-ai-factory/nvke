@@ -75,9 +75,8 @@ ce_build() {
 # ce_kind_load IMAGE CLUSTER loads a locally built image into a kind cluster.
 #
 # `kind load docker-image` runs `docker` whatever the provider is. The archive
-# goes through a directory of its own: the engine writes it as root, and root
-# may not create a file in the sticky /tmp that another user owns
-# (fs.protected_regular).
+# goes through a directory of its own and the caller's shell writes it, so it
+# stays readable by the user that runs kind.
 #
 # This is for images the engine built here, which are one manifest. An image
 # pulled as a multi-platform index needs nvkectl's flattening first
@@ -89,7 +88,7 @@ ce_kind_load() {
     return
   fi
   dir="$(mktemp -d)"
-  "$(ce_cli)" save -o "${dir}/image.tar" "${image}" &&
+  "$(ce_cli)" save "${image}" >"${dir}/image.tar" &&
     "${KIND_BIN:-kind}" load image-archive "${dir}/image.tar" --name "${cluster}" || status=$?
   rm -rf "${dir}"
   return "${status}"

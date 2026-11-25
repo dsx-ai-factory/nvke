@@ -82,8 +82,9 @@ make -C controller run-local              # release CRDs and fixtures, Postgres,
 ```
 
 On macOS, run `make -C controller host-up` first: `capi-core-up` uses Colima, not Docker Desktop.
-On Linux you can run this flow on containerd with nerdctl and no Docker daemon: set `CONTAINER_CLI=nerdctl`, as
+On Linux you can run the Tilt flow on containerd with nerdctl and no Docker daemon: set `CONTAINER_CLI=nerdctl`, as
 [`controller/README.md`](../controller/README.md#running-the-local-flow-on-containerd-with-nerdctl) describes.
+`run-local` still needs Docker.
 
 Swagger is on [http://localhost:8080/api/docs/](http://localhost:8080/api/docs/). Infrastructure credentials are
 configured on the Cluster API provider rather than the controller.
