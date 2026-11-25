@@ -51,6 +51,7 @@ the site-bootstrap and tenant-cluster pages below, which it will replace.
 | [adrs/20261105-capi-architecture.md](adrs/20261105-capi-architecture.md) | Proposed composable architecture: reusable CAPI providers, operator curation, and customer APIs |
 | [adrs/20261106-configuration-driven-jwt-authentication.md](adrs/20261106-configuration-driven-jwt-authentication.md) | Proposed bearer JWT authentication for NVKE APIs, with trusted issuers set by a versioned configuration document |
 | [adrs/20261106-pluggable-authorization.md](adrs/20261106-pluggable-authorization.md) | Proposed shared authorization library for NVKE APIs, with pluggable decision backends |
+| [adrs/20261123-adopt-site-cluster.md](adrs/20261123-adopt-site-cluster.md) | Proposed adoption of the site cluster the NVKE controller runs on, with NVKE managing its worker node pools |
 
 ## Working on the code
 
