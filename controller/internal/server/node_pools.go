@@ -987,6 +987,7 @@ func apiNodePoolFromDB(dbNodePool *db.NodePool, count db.NodePoolCounts) api.Nod
 		MaxSurge:                    maxSurge,
 		CurrentNodeSetID:            dbNodePool.CurrentNodeSetID,
 		TeleportEnabled:             &dbNodePool.TeleportEnabled,
+		NodeAgentConfig:             apiNodeAgentSettingsFromDB(dbNodePool.NodeAgent),
 
 		Nico:        apiNicoNodePoolProviderFromDB(dbNodePool.Nico),
 		Infra:       apiInfraNodePoolProviderFromDB(dbNodePool.Capi),
@@ -1148,6 +1149,7 @@ func dbNodePoolFromAPI(
 		TeleportEnabled:             teleportEnabled,
 		MachineAnnotations:          db.CloneStringMap(req.MachineAnnotations),
 		MachineLabels:               db.CloneStringMap(req.MachineLabels),
+		NodeAgent:                   dbNodeAgentSettingsFromAPI(req.NodeAgentConfig),
 	}
 
 	switch {

@@ -27,6 +27,7 @@ import (
 
 	internalv1 "github.com/dsx-ai-factory/nvke/controller/k8s-apis/v1"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -806,6 +807,65 @@ func TestActivities_WaitForCAPIMachineReady_StampsLaunchLayerIdentity(t *testing
 	require.NoError(t, err)
 	assert.Equal(t, "10.0.0.10", ipAddress)
 	mockTx.AssertExpectations(t)
+}
+
+// A KubeVirt VM's agent is reached at the address KubeVirtSpiffeController
+// publishes on the Machine, not at the VM's own unroutable pod IP.
+func TestActivities_WaitForCAPIMachineReady_KubeVirtVMRecordsAgentDialAddress(t *testing.T) {
+	nodeID := uuid.MustParse("71000000-0000-0000-0000-000000000021")
+	clusterID := uuid.MustParse("71000000-0000-0000-0000-000000000022")
+
+	for name, wantDialAddress := range map[string]string{
+		"records the address the controller published": "10.90.0.42",
+		"retries until the controller publishes one":   "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			node := db.Node{ID: nodeID, ClusterID: clusterID, ControlPlane: true, Name: "worker-0"}
+			cluster := db.Cluster{ID: clusterID, Name: "cluster-a", ProviderType: db.ProviderTypeCAPI}
+			cluster.ControlPlaneConfig.KubernetesVersion = "1.32.1"
+			cluster.ControlPlaneConfig.SetCapi(db.CAPIControlPlaneProvider{})
+
+			machine := testCAPIMachineWithNicoInfraRef(clusterv1.MachineAddresses{{
+				Type: clusterv1.MachineInternalIP, Address: "10.0.0.10",
+			}})
+			machine.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{
+				APIGroup: capi.KubeVirtInfraGroup,
+				Kind:     capi.KubeVirtMachineKind,
+				Name:     "worker-0",
+			}
+			if wantDialAddress != "" {
+				machine.Annotations = map[string]string{
+					keys.MachineAgentDialAddress.String(): wantDialAddress,
+				}
+			}
+			k8sClient := newCAPIMachineReadyClient(t, machine)
+
+			mockDB, mockTx := newCAPIMachineReadyDB(t, node, cluster)
+			mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Maybe()
+			mockTx.On("GetNodeForUpdate", mock.Anything, node.ID).Return(node, nil).Maybe()
+			// The provisioning condition update, which runs before the IP is read.
+			mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+				return nodeForUpdate.IP == ""
+			})).Return(node, nil).Maybe()
+			mockTx.On("UpdateNode", mock.Anything, mock.MatchedBy(func(nodeForUpdate *db.Node) bool {
+				return nodeForUpdate.IP == "10.0.0.10" &&
+					nodeForUpdate.Capi != nil &&
+					nodeForUpdate.Capi.AgentDialAddress == wantDialAddress
+			})).Return(node, nil).Maybe()
+
+			a := &Activities{db: mockDB, k8sClient: k8sClient}
+
+			ipAddress, err := executeWaitForCAPIMachineReadyActivity(t, a, WaitForCAPIMachineReadyInput{NodeID: nodeID})
+			if wantDialAddress == "" {
+				require.ErrorContains(t, err, "no node agent dial address yet")
+				assert.Empty(t, ipAddress)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "10.0.0.10", ipAddress)
+			mockTx.AssertExpectations(t)
+		})
+	}
 }
 
 func newCAPIMachineReadyClient(t *testing.T, objects ...client.Object) client.Client {

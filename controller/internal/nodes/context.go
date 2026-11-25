@@ -65,6 +65,7 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 		KubeReservedMemory:   snapshotCfg.KubeReservedMemory,
 		KubernetesVersion:    snapshotCfg.KubernetesVersion,
 		TeleportEnabled:      snapshotCfg.TeleportEnabled,
+		NodeAgent:            controlPlaneNodeAgentSettings(snapshotCfg),
 	}
 	nodePool := db.NodePool{
 		ID:                          uuid.Nil,
@@ -81,6 +82,7 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 		ProvisioningMonitorDisabled: snapshotCfg.ProvisioningMonitorDisabled,
 		MachineAnnotations:          db.CloneStringMap(snapshotCfg.MachineAnnotations),
 		MachineLabels:               db.CloneStringMap(snapshotCfg.MachineLabels),
+		NodeAgent:                   controlPlaneNodeAgentSettings(snapshotCfg),
 	}
 
 	provider, err := clients.GetControlPlaneConfigNodeProvider(cluster)
@@ -90,4 +92,14 @@ func ControlPlaneConfigNodeContext(cluster db.Cluster, node db.Node, snapshotCfg
 	provider.ApplyControlPlaneConfigPayloads(node, snapshotCfg, &nodeSet, &nodePool)
 
 	return nodeSet, nodePool, nil
+}
+
+// controlPlaneNodeAgentSettings carries the control plane's node-agent
+// settings onto the synthetic set and pool. They are provider-independent, so
+// they are copied here rather than by each provider's payload builder.
+func controlPlaneNodeAgentSettings(snapshotCfg db.ControlPlaneConfigSpec) *db.NodeAgentSettings {
+	if snapshotCfg.NodeAgentConfig.TokenSource == "" {
+		return nil
+	}
+	return &db.NodeAgentSettings{TokenSource: snapshotCfg.NodeAgentConfig.TokenSource}
 }

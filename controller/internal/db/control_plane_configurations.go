@@ -21,6 +21,8 @@ import (
 // NodeAgentConfig stores the exact desired agent release.
 type NodeAgentConfig struct {
 	Version string `json:"version,omitempty"`
+	// TokenSource is fixed at creation and pinned onto each control-plane node.
+	TokenSource NodeAgentTokenSource `json:"token_source,omitempty"`
 }
 
 // ControlPlaneConfigSpec is the snapshot payload stored in
@@ -109,6 +111,11 @@ func (c ControlPlaneConfigSpec) CAPIProvider() (CAPIControlPlaneProvider, error)
 		return CAPIControlPlaneProvider{}, fmt.Errorf("%w: control plane config capi", ErrMissingProviderPayload)
 	}
 	return *cloneCAPIControlPlaneProvider(c.Capi), nil
+}
+
+// NodeAgentTokenSource returns where new control-plane nodes' agents get their token.
+func (c ControlPlaneConfigSpec) NodeAgentTokenSource() NodeAgentTokenSource {
+	return c.NodeAgentConfig.TokenSource
 }
 
 func (c ControlPlaneConfigSpec) LaunchLayerProvider() (LaunchLayerControlPlaneProvider, error) {

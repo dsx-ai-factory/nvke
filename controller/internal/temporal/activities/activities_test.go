@@ -18,9 +18,10 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 	t.Parallel()
 
 	type parameters struct {
-		tlsJWT       bool
-		externalMTLS bool
-		wantArgs     string
+		tlsJWT          bool
+		externalMTLS    bool
+		metadataService bool
+		wantArgs        string
 	}
 	tests := map[string]parameters{
 		"SPIFFE without JWT": {
@@ -39,6 +40,17 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 			externalMTLS: true,
 			wantArgs:     "AGENT_ARGS=\"--secure-server-port 15005 --nvke-controller-client-ca-bundle=/etc/nke/controller-ca.crt --grpc-auth-mode=tls-jwt --dsx-identity-exchange-url=https://identity.example.test/v1/exchange\"\n",
 		},
+		"metadata service identity with JWT": {
+			tlsJWT:          true,
+			externalMTLS:    true,
+			metadataService: true,
+			wantArgs:        "AGENT_ARGS=\"--secure-server-port 15005 --nvke-controller-client-ca-bundle=/etc/nke/controller-ca.crt --grpc-auth-mode=tls-jwt --dsx-identity-metadata-url=http://169.254.169.254\"\n",
+		},
+		"metadata service identity without JWT": {
+			externalMTLS:    true,
+			metadataService: true,
+			wantArgs:        "AGENT_ARGS=\"--secure-server-port 15005 --nvke-controller-client-ca-bundle=/etc/nke/controller-ca.crt\"\n",
+		},
 	}
 
 	for name, params := range tests {
@@ -54,10 +66,14 @@ func TestUnit_NodeAgentBootstrapFiles(t *testing.T) {
 				},
 				controllerClientCABundle: "public-ca",
 			}
-			files, err := activities.nodeAgentBootstrapFiles(db.Node{
+			node := db.Node{
 				NodeAgentExternalMTLSEnabled: params.externalMTLS,
 				NodeAgentTLSJWTEnabled:       params.tlsJWT,
-			})
+			}
+			if params.metadataService {
+				node.NodeAgentTokenSource = db.NodeAgentTokenSourceMetadataService
+			}
+			files, err := activities.nodeAgentBootstrapFiles(node)
 			require.NoError(t, err)
 			wantFileCount := 1
 			if params.externalMTLS {

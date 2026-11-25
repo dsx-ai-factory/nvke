@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	// noAddressMessage is the nodeAgentReady message for a node that has no IP
+	// noAddressMessage is the nodeAgentReady message for a node that has no
 	// address to dial.
-	noAddressMessage = "Node has no IP address"
+	noAddressMessage = "Node has no address to dial"
 )
 
 type nodeAgentProbe struct {

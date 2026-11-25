@@ -40,6 +40,9 @@ type NodeSet struct {
 	Nico        *NicoNodePoolProvider        `bun:"nico,type:jsonb"`
 	Capi        *CAPINodePoolProvider        `bun:"capi,type:jsonb"`
 	LaunchLayer *LaunchLayerNodePoolProvider `bun:"launch_layer,type:jsonb"`
+
+	// NodeAgent is the pool's node-agent settings as of this snapshot.
+	NodeAgent *NodeAgentSettings `bun:"node_agent,type:jsonb"`
 }
 
 // NodePoolNeedsNewNodeSet reports whether reconciling nodePool requires a replacement node set.
@@ -82,6 +85,11 @@ func (n *NodeSet) CAPIProvider() (CAPINodePoolProvider, error) {
 		return CAPINodePoolProvider{}, fmt.Errorf("%w: node set %s capi", ErrMissingProviderPayload, n.ID)
 	}
 	return *cloneCAPINodePoolProvider(*n.Capi), nil
+}
+
+// NodeAgentTokenSource returns where the node set's nodes' agents get their token.
+func (n *NodeSet) NodeAgentTokenSource() NodeAgentTokenSource {
+	return n.NodeAgent.tokenSource()
 }
 
 func (n *NodeSet) LaunchLayerProvider() (LaunchLayerNodePoolProvider, error) {

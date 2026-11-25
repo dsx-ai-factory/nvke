@@ -29,9 +29,9 @@ import (
 )
 
 var (
-	// ErrNoAddress reports a dial against a node that has no IP address yet, such
-	// as a pending node the infrastructure provider has not allocated.
-	ErrNoAddress = errors.New("node has no IP address")
+	// ErrNoAddress reports a dial against a node that has no address to dial
+	// yet, such as a pending node the infrastructure provider has not allocated.
+	ErrNoAddress = errors.New("node has no address to dial")
 
 	// errClientCertificateAbsent reports that an optional client certificate file does not exist.
 	errClientCertificateAbsent = errors.New("client certificate file does not exist")
@@ -121,10 +121,11 @@ func NewTransport(
 // Dial opens a connection to the node's agent and returns it with the cleanup
 // the caller must invoke.
 func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, func(), error) {
-	if node.IP == "" {
+	host := node.AgentDialHost()
+	if host == "" {
 		return nil, nil, ErrNoAddress
 	}
-	endpoint := net.JoinHostPort(node.IP, t.cfg.NodeAgent.Port)
+	endpoint := net.JoinHostPort(host, t.cfg.NodeAgent.Port)
 
 	var closeFuncs []func() error
 	cleanup := func() {

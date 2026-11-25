@@ -248,6 +248,7 @@ func (c *Controller) createPendingNode(ctx context.Context, tx db.Tx, cluster db
 		},
 	}
 	nodes.PinAgentProfile(&dbNode, c.cfg)
+	dbNode.NodeAgentTokenSource = nodeSet.NodeAgentTokenSource()
 	nodeProvider, err := clients.GetNewNodeProvider(cluster)
 	if err != nil {
 		return db.Node{}, err

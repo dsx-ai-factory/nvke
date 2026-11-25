@@ -33,6 +33,51 @@ const (
 	SpireAttestationMethodDSXIMDS   SpireAttestationMethod = "dsxImds"
 )
 
+// NodeAgentTokenSource selects where a node's agent gets the token it
+// authenticates to the controller with. Empty means
+// NodeAgentTokenSourceTokenExchange.
+type NodeAgentTokenSource string
+
+const (
+	NodeAgentTokenSourceTokenExchange   NodeAgentTokenSource = "tokenExchange"
+	NodeAgentTokenSourceMetadataService NodeAgentTokenSource = "metadataService"
+)
+
+// Effective resolves the empty value to the default it stands for, so an
+// omitted source and an explicit tokenExchange compare equal.
+func (n NodeAgentTokenSource) Effective() NodeAgentTokenSource {
+	if n == "" {
+		return NodeAgentTokenSourceTokenExchange
+	}
+	return n
+}
+
+// NodeAgentSettings holds the node-agent settings a node pool or control plane
+// pins onto its nodes, independent of the infrastructure provider that creates
+// them.
+type NodeAgentSettings struct {
+	TokenSource NodeAgentTokenSource `json:"token_source,omitempty"`
+}
+
+// tokenSource reads through a nil receiver, so an unset block and an explicit
+// default compare equal.
+func (n *NodeAgentSettings) tokenSource() NodeAgentTokenSource {
+	if n == nil {
+		return ""
+	}
+	return n.TokenSource
+}
+
+// CloneNodeAgentSettings copies settings so callers in other packages can
+// hand a pool's block to a node set without sharing it.
+func CloneNodeAgentSettings(settings *NodeAgentSettings) *NodeAgentSettings {
+	if settings == nil {
+		return nil
+	}
+	clone := *settings
+	return &clone
+}
+
 type NicoNodePoolProvider struct {
 	SubnetIDs                []uuid.UUID           `json:"subnet_ids,omitempty"`
 	VpcPrefixIDs             []uuid.UUID           `json:"vpc_prefix_ids,omitempty"`
@@ -210,6 +255,16 @@ type NodePool struct {
 	MachineLabels      map[string]string `bun:"type:jsonb,notnull,default:'{}'"`
 
 	LaunchLayer *LaunchLayerNodePoolProvider `bun:"launch_layer,type:jsonb"`
+
+	// NodeAgent is fixed at pool creation and pinned onto each node the pool
+	// creates. It is provider-independent, so it sits beside the provider
+	// payloads rather than inside one.
+	NodeAgent *NodeAgentSettings `bun:"node_agent,type:jsonb"`
+}
+
+// NodeAgentTokenSource returns where the pool's nodes' agents get their token.
+func (n *NodePool) NodeAgentTokenSource() NodeAgentTokenSource {
+	return n.NodeAgent.tokenSource()
 }
 
 // NodeTaint is a Kubernetes taint stored as the desired set for every node in a pool.

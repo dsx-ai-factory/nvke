@@ -385,6 +385,28 @@ func main() {
 		logger.Info("LaunchLayerMachine CRD not installed; skipping the LaunchLayer SPIFFE controller")
 	}
 
+	// Publishes a KubeVirt VM node agent's address and identity. Gated on
+	// CAPK's CRD for the same reason as the LaunchLayer controller above: an
+	// existing cluster's replacement VMs still need theirs.
+	kubeVirtCRDInstalled, err := capi.KubeVirtMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
+	if err != nil {
+		logger.Error("Failed to look up the KubevirtMachine CRD", "error", err)
+		os.Exit(1)
+	}
+	if kubeVirtCRDInstalled {
+		kubeVirtSpiffeController := capi.NewKubeVirtSpiffeController(
+			k8sControllerManager.GetClient(),
+			cfg,
+			logger.With("logger", "kubevirt-spiffe-controller"),
+		)
+		if err := kubeVirtSpiffeController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up KubeVirt SPIFFE controller", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		logger.Info("KubevirtMachine CRD not installed; skipping the KubeVirt SPIFFE controller")
+	}
+
 	if cfg.NicoControllersEnabled {
 		nicoCRDInstalled, err := capi.NicoMachineCRDInstalled(k8sControllerManager.GetRESTMapper())
 		if err != nil {

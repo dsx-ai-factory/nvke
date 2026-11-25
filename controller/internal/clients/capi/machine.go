@@ -71,14 +71,19 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	if err := applyNicoMachineInstanceLabels(node, cluster, nodePool.ID, infraMachine); err != nil {
 		return err
 	}
-
+	if err := applyKubeVirtMachinePodLabels(node, infraMachine); err != nil {
+		return err
+	}
 	if err := deps.K8sClient.Patch(ctx, infraMachine, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply infra machine %s: %w", infraMachine.GetName(), err)
 	}
 
-	spireJoinToken, spireAgentAlternateIDPath, err := deps.CreateSpireJoinToken(ctx, node)
-	if err != nil {
-		return err
+	var spireJoinToken, spireAgentAlternateIDPath string
+	if !node.UsesMetadataServiceToken() {
+		spireJoinToken, spireAgentAlternateIDPath, err = deps.CreateSpireJoinToken(ctx, node)
+		if err != nil {
+			return err
+		}
 	}
 
 	userData, err := c.renderBootstrapUserData(ctx, deps, node, nodeSet, spireJoinToken)
@@ -142,6 +147,36 @@ func applyNicoMachineInstanceLabels(node db.Node, cluster db.Cluster, nodePoolID
 	}
 	if err := unstructured.SetNestedStringMap(infraMachine.Object, existingLabels, "spec", "labels"); err != nil {
 		return fmt.Errorf("set NicoMachine instance labels: %w", err)
+	}
+	return nil
+}
+
+// applyKubeVirtMachinePodLabels labels a rendered KubevirtMachine's VM pod
+// with the node ID, so the node agent's Service and ClusterSPIFFEID can select
+// exactly this node's virt-launcher pod. CAPK's own pod labels name the
+// KubevirtMachine, whose name is the node name, and node names are reused, so
+// without this a recycled name would match the previous node's pod. A no-op
+// for any other kind.
+func applyKubeVirtMachinePodLabels(node db.Node, infraMachine *unstructured.Unstructured) error {
+	gv, err := schema.ParseGroupVersion(infraMachine.GetAPIVersion())
+	if err != nil {
+		return fmt.Errorf("parse infrastructure machine apiVersion %q: %w", infraMachine.GetAPIVersion(), err)
+	}
+	if gv.Group != KubeVirtInfraGroup || infraMachine.GetKind() != KubeVirtMachineKind {
+		return nil
+	}
+
+	path := []string{"spec", "virtualMachineTemplate", "spec", "template", "metadata", "labels"}
+	labels, _, err := unstructured.NestedStringMap(infraMachine.Object, path...)
+	if err != nil {
+		return fmt.Errorf("read KubevirtMachine VM pod labels: %w", err)
+	}
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[NodeIDLabel] = node.ID.String()
+	if err := unstructured.SetNestedStringMap(infraMachine.Object, labels, path...); err != nil {
+		return fmt.Errorf("set KubevirtMachine VM pod labels: %w", err)
 	}
 	return nil
 }

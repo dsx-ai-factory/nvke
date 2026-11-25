@@ -188,6 +188,17 @@ const (
 	MachineBootstrapIdentity       Key = "bootstrap-identity"
 	MachineExpectedNodeName        Key = "expected-node-name"
 
+	// MachineAgentTokenSource mirrors the node's node-agent token source so a
+	// controller watching only Kubernetes objects can tell whether the node
+	// runs a SPIRE agent. Written by MachineAnnotationsController.
+	MachineAgentTokenSource Key = "agent-token-source"
+
+	// MachineAgentDialAddress is the address the controller reaches the node's
+	// agent at when the node's own IP is not routable from here. Written by
+	// the provider controller that owns the address, read by the provisioning
+	// workflow, which copies it onto the node record.
+	MachineAgentDialAddress Key = "agent-dial-address"
+
 	// MachineAgentConnectionJWTSuffix ends the MachineAgentConnection value of a
 	// node whose agent uses TLS-JWT, for example "spiffe-jwt".
 	MachineAgentConnectionJWTSuffix = "-jwt"
