@@ -1402,6 +1402,68 @@ func TestProcessKubeadmInit_DisablesRegistration(t *testing.T) {
 	assert.Equal(t, false, written["registerNode"])
 }
 
+func TestProcessKubeadmInit_CNIInstall(t *testing.T) {
+	tests := []struct {
+		name              string
+		req               *pb.KubeadmInitRequest
+		wantCNIStatus     string
+		wantInstallCalled bool
+	}{
+		{
+			name:          "no_cni_install installs nothing and reports no CNI status",
+			req:           &pb.KubeadmInitRequest{NoCniInstall: true},
+			wantCNIStatus: "",
+		},
+		{
+			name:          "skip_cni_plugin_install installs nothing and reports no CNI status",
+			req:           &pb.KubeadmInitRequest{SkipCniPluginInstall: true}, //nolint:staticcheck // Deprecated flag the agent still honors.
+			wantCNIStatus: "",
+		},
+		{
+			name:              "neither flag attempts the legacy in-init install",
+			req:               &pb.KubeadmInitRequest{CniPluginName: "unsupported"}, //nolint:staticcheck // Legacy in-init path.
+			wantCNIStatus:     ErrorStatus,
+			wantInstallCalled: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			configDir := filepath.Join(tmp, "var", "lib", "kubelet")
+			require.NoError(t, os.MkdirAll(configDir, 0o755))
+			require.NoError(t, os.WriteFile(
+				filepath.Join(configDir, "config.yaml"),
+				[]byte("apiVersion: kubelet.config.k8s.io/v1beta1\nkind: KubeletConfiguration\n"),
+				0o644,
+			))
+
+			runner := &MockRunner{Output: []byte(initOutput)}
+			server := &NodeAgentServer{
+				Runner:         runner,
+				FileWriter:     &MockFileWriter{},
+				Persister:      &MockPersister{},
+				RootPath:       tmp,
+				initConfigPath: filepath.Join(tmp, "kubeadm-init-config.yaml"),
+				NodeStatus:     &NodeStatus{Status: NotReadyStatus},
+			}
+
+			tt.req.PodNetworkCidr = "10.244.0.0/16"
+			tt.req.ControlPlaneEndpoint = "192.168.0.1:6443"
+			server.processKubeadmInit([]string{"init", "--control-plane-endpoint=192.168.0.1:6443"}, tt.req)
+
+			assert.Equal(t, ReadyStatus, server.NodeStatus.Status, "kubeadm init itself succeeded")
+			assert.Equal(t, InitPhase, server.NodeStatus.Phase)
+			assert.Equal(t, tt.wantCNIStatus, server.NodeStatus.CNIPluginStatus)
+			assert.Empty(t, server.NodeStatus.CNIPlugin)
+			assert.NotEmpty(t, server.NodeStatus.JoinInfo.ControlPlaneJoinString, "join info is recorded without a CNI")
+			if !tt.wantInstallCalled {
+				assert.Equal(t, 1, runner.RunCalls, "only kubeadm init runs; no helm, apt or kubectl for a CNI")
+			}
+		})
+	}
+}
+
 func TestSetIndexURLOptionalBundleServer(t *testing.T) {
 	t.Run("empty bundle server and empty index leaves index unset", func(t *testing.T) {
 		server := &NodeAgentServer{}
