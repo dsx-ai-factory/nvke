@@ -66,10 +66,15 @@ echo "netplan $*" >> "$FAKE_STATE/calls"
 
 const dockerAddress = `[{"ifname":"eth0","mtu":1500,"addr_info":[{"family":"inet","local":"172.18.0.4","prefixlen":16,"scope":"global"}]}]`
 
-func TestPrepareContainerNetwork(t *testing.T) {
+func requirePythonYAML(t *testing.T) {
+	t.Helper()
 	if err := exec.CommandContext(t.Context(), "python3", "-c", "import yaml").Run(); err != nil {
 		t.Skip("python3 with PyYAML is not available")
 	}
+}
+
+func TestPrepareContainerNetwork(t *testing.T) {
+	requirePythonYAML(t)
 
 	physicalRoute := `[{"dst":"default","gateway":"172.18.0.1","dev":"eth0"}]`
 	bridgeRoute := `[{"dst":"default","gateway":"172.18.0.1","dev":"breth0"}]`
@@ -190,6 +195,7 @@ func TestPrepareContainerNetwork(t *testing.T) {
 }
 
 func TestPrepareContainerNetworkRejectsUnknownArguments(t *testing.T) {
+	requirePythonYAML(t)
 	cmd := exec.CommandContext(t.Context(), "python3", "scripts/prepare-container-network", "--bogus")
 	output, err := cmd.CombinedOutput()
 	require.Error(t, err)
