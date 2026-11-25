@@ -1185,3 +1185,26 @@ func TestNodeService_DeleteControlPlaneNodeThroughController(t *testing.T) {
 		})
 	}
 }
+
+// TestNodeService_DeleteNodeRefusesAnAdoptedNode pins the 409 for a node of an
+// adopted control plane, answered before the delete path's quorum floor and
+// without touching the node.
+func TestNodeService_DeleteNodeRefusesAnAdoptedNode(t *testing.T) {
+	nodeID := uuid.New()
+	mockDB := &mockDB{}
+	mockDB.MockTx = &mockTx{}
+	mockDB.MockTx.On("GetNode", mock.Anything, nodeID).Return(db.Node{
+		ID: nodeID, ClusterID: uuid.New(), ControlPlane: true,
+		Conditions: db.NodeConditions{Adopted: db.NewCondition(true, "Adopted")},
+	}, nil)
+	mockDB.On("RunInTx", mock.Anything, mock.Anything).Return(nil)
+
+	resp, err := server.NewNodeService(&slog.Logger{}, mockDB).DeleteNode(context.Background(), api.DeleteNodeRequestObject{NodeID: nodeID})
+
+	require.NoError(t, err)
+	conflict, ok := resp.(api.DeleteNode409JSONResponse)
+	require.True(t, ok, "expected DeleteNode409JSONResponse, got %T", resp)
+	assert.Contains(t, conflict.Message, "adopted control plane")
+	mockDB.MockTx.AssertNotCalled(t, "GetClusterForUpdate", mock.Anything, mock.Anything)
+	mockDB.MockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+}

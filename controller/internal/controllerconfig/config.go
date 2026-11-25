@@ -70,6 +70,7 @@ type Config struct {
 	APIAuth                                  APIAuthConfig              `json:"apiAuth"`
 	APIAuthz                                 APIAuthzConfig             `json:"apiAuthz"`
 	KubeVip                                  KubeVipConfig              `json:"kubeVip"`
+	ClusterAdoptionEnabled                   bool                       `json:"clusterAdoptionEnabled"`
 }
 
 // KubeVipConfig configures kube-vip BGP ASNs.

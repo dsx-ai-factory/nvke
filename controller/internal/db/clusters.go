@@ -547,6 +547,14 @@ type ClusterConditions struct {
 	// up on a control-plane node pinned there. Placement avoids a domain until its
 	// entry expires, so the replacement does not land in the same domain.
 	UnplaceableFailureDomains map[string]time.Time `json:"unplaceableFailureDomains,omitempty"`
+	// Adopted is True for a cluster recorded by POST /clusters/adopt. Its operator
+	// manages its control plane outside NVKE, which never upgrades or replaces it.
+	Adopted Condition `json:"adopted,omitempty"`
+}
+
+// IsAdopted reports whether the cluster was recorded by POST /clusters/adopt.
+func (c Cluster) IsAdopted() bool {
+	return c.Conditions.Adopted.Status == ConditionStatusTrue
 }
 
 type ClusterFilters struct {

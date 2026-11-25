@@ -290,6 +290,81 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
 
+  /clusters/adopt:
+    post:
+      tags: [Clusters]
+      summary: Adopt a cluster that already runs
+      operationId: adoptCluster
+      x-fern-ignore: true
+      description: |
+        Records the cluster this controller runs on, built by
+        `nvkectl bootstrap site`, as a cluster NVKE manages. Served only when
+        `clusterAdoptionEnabled` is set in nvke-controller-config; otherwise
+        returns 404.
+
+        NVKE does not run `kubeadm init`. The controller reads the cluster with
+        its own service account: its control-plane nodes (the Nodes with the
+        `node-role.kubernetes.io/control-plane` label), and the Kubernetes
+        version and pod and service CIDRs from `kube-system/kubeadm-config`. The
+        body carries only what NVKE does not read. NVKE records every
+        control-plane node as adopted (`conditions.adopted`) under a new ID,
+        sets `controlPlaneConfig.desiredCount` to their number, and applies the
+        cluster's Cluster API objects. NVKE reaches the cluster through the
+        adopted nodes' agents, which answer once the operator points each node's
+        SPIRE agent at this site and registers its `host/<node ID>` identity;
+        until then the cluster stays provisioning.
+
+        The operator keeps managing the control plane outside NVKE: NVKE never
+        upgrades, replaces, remediates or deletes an adopted control-plane node.
+        Adopt turns off `enableCPNodeRecycling`,
+        `controlPlaneConfig.autoScaleDownDisabled` and
+        `controlPlaneConfig.nodeRebalanceDisabled`, and
+        `PATCH /clusters/{clusterID}` refuses turning them back on. It also
+        refuses `controlPlaneKubernetesVersion`, any
+        `controlPlaneConfig.desiredCount` change, `controlPlaneConfig.nico` and
+        any other change to a field that replaces nodes. `DELETE /nodes/{nodeID}`
+        refuses an adopted node, and the cluster cannot be deleted through
+        `DELETE /clusters/{clusterID}`.
+
+        Returns 400 when the cluster has no control-plane node or one has no
+        InternalIP; when a control-plane node's kubelet version differs from
+        kubeadm-config, as partway through an upgrade; when kubeadm-config has no
+        pod CIDR, or a pod or service CIDR NVKE does not accept; when `nico.siteID`
+        or `nico.vpcID` is missing; when a cluster is already adopted; when a
+        Cluster API Cluster with the cluster's name already exists in the
+        management namespace; and when the name, CNI plugin or CNI version is one
+        `createCluster` rejects.
+      requestBody:
+        description: What NVKE does not read from the cluster it adopts.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AdoptClusterRequest"
+      responses:
+        "201":
+          description: Cluster adopted. NVKE reaches it once the adopted nodes' agents are ready.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Cluster"
+        "400":
+          description: The request failed validation
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "404":
+          description: Cluster adoption is not enabled on this controller (`clusterAdoptionEnabled` in nvke-controller-config).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /clusters/{clusterID}:
     parameters:
       - name: clusterID
@@ -418,6 +493,12 @@ paths:
           description: Deletion started
         "404":
           description: Cluster not found. No body is returned.
+        "409":
+          description: The cluster is the one this controller runs on; teardown would reset its control-plane nodes.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GenericError"
         "401":
           $ref: "#/components/responses/Unauthorized"
         "403":
@@ -1180,6 +1261,49 @@ components:
             When true, control-plane upgrades and configuration changes replace nodes
             automatically. When false, the default, nodes needing replacement are reported as
             pending and wait for an operator.
+    AdoptClusterRequest:
+      x-fern-ignore: true
+      type: object
+      additionalProperties: false
+      required: [name, nico, etcdEncrypted]
+      description: |
+        What NVKE does not read from the cluster it adopts. The control-plane
+        nodes, the Kubernetes version and the pod and service CIDRs come from the
+        cluster. In `nico`, `siteID` and `vpcID` are required: NVKE creates worker
+        machines in that NICo site and VPC, and workers there must reach the
+        cluster's API server. `orgID` is optional; NVKE only records it, returns it
+        and labels its cluster metrics with it.
+      properties:
+        name:
+          type: string
+          pattern: "^[a-z0-9]([a-z0-9-]*[a-z0-9])?$"
+          minLength: 1
+          maxLength: 55
+          example: site
+          description: Cluster name. Lowercase DNS label, unique per management plane. Worker node names are derived from it.
+          x-go-type-skip-optional-pointer: true
+        nico:
+          $ref: "#/components/schemas/NicoClusterProvider"
+        cniPlugin:
+          type: string
+          enum:
+            - calico
+            - ovn-kubernetes
+          example: ovn-kubernetes
+          description: |
+            The CNI the cluster runs. Defaults to ovn-kubernetes. Workers install its
+            packages, and on ovn-kubernetes NVKE configures Open vSwitch and the OVN
+            zone label on them.
+          x-go-type-skip-optional-pointer: true
+        cniVersion:
+          type: string
+          pattern: '^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$'
+          example: "2.4.2"
+          description: The version of the CNI the cluster runs, as X.Y.Z. Defaults as for `createCluster`.
+        etcdEncrypted:
+          type: boolean
+          example: true
+          description: Whether the cluster encrypts Secrets in etcd.
     NodeAgentConfig:
       description: Desired control-plane node-agent configuration.
       type: object
@@ -2891,6 +3015,11 @@ components:
             A delete has been accepted but teardown has not started. Control-plane deletes
             are recorded here first and started one at a time; `deleting` then reports the
             teardown. At most one of deleting and deleteRequested is True.
+          allOf:
+            - $ref: "#/components/schemas/Condition"
+        adopted:
+          x-fern-ignore: true
+          description: Control-plane nodes of an adopted cluster only. True for a node that ran before NVKE adopted the cluster. Its operator manages it outside NVKE, which never upgrades, replaces or deletes it.
           allOf:
             - $ref: "#/components/schemas/Condition"
 

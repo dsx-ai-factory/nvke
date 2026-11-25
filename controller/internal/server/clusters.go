@@ -35,6 +35,7 @@ import (
 
 const (
 	clusterIDConst  = "clusterID"
+	adoptedConst    = "adopted"
 	databaseConst   = "database"
 	failedValue     = "Failed"
 	healthz         = "/healthz"
@@ -46,6 +47,9 @@ const (
 )
 
 var (
+	errDeleteAdoptedCluster = errors.New(
+		"cannot delete an adopted cluster: it is the cluster this controller runs on, and teardown would reset its control-plane nodes",
+	)
 	errVersionSkewViolation                     = errors.New("version skew policy violation")
 	errUpgradeInProgress                        = errors.New("cannot update Kubernetes version while an upgrade is already in progress")
 	errEtcdEncryptionDisableUnsupported         = errors.New("disabling etcd encryption is not supported")
@@ -106,6 +110,14 @@ type clusterService struct {
 	nodeAgentClient             agent.Client
 	allowControlPlaneWithoutVIP bool
 	releaseReader               ctrlclient.Reader
+	// k8sClient is the controller's own client for the cluster it runs on. Adopt
+	// reads that cluster's control-plane Nodes and kube-system/kubeadm-config
+	// with it, and checks managementNamespace for a Cluster API Cluster of the
+	// same name.
+	k8sClient           ctrlclient.Reader
+	managementNamespace string
+	// adoptionEnabled serves AdoptCluster (clusterAdoptionEnabled); off, it answers 404.
+	adoptionEnabled bool
 }
 
 func NewClusterService(
@@ -213,54 +225,9 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 		dbCluster.PodCIDR = network.podCIDR
 		dbCluster.ServiceCIDR = network.serviceCIDR.String()
 
-		// Persist the desired count and max surge as columns up front; the config
-		// snapshot row is created after the cluster row exists (it needs the cluster ID).
-		if req.Body.ControlPlaneConfig != nil {
-			dbCluster.ControlPlaneConfig.DesiredCount = req.Body.ControlPlaneConfig.DesiredCount
-			if req.Body.ControlPlaneConfig.MaxSurge != nil {
-				dbCluster.ControlPlaneConfig.MaxSurge = *req.Body.ControlPlaneConfig.MaxSurge
-			}
-			if req.Body.ControlPlaneConfig.AutoScaleDownDisabled != nil {
-				dbCluster.ControlPlaneConfig.AutoScaleDownDisabled = *req.Body.ControlPlaneConfig.AutoScaleDownDisabled
-			}
-			if req.Body.ControlPlaneConfig.NodeRebalanceDisabled != nil {
-				dbCluster.ControlPlaneConfig.NodeRebalanceDisabled = *req.Body.ControlPlaneConfig.NodeRebalanceDisabled
-			}
-		}
-
-		createdCluster, err = tx.CreateCluster(ctx, &dbCluster)
+		createdCluster, err = s.recordCluster(ctx, tx, dbCluster, req.Body.ControlPlaneConfig, false)
 		if err != nil {
-			return fmt.Errorf("failed to create cluster: %w", err)
-		}
-
-		if req.Body.ControlPlaneConfig != nil {
-			spec := controlPlaneConfigSpecFromCreateAPI(
-				req.Body.ControlPlaneConfig,
-				createdCluster.KubernetesVersion,
-				s.teleportCfg.NodePoolTeleportDefault(true),
-				createdCluster.ProviderType,
-			)
-			if err := db.CreateControlPlaneConfigRowIfChanged(ctx, tx, &createdCluster, spec, db.CreateControlPlaneConfigRowOpts{
-				ChangeReason: "cluster create controlPlaneConfig",
-			}); err != nil {
-				return fmt.Errorf("failed to create initial control plane configuration: %w", err)
-			}
-			if _, err := tx.UpdateCluster(ctx, &createdCluster); err != nil {
-				return fmt.Errorf("failed to persist cluster control plane configuration: %w", err)
-			}
-		}
-
-		workflowID := constants.ProvisionClusterWorkflowPrefix + createdCluster.ID.String()
-		err = enqueueWorkflow(ctx, tx, otelx.WorkflowAttributes{
-			WorkflowType: "ProvisionCluster",
-			WorkflowID:   workflowID,
-			ClusterID:    createdCluster.ID,
-			ClusterName:  createdCluster.Name,
-		}, map[string]interface{}{
-			clusterIDConst: createdCluster.ID,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create workflow outbox entry for cluster: %w", err)
+			return err
 		}
 
 		var initialNodePools []api.NodePoolCreateConfig
@@ -289,6 +256,71 @@ func (s *clusterService) CreateCluster(ctx context.Context, req api.CreateCluste
 	}
 
 	return api.CreateCluster201JSONResponse(APIClusterFromDB(&createdCluster)), nil
+}
+
+// recordCluster writes a new cluster in tx: the cluster row, its first
+// control-plane configuration snapshot, and the ProvisionCluster outbox entry.
+// CreateCluster and AdoptCluster both record a cluster through it, so the two
+// records have the same shape. adopted tells ProvisionCluster to skip building a
+// control plane.
+func (s *clusterService) recordCluster(
+	ctx context.Context,
+	tx db.Tx,
+	dbCluster db.Cluster,
+	controlPlaneConfig *api.CreateClusterControlPlaneConfig,
+	adopted bool,
+) (db.Cluster, error) {
+	// Persist the desired count and max surge as columns up front; the config
+	// snapshot row is created after the cluster row exists (it needs the cluster ID).
+	if controlPlaneConfig != nil {
+		dbCluster.ControlPlaneConfig.DesiredCount = controlPlaneConfig.DesiredCount
+		if controlPlaneConfig.MaxSurge != nil {
+			dbCluster.ControlPlaneConfig.MaxSurge = *controlPlaneConfig.MaxSurge
+		}
+		if controlPlaneConfig.AutoScaleDownDisabled != nil {
+			dbCluster.ControlPlaneConfig.AutoScaleDownDisabled = *controlPlaneConfig.AutoScaleDownDisabled
+		}
+		if controlPlaneConfig.NodeRebalanceDisabled != nil {
+			dbCluster.ControlPlaneConfig.NodeRebalanceDisabled = *controlPlaneConfig.NodeRebalanceDisabled
+		}
+	}
+
+	createdCluster, err := tx.CreateCluster(ctx, &dbCluster)
+	if err != nil {
+		return db.Cluster{}, fmt.Errorf("failed to create cluster: %w", err)
+	}
+
+	if controlPlaneConfig != nil {
+		spec := controlPlaneConfigSpecFromCreateAPI(
+			controlPlaneConfig,
+			createdCluster.KubernetesVersion,
+			s.teleportCfg.NodePoolTeleportDefault(true),
+			createdCluster.ProviderType,
+		)
+		if err := db.CreateControlPlaneConfigRowIfChanged(ctx, tx, &createdCluster, spec, db.CreateControlPlaneConfigRowOpts{
+			ChangeReason: "cluster create controlPlaneConfig",
+		}); err != nil {
+			return db.Cluster{}, fmt.Errorf("failed to create initial control plane configuration: %w", err)
+		}
+		if _, err := tx.UpdateCluster(ctx, &createdCluster); err != nil {
+			return db.Cluster{}, fmt.Errorf("failed to persist cluster control plane configuration: %w", err)
+		}
+	}
+
+	workflowID := constants.ProvisionClusterWorkflowPrefix + createdCluster.ID.String()
+	err = enqueueWorkflow(ctx, tx, otelx.WorkflowAttributes{
+		WorkflowType: "ProvisionCluster",
+		WorkflowID:   workflowID,
+		ClusterID:    createdCluster.ID,
+		ClusterName:  createdCluster.Name,
+	}, map[string]interface{}{
+		clusterIDConst: createdCluster.ID,
+		adoptedConst:   adopted,
+	})
+	if err != nil {
+		return db.Cluster{}, fmt.Errorf("failed to create workflow outbox entry for cluster: %w", err)
+	}
+	return createdCluster, nil
 }
 
 func (s *clusterService) preflightCheckCreateClusterRequest(
@@ -377,11 +409,8 @@ func validateControlPlaneNodeAgentProfile(profile db.Node, cluster db.Cluster, s
 }
 
 func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClusterRequest) error {
-	if err := naming.ValidateClusterNameForNodeNaming(req.Name); err != nil {
+	if err := validateClusterName(req.Name); err != nil {
 		return err
-	}
-	if len(req.Name) > capi.ClusterNameMaxLength {
-		return fmt.Errorf("cluster name must be %d characters or fewer so Kubernetes object names derived from it stay within limits", capi.ClusterNameMaxLength)
 	}
 
 	var nodePools []api.NodePoolCreateConfig
@@ -455,22 +484,8 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		return err
 	}
 
-	dbCniPlugin := db.EffectiveCNIPlugin(db.CniPlugin(req.CniPlugin))
-	supportedCNIPlugins := db.ListCNIPlugins()
-	if !s.allowLegacyCalicoClusterCreation {
-		supportedCNIPlugins = slices.DeleteFunc(supportedCNIPlugins, func(p db.CniPlugin) bool { return p == db.CNICalico })
-	}
-	if !slices.Contains(supportedCNIPlugins, dbCniPlugin) {
-		if dbCniPlugin == db.CNICalico {
-			return errors.New("calico cluster creation is disabled by this controller deployment; use ovn-kubernetes")
-		}
-		return fmt.Errorf("invalid CNI plugin: %s, valid plugins: %v", req.CniPlugin, supportedCNIPlugins)
-	}
-	if req.CniVersion != nil {
-		cniVersion := strings.TrimSpace(*req.CniVersion)
-		if cniVersion != "" && !cniVersionPattern.MatchString(cniVersion) {
-			return fmt.Errorf("invalid CNI version: %s, expected semver version core X.Y.Z without leading v", *req.CniVersion)
-		}
+	if err := s.validateCNIChoice(string(req.CniPlugin), req.CniVersion); err != nil {
+		return err
 	}
 
 	for _, nodePool := range nodePools {
@@ -485,6 +500,39 @@ func (s *clusterService) ValidateCreateClusterRequestFields(req *api.CreateClust
 		}
 	}
 
+	return nil
+}
+
+// validateClusterName checks a cluster name for create and adopt.
+func validateClusterName(name string) error {
+	if err := naming.ValidateClusterNameForNodeNaming(name); err != nil {
+		return err
+	}
+	if len(name) > capi.ClusterNameMaxLength {
+		return fmt.Errorf("cluster name must be %d characters or fewer so Kubernetes object names derived from it stay within limits", capi.ClusterNameMaxLength)
+	}
+	return nil
+}
+
+// validateCNIChoice checks a CNI plugin and version for create and adopt.
+func (s *clusterService) validateCNIChoice(plugin string, version *string) error {
+	dbCniPlugin := db.EffectiveCNIPlugin(db.CniPlugin(plugin))
+	supportedCNIPlugins := db.ListCNIPlugins()
+	if !s.allowLegacyCalicoClusterCreation {
+		supportedCNIPlugins = slices.DeleteFunc(supportedCNIPlugins, func(p db.CniPlugin) bool { return p == db.CNICalico })
+	}
+	if !slices.Contains(supportedCNIPlugins, dbCniPlugin) {
+		if dbCniPlugin == db.CNICalico {
+			return errors.New("calico cluster creation is disabled by this controller deployment; use ovn-kubernetes")
+		}
+		return fmt.Errorf("invalid CNI plugin: %s, valid plugins: %v", plugin, supportedCNIPlugins)
+	}
+	if version != nil {
+		cniVersion := strings.TrimSpace(*version)
+		if cniVersion != "" && !cniVersionPattern.MatchString(cniVersion) {
+			return fmt.Errorf("invalid CNI version: %s, expected semver version core X.Y.Z without leading v", *version)
+		}
+	}
 	return nil
 }
 
@@ -674,6 +722,12 @@ func (s *clusterService) UpdateCluster(ctx context.Context, req api.UpdateCluste
 		}
 		if agentUpgradeBlocksMaintenance(dbCluster, req.Body) {
 			return errAgentUpgradeInProgress
+		}
+		if err := rejectAdoptedControlPlaneMaintenance(dbCluster, req.Body); err != nil {
+			return err
+		}
+		if err := rejectAdoptedSettingChanges(dbCluster, req.Body); err != nil {
+			return err
 		}
 		// Reject a controlPlaneConfig provider block that doesn't match the cluster before
 		// any field is touched.
@@ -920,6 +974,12 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	if req == nil {
 		req = &api.UpdateClusterControlPlaneConfig{}
 	}
+	previousDesiredCount := cluster.ControlPlaneConfig.DesiredCount
+	// Refuse before the capacity check, whose VIP requirement would otherwise
+	// answer first: an adopted cluster records no VIP.
+	if cluster.IsAdopted() && req.DesiredCount != nil && *req.DesiredCount != previousDesiredCount {
+		return newBadRequestErrorf("cannot change desiredCount on an adopted control plane: its operator manages it outside NVKE")
+	}
 	if req.Nico != nil {
 		if err := s.providers.require(config.InfraProviderNico); err != nil {
 			return newBadRequestErrorf("%s", err)
@@ -978,8 +1038,9 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 	// reject (Forge instanceTypePreference/release or the CAPI
 	// capiInfraMachineTemplate). instanceTypePreference is merged above and is not
 	// covered by hasClusterLevelControlPlaneUpdate, so gate on it explicitly;
-	// maxSurge- and k8s-version-only updates leave these fields untouched.
-	if hasClusterLevelControlPlaneUpdate(req) || hasInstanceTypePreferences {
+	// maxSurge- and k8s-version-only updates leave these fields untouched. An
+	// adopted control plane records no machine settings, and PATCH refuses them.
+	if !cluster.IsAdopted() && (hasClusterLevelControlPlaneUpdate(req) || hasInstanceTypePreferences) {
 		if err := validateMergedClusterControlPlaneSpec(*cluster, controlPlaneConfigSpec); err != nil {
 			return err
 		}
@@ -988,6 +1049,9 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 		cluster.ControlPlaneVIP,
 		db.IsControlPlaneRolloutRequired(cluster.ControlPlaneConfig.ControlPlaneConfigSpec, controlPlaneConfigSpec),
 	); err != nil {
+		return err
+	}
+	if err := rejectAdoptedControlPlaneReplacement(*cluster, previousDesiredCount, controlPlaneConfigSpec); err != nil {
 		return err
 	}
 
@@ -999,6 +1063,71 @@ func (s *clusterService) applyClusterControlPlaneConfigUpdate(ctx context.Contex
 		return fmt.Errorf("create control plane configuration spec row: %w", err)
 	}
 	return nil
+}
+
+// rejectAdoptedControlPlaneReplacement refuses a control-plane change on an
+// adopted control plane, whose operator manages it outside NVKE. A change to
+// any rollout field (the Kubernetes version, release, configProfile, the infra
+// template or bootstrap) or a desiredCount increase would build control-plane
+// nodes through the provider -- on the site cluster, the NICo that runs on it.
+// A decrease would let scale-down pick an adopted node once autoScaleDownDisabled
+// were cleared, and could not be raised back; desiredCount stays the adopted node
+// count.
+func rejectAdoptedControlPlaneReplacement(cluster db.Cluster, previousDesiredCount int, spec db.ControlPlaneConfigSpec) error {
+	if !cluster.IsAdopted() {
+		return nil
+	}
+	var changes []string
+	if cluster.ControlPlaneConfig.DesiredCount != previousDesiredCount {
+		changes = append(changes, "desiredCount")
+	}
+	for _, change := range db.ComputeControlPlaneRolloutChanges(cluster.ControlPlaneConfig.ControlPlaneConfigSpec, spec) {
+		changes = append(changes, change.Field)
+	}
+	if len(changes) == 0 {
+		return nil
+	}
+	return newBadRequestErrorf("cannot change %s on an adopted control plane: its operator manages it outside NVKE",
+		strings.Join(changes, ", "))
+}
+
+// rejectAdoptedControlPlaneMaintenance refuses a Kubernetes version change on an
+// adopted control plane, whose operator upgrades it outside NVKE. Even the
+// current version would run the add-on upgrade against it.
+func rejectAdoptedControlPlaneMaintenance(cluster db.Cluster, req *api.UpdateClusterRequest) error {
+	if !cluster.IsAdopted() || req.ControlPlaneKubernetesVersion == nil || *req.ControlPlaneKubernetesVersion == "" {
+		return nil
+	}
+	return newBadRequestErrorf("cannot change controlPlaneKubernetesVersion on an adopted control plane: its operator manages it outside NVKE")
+}
+
+// rejectAdoptedSettingChanges refuses turning back on the replacement adopt
+// turned off -- recycling, automatic scale-down and rebalancing -- and
+// controlPlaneConfig.nico, which describes control-plane machines NVKE never
+// builds for an adopted control plane.
+func rejectAdoptedSettingChanges(cluster db.Cluster, req *api.UpdateClusterRequest) error {
+	if !cluster.IsAdopted() {
+		return nil
+	}
+	var fields []string
+	if req.EnableCPNodeRecycling != nil && *req.EnableCPNodeRecycling {
+		fields = append(fields, "enableCPNodeRecycling")
+	}
+	if cp := req.ControlPlaneConfig; cp != nil {
+		if cp.AutoScaleDownDisabled != nil && !*cp.AutoScaleDownDisabled {
+			fields = append(fields, "controlPlaneConfig.autoScaleDownDisabled")
+		}
+		if cp.NodeRebalanceDisabled != nil && !*cp.NodeRebalanceDisabled {
+			fields = append(fields, "controlPlaneConfig.nodeRebalanceDisabled")
+		}
+		if cp.Nico != nil {
+			fields = append(fields, "controlPlaneConfig.nico")
+		}
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return newBadRequestErrorf("cannot change %s on an adopted control plane: its operator manages it outside NVKE", strings.Join(fields, ", "))
 }
 
 // hasClusterLevelControlPlaneUpdate reports whether the update touches any of the
@@ -1297,6 +1426,11 @@ func (s *clusterService) DeleteCluster(ctx context.Context, req api.DeleteCluste
 			}
 			return fmt.Errorf("failed to get cluster: %w", err)
 		}
+		// An adopted cluster is the one this controller runs on: teardown would
+		// kubeadm reset the nodes that host the controller, Temporal and Postgres.
+		if dbCluster.IsAdopted() {
+			return errDeleteAdoptedCluster
+		}
 
 		// Cluster deletion stops controller-side agent upgrades.
 		dbCluster.Conditions.Deleting = db.NewCondition(true, "Cluster deletion is pending")
@@ -1323,6 +1457,9 @@ func (s *clusterService) DeleteCluster(ctx context.Context, req api.DeleteCluste
 	if err != nil {
 		if errors.Is(err, db.ErrNotFound) {
 			return api.DeleteCluster404Response{}, nil
+		}
+		if errors.Is(err, errDeleteAdoptedCluster) {
+			return api.DeleteCluster409JSONResponse{Message: err.Error()}, nil
 		}
 		return nil, err
 	}

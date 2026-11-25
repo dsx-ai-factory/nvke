@@ -96,6 +96,12 @@ func (n Node) IsManagedByNodePool() bool {
 	return n.NodePoolID != uuid.Nil
 }
 
+// IsAdopted reports whether the node ran before NVKE adopted its cluster. Its
+// operator keeps managing it: NVKE never replaces or upgrades it.
+func (n Node) IsAdopted() bool {
+	return n.Conditions.Adopted.Status == ConditionStatusTrue
+}
+
 // IsManagedByControlPlaneController reports whether the node is a no-nodepool control plane node.
 func (n Node) IsManagedByControlPlaneController() bool {
 	return n.ControlPlane && n.NodePoolID == uuid.Nil
@@ -139,6 +145,10 @@ type NodeConditions struct {
 	// joins, the rebalance step sheds the old node and clears the marker; it dies
 	// with the node if the surge is abandoned.
 	ControlPlanePreferredReplacement Condition `json:"controlPlanePreferredReplacement"`
+	// Adopted marks a control-plane node the cluster was bootstrapped with
+	// before NVKE adopted it. NVKE did not build it; it counts toward desiredCount,
+	// but scale-down never picks it.
+	Adopted Condition `json:"adopted"`
 }
 
 // NamedCondition pairs a condition with the name it carries in JSON.
@@ -173,6 +183,7 @@ func (c NodeConditions) All() []NamedCondition {
 		{"teleportRegistered", c.TeleportRegistered},
 		{"controlPlaneRolloutRequired", c.ControlPlaneRolloutRequired},
 		{"controlPlanePreferredReplacement", c.ControlPlanePreferredReplacement},
+		{"adopted", c.Adopted},
 	}
 }
 
