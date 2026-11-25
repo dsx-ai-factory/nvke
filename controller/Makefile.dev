@@ -534,7 +534,7 @@ registry-mirror-network = $(if $(filter docker,$(CONTAINER_CLI)),,--network kind
 registry-mirror-connect = $(if $(filter docker,$(CONTAINER_CLI)),@$(kind-docker-host) $(CONTAINER_CLI) network connect kind $(1) 2>/dev/null || true)
 
 .PHONY: registry-mirror
-registry-mirror: ## Start Docker Hub and registry.k8s.io pull-through caches
+registry-mirror: $(if $(filter docker,$(CONTAINER_CLI)),,kind-up) ## Start Docker Hub and registry.k8s.io pull-through caches
 	@if $(kind-docker-host) $(CONTAINER_CLI) inspect registry-mirror >/dev/null 2>&1; then \
 		if [ "$$($(kind-docker-host) $(CONTAINER_CLI) inspect --format '{{.State.Running}}' registry-mirror)" = "true" ]; then \
 			echo "✅ Registry mirror already running"; \

@@ -115,8 +115,8 @@ for _ in $(seq 1 30); do
 done
 
 (( ready == 1 )) || die "FRR did not become ready within 30s."
-started=true
 ce_allow_same_bridge_forwarding "${NETWORK_NAME}" || die "could not allow forwarding on the ${NETWORK_NAME} bridge."
+started=true
 
 info "Useful commands:"
 echo "  ${ENGINE} exec ${CONTAINER_NAME} vtysh -c 'show bgp summary'"
