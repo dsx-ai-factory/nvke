@@ -610,6 +610,19 @@ func (s *NodeAgentServer) verifyOpenVSwitchPlan(plan openVSwitchPlan) error {
 	if route.Device != plan.bridgeName {
 		return fmt.Errorf("%w: default route uses %s instead of bridge %s", errOpenVSwitchNotConverged, route.Device, plan.bridgeName)
 	}
+	// Both plans pin a locally administered uplink MAC on the bridge. A bridge
+	// with another MAC can still carry the default route, with a different
+	// DHCP address than the node had, so check the MAC itself.
+	if openVSwitchMACIsLocallyAdministered(plan.uplinkMAC) {
+		bridge, err := s.readOpenVSwitchLink(plan.bridgeName)
+		if err != nil {
+			return fmt.Errorf("%w: %v", errOpenVSwitchNotConverged, err)
+		}
+		if !strings.EqualFold(bridge.Address, plan.uplinkMAC) {
+			return fmt.Errorf("%w: bridge %s has MAC %s instead of uplink MAC %s",
+				errOpenVSwitchNotConverged, plan.bridgeName, bridge.Address, plan.uplinkMAC)
+		}
+	}
 	// Only now, and not beside the apply: netplan creates the bridge
 	// asynchronously, so the checks above are the first point it demonstrably
 	// exists. ovs-vsctl cannot set an external-id on a row that is not there
