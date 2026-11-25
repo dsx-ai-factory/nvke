@@ -1,6 +1,6 @@
 body:
   metadata:
-    creationTimestamp: "1970-01-01T00:00:00Z"
+    creation_timestamp: "1970-01-01T00:00:00Z"
     name: control-plane-v1
     uid: UID
   spec:
@@ -9,22 +9,22 @@ body:
     lifecycle:
       deprecated: true
       hidden: false
-    machineImageRef:
+    machine_image_ref:
       name: ubuntu-2404-amd64
-    machineInit:
+    machine_init:
       bootstrap:
-        bootstrapFiles:
+        bootstrap_files:
         - content: control-plane-v1
           owner: root:root
           path: /etc/nvke/release
           permissions: "0644"
-        preBootstrapCommands:
+        pre_bootstrap_commands:
         - hostnamectl set-hostname nvke-control-plane
 headers:
   Cache-Control:
   - no-store
   Content-Length:
-  - "485"
+  - "492"
   Content-Type:
   - application/json
   Date:

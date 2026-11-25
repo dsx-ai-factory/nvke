@@ -10,9 +10,9 @@
     metadata:
       name: ubuntu-gpu-2026-11-copy
     spec:
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit: {}
+      machine_init: {}
       profile: ubuntu-gpu
       tag: "2026.11"
 - method: POST
@@ -23,9 +23,9 @@
     metadata:
       name: ubuntu-cpu-2026-11
     spec:
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit: {}
+      machine_init: {}
       profile: ubuntu-cpu
       tag: "2026.11"
 - method: POST
@@ -36,9 +36,9 @@
     metadata:
       name: ubuntu-gpu-2026-12
     spec:
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit: {}
+      machine_init: {}
       profile: ubuntu-gpu
       tag: "2026.12"
 - method: POST
@@ -49,8 +49,8 @@
     metadata:
       name: ubuntu-gpu-2026-11
     spec:
-      machineImageRef:
+      machine_image_ref:
         name: img-ubuntu
-      machineInit: {}
+      machine_init: {}
       profile: ubuntu-gpu
       tag: "2026.11"

@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// The operator API serves catalog management operations.
+
 package main
 
 import (
@@ -14,7 +16,7 @@ import (
 var version = "dev"
 
 func main() {
-	if err := publicapi.Run(version, publicapi.Operator(), resource.ClientConfig{Surface: "operator"}); err != nil {
+	if err := publicapi.Run(version, publicapi.Operator(), resource.ClientConfig{}); err != nil {
 		slog.Error("operator API stopped", "error", err)
 		os.Exit(1)
 	}

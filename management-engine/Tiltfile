@@ -90,7 +90,7 @@ def register(ctx):
           set -euo pipefail
           : "${API_SERVER_IP:?API server IP is required}"
           jq --arg name "$CLUSTER_NAME" --arg ip "$API_SERVER_IP" '
-            .metadata.name = $name | .spec.apiServerEndpoint.address = $ip
+            .metadata.name = $name | .spec.api_server_endpoint.address = $ip
           ' <<< "$NVKECLUSTER_TEMPLATE" |
             curl --fail-with-body --silent --show-error --request POST \
               --header 'Content-Type: application/json' \

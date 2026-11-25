@@ -57,6 +57,16 @@ make tilt-up
 
 ## API conventions
 
+The tenant and operator HTTP APIs default to snake_case. Start either server
+with `--field-naming=camelCase` to select camelCase for that entire API.
+Helm deployments pass this flag through `tenantAPI.args` or `operatorAPI.args`.
+See [HTTP naming configuration](docs/helm-installation.md#http-naming).
+
+The setting covers declared JSON fields, query parameters, selector paths,
+error field paths and error codes. Requests must use the selected spelling.
+Dictionary keys, other enum values, headers and opaque tokens retain their
+values. Kubernetes objects keep their canonical field names.
+
 All types use `service.nvke.nvidia.com/v1`. Future public tenant and operator
 APIs should use separately versioned contracts. Do not expose internal structs
 directly.

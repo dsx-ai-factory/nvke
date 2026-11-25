@@ -4,20 +4,20 @@
 metadata:
   name: test-docker
 spec:
-  clusterNetwork:
+  cluster_network:
     pods:
-      cidrBlocks: [10.244.0.0/16]
+      cidr_blocks: [10.244.0.0/16]
     services:
-      cidrBlocks: [10.96.0.0/12]
+      cidr_blocks: [10.96.0.0/12]
   release:
     channel:
       name: management-engine-stable
-  controlPlaneClass: management-engine-standard
+  control_plane_class: management-engine-standard
   network:
-    vpcID: 22222222-2222-4222-8222-222222222222
-  nodePools:
+    vpc_id: 22222222-2222-4222-8222-222222222222
+  node_pools:
     - name: workers
-      instanceType: docker
+      instance_type: docker
       replicas: 1
-      vpcSubnetID: 44444444-4444-4444-8444-444444444444
-      nodeProfile: "docker:1.36.4"
+      vpc_subnet_id: 44444444-4444-4444-8444-444444444444
+      node_profile: "docker:1.36.4"

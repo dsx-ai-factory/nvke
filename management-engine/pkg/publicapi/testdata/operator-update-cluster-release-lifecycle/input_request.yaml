@@ -11,16 +11,16 @@ body:
   spec:
     kubernetes:
       version: "1.36.3"
-    machineImageRef:
+    machine_image_ref:
       name: ubuntu-2404-amd64
-    machineInit:
+    machine_init:
       bootstrap:
-        bootstrapFiles:
+        bootstrap_files:
           - path: /etc/nvke/release
             owner: root:root
             permissions: "0644"
             content: control-plane-v1
-        preBootstrapCommands:
+        pre_bootstrap_commands:
           - hostnamectl set-hostname nvke-control-plane
     lifecycle:
       deprecated: true

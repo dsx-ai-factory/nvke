@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// This file configures and runs a public API with its selected naming policy.
+
 package publicapi
 
 import (
@@ -20,12 +22,22 @@ import (
 )
 
 // Run parses common flags, mounts the command's public surface, and serves it until shutdown.
-func Run(version string, registrations []resource.Registration, cfg resource.ClientConfig) error {
+func Run(version string, surface Surface, cfg resource.ClientConfig) error {
 	address := flag.String("listen", ":8080", "HTTP listen address")
 	contextName := flag.String("context", "", "Datastore kubeconfig context")
 	authConfig := flag.String("auth-config", "", "Authentication configuration file. Empty disables authentication.")
+	fieldNaming := flag.String("field-naming", "snake_case", "HTTP naming format: snake_case or camelCase")
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	switch *fieldNaming {
+	case "snake_case":
+		cfg.Naming = resource.SnakeCase
+	case "camelCase":
+		cfg.Naming = resource.CamelCase
+	default:
+		return fmt.Errorf("invalid --field-naming %q: use snake_case or camelCase", *fieldNaming)
+	}
 
 	if *showVersion {
 		fmt.Println(version)
@@ -54,8 +66,9 @@ func Run(version string, registrations []resource.Registration, cfg resource.Cli
 		return fmt.Errorf("configure readiness discovery: %w", err)
 	}
 	cfg.Datastore = datastore
+	cfg.Surface = surface.Name
 	mux := http.NewServeMux()
-	for _, registration := range registrations {
+	for _, registration := range surface.Registrations {
 		if err := registration.Mount(mux, cfg); err != nil {
 			return fmt.Errorf("mount %s surface: %w", cfg.Surface, err)
 		}
@@ -70,7 +83,7 @@ func Run(version string, registrations []resource.Registration, cfg resource.Cli
 		}
 		w.WriteHeader(http.StatusOK)
 	})
-	handler := resource.WithLimits(mux, resource.ServerOptions{})
+	handler := resource.WithLimits(mux, resource.ServerOptions{Naming: cfg.Naming})
 	if authenticator != nil {
 		handler = authenticator.Wrap(handler)
 	}

@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// This file projects datastore resources into read-only public catalog views.
+
 package resource
 
 import (
@@ -46,11 +48,9 @@ type CatalogDependencyPreparation[D any] = func(ClientConfig) (CatalogDependency
 // catalogProjector handles a batch so dependent views can share a single dependency load.
 type catalogProjector[S, E any] = func(context.Context, []S) ([]E, error)
 
-// NewReadRegistration mounts read-only views produced by the source's CatalogView method.
-// Selectable fields are explicit public JSON paths supporting equality filters.
-// Datastore access and discovery begin at Mount. The source requires no write conversion or validation.
-// Views omit ETags. Lists filter before paging in name order, and public result changes expire continuations.
-// Named reads include hidden sources.
+// NewReadRegistration mounts read-only CatalogView projections with explicit equality filters.
+// Named reads include hidden sources. Lists filter in name order and expire continuations when public results change.
+// Mount starts datastore access and discovery. Views omit ETags and require no write conversion or validation.
 func NewReadRegistration[S directView[E], E namedView](path string, info ResourceInfo, fields ...string) Registration {
 	return readRegistration(path, info, fields, func(_ ClientConfig) (catalogProjector[S, E], error) {
 		return directProjector[S, E], nil
@@ -58,9 +58,8 @@ func NewReadRegistration[S directView[E], E namedView](path string, info Resourc
 }
 
 // NewDependentReadRegistration mounts read-only views with a typed dependency loader.
-// Preparation runs once at Mount. Its loader runs once per nonempty batch. Source methods
-// own eligibility and joins. Load failures discard the entire result.
-// Responses and pagination follow NewReadRegistration's contract.
+// Preparation runs once at Mount and loading once per nonempty batch. Source methods own eligibility and joins.
+// Load failures discard the result. Responses and pagination follow NewReadRegistration's contract.
 func NewDependentReadRegistration[S dependentView[D, E], D any, E namedView](
 	path string,
 	info ResourceInfo,
@@ -82,9 +81,8 @@ func NewDependentReadRegistration[S dependentView[D, E], D any, E namedView](
 	})
 }
 
-// NewSourceLister constructs a typed, complete Kubernetes list loader for dependencies.
-// It checks list capability at construction, resolves trusted scope once per call and retains
-// hidden backing resources. A read registration's loader can assemble these values into its typed dependencies.
+// NewSourceLister constructs a typed list loader that retains hidden dependency resources.
+// It checks list capability at construction and resolves trusted scope once per call.
 // Collections exceeding 10,000 items fail without returning partial values.
 func NewSourceLister[S any](cfg ClientConfig, info ResourceInfo) (func(context.Context) ([]S, error), error) {
 	info.Verbs = []Operation{OpList}
@@ -129,8 +127,7 @@ func readRegistration[S visibleSource, E namedView](
 		reader := &projectedReader[S, E]{source: &datastoreSource[S]{store}, project: projectCatalog, fields: fields,
 			identity: store.cfg.Datastore.Host + "/" + cfg.Surface + "/" + path + "/" +
 				info.GVK.String() + "/" + info.Resource + "/" + string(info.Scope)}
-		Register(mux, path, reader, nil, fields, info.Verbs...)
-		return nil
+		return Register(mux, path, reader, nil, fields, cfg.Naming, info.Verbs...)
 	}}
 }
 

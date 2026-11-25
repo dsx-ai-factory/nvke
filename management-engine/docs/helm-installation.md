@@ -99,6 +99,7 @@ Each `tenantAPI` and `operatorAPI` section accepts these settings:
 | `serviceAccount.create`, `serviceAccount.name` | Create an identity or reference an existing ServiceAccount in the release namespace. |
 | `service.port` | Internal Service port, default `8080`, named `http`; targets the container's named `http` port on `8080`. |
 | `stateAccess.mode`, `stateAccess.kubeconfigSecret.name`, `.key`, `stateAccess.context` | Local ServiceAccount access or an existing remote kubeconfig reference. |
+| `args` | Additional server options, including `--field-naming=snake_case` or `--field-naming=camelCase`. |
 
 Set `tenantAPI.namespace` explicitly. The current tenant server uses this one
 namespace for every request through its temporary `--namespace` option; caller
@@ -121,6 +122,28 @@ the datastore cluster. The Secret key is mounted read-only at
 `/etc/cluster-service/kubeconfig`; `stateAccess.context` optionally selects its
 context. The pods disable local ServiceAccount token mounting in remote mode.
 Credential issuance, delivery and rotation are external installation inputs.
+
+### HTTP naming
+
+Each API defaults to snake_case. Use its `args` to select camelCase independently:
+
+```yaml
+tenantAPI:
+  args: [] # defaults to snake_case
+operatorAPI:
+  args:
+    - --field-naming=camelCase
+```
+
+The servers accept only `snake_case` and `camelCase` and reject invalid settings
+at startup. One format applies to the entire API. Changing it requires updating
+clients, and any OpenAPI document supplied to clients must match that format.
+
+Keep the format consistent across all replicas of an API. A rolling update
+that changes it can serve both formats until old pods stop. Choose the format
+before admitting clients, or coordinate a cutover when changing it.
+
+### API services
 
 For release `cluster-service` with default naming, the Services are
 `cluster-service-tenant-api` and `cluster-service-operator-api` in the release

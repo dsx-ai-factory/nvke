@@ -9,15 +9,15 @@
     metadata:
       name: "example-cluster"
     spec:
-      clusterNetwork:
+      cluster_network:
         pods:
-          cidrBlocks: ["10.244.0.0/16"]
+          cidr_blocks: ["10.244.0.0/16"]
         services:
-          cidrBlocks: ["10.96.0.0/12"]
+          cidr_blocks: ["10.96.0.0/12"]
       release:
         channel:
           name: "stable"
-      controlPlaneClass: "standard"
+      control_plane_class: "standard"
 - method: POST
   path: "/v1/clusters"
   headers:
@@ -26,17 +26,17 @@
     metadata:
       name: "rejected-apiserveraccess"
     spec:
-      clusterNetwork:
+      cluster_network:
         pods:
-          cidrBlocks: ["10.244.0.0/16"]
+          cidr_blocks: ["10.244.0.0/16"]
         services:
-          cidrBlocks: ["10.96.0.0/12"]
+          cidr_blocks: ["10.96.0.0/12"]
       release:
         channel:
           name: "stable"
-      controlPlaneClass: "standard"
-      apiServerAccess:
-        publicAccessEnabled: false
+      control_plane_class: "standard"
+      api_server_access:
+        public_access_enabled: false
 - method: POST
   path: "/v1/clusters"
   headers:
@@ -45,16 +45,16 @@
     metadata:
       name: "rejected-acceleratedruntime"
     spec:
-      clusterNetwork:
+      cluster_network:
         pods:
-          cidrBlocks: ["10.244.0.0/16"]
+          cidr_blocks: ["10.244.0.0/16"]
         services:
-          cidrBlocks: ["10.96.0.0/12"]
+          cidr_blocks: ["10.96.0.0/12"]
       release:
         channel:
           name: "stable"
-      controlPlaneClass: "standard"
-      acceleratedRuntime:
+      control_plane_class: "standard"
+      accelerated_runtime:
         name: "none"
 - method: POST
   path: "/v1/clusters"
@@ -64,33 +64,33 @@
     metadata:
       name: "rejected-servicedomain"
     spec:
-      clusterNetwork:
+      cluster_network:
         pods:
-          cidrBlocks: ["10.244.0.0/16"]
+          cidr_blocks: ["10.244.0.0/16"]
         services:
-          cidrBlocks: ["10.96.0.0/12"]
-        serviceDomain: "cluster.local"
+          cidr_blocks: ["10.96.0.0/12"]
+        service_domain: "cluster.local"
       release:
         channel:
           name: "stable"
-      controlPlaneClass: "standard"
+      control_plane_class: "standard"
 - method: PUT
   path: "/v1/clusters/example-cluster"
   body:
     metadata:
       name: "example-cluster"
     spec:
-      clusterNetwork:
+      cluster_network:
         pods:
-          cidrBlocks: ["10.244.0.0/16"]
+          cidr_blocks: ["10.244.0.0/16"]
         services:
-          cidrBlocks: ["10.96.0.0/12"]
+          cidr_blocks: ["10.96.0.0/12"]
       release:
         channel:
           name: "stable"
-      controlPlaneClass: "standard"
-      apiServerAccess:
-        publicAccessEnabled: false
+      control_plane_class: "standard"
+      api_server_access:
+        public_access_enabled: false
   headers:
     Content-Type: ["application/json"]
     If-Match: ["{{etag}}"]
@@ -100,16 +100,16 @@
     metadata:
       name: "example-cluster"
     spec:
-      clusterNetwork:
+      cluster_network:
         pods:
-          cidrBlocks: ["10.244.0.0/16"]
+          cidr_blocks: ["10.244.0.0/16"]
         services:
-          cidrBlocks: ["10.96.0.0/12"]
+          cidr_blocks: ["10.96.0.0/12"]
       release:
         channel:
           name: "stable"
-      controlPlaneClass: "standard"
-      acceleratedRuntime:
+      control_plane_class: "standard"
+      accelerated_runtime:
         name: "none"
   headers:
     Content-Type: ["application/json"]
@@ -120,16 +120,16 @@
     metadata:
       name: "example-cluster"
     spec:
-      clusterNetwork:
+      cluster_network:
         pods:
-          cidrBlocks: ["10.244.0.0/16"]
+          cidr_blocks: ["10.244.0.0/16"]
         services:
-          cidrBlocks: ["10.96.0.0/12"]
-        serviceDomain: "cluster.local"
+          cidr_blocks: ["10.96.0.0/12"]
+        service_domain: "cluster.local"
       release:
         channel:
           name: "stable"
-      controlPlaneClass: "standard"
+      control_plane_class: "standard"
   headers:
     Content-Type: ["application/json"]
     If-Match: ["{{etag}}"]
