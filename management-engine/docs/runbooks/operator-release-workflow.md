@@ -1,7 +1,13 @@
 # Operator release workflow
 
 Operators use the Cluster Service APIs to publish releases and make them available
-through channels. This runbook covers the routine release workflow:
+through channels. This runbook uses the service-layer API (`service.nvke.nvidia.com/v1`):
+`ClusterRelease` and `ClusterReleaseChannel` select control-plane releases;
+`NodeProfile` selects worker releases. The controller's
+[node-image guide](../../../docs/operate/build-node-images.md) describes its separate
+`internal.nvke.nvidia.com/v1` resources, including `NodePoolRelease`.
+
+This runbook covers the routine release workflow:
 
 1. Publish a new release or select an existing one.
 2. Update the intended channel so eligible clusters following it adopt the release.
@@ -12,19 +18,21 @@ Publishing adds a catalog record. Updating a channel changes the releases availa
 to clusters following it, according to their version selection and eligibility
 rules. A cluster can also be moved to another channel or version selection.
 
-For container images and Helm charts, see [package publication](artifact-publication.md).
+For container images and Helm charts, see [package publication](../artifact-publication.md).
 For validation on one cluster, see [test a release before wider rollout](#test-a-release-before-wider-rollout).
 
 ## Before starting
 
 You need `curl`, `jq` and `kubectl`, access to the Cluster Service APIs and
 datastore, and a kubeconfig for the workload cluster. Confirm that Cluster Service
-meets the [installation prerequisites](helm-installation.md) and can reach the
+meets the [installation prerequisites](../helm-installation.md) and can reach the
 NVKE controller.
 
 Use the site's tenant API endpoint and its approved internal
 endpoint for the operator API. Both refer to Cluster Service. Add the authentication
-options required by your deployment to each curl command.
+options required by your deployment to each curl command. Before exposing either
+API, verify that authentication and authorization are enforced; deploying the
+workloads alone does not establish access control.
 
 | Variable | Value |
 | --- | --- |
@@ -53,23 +61,26 @@ curl -i "${OPERATOR_API_URL:?}/v1/machine-images"
 curl -i "${OPERATOR_API_URL:?}/v1/cluster-release-channels"
 ```
 
-For a new release, set its name, image, Kubernetes version and approved cloud-init
-template from the release artifacts. The selector identifies the version offered
-through the channel; minimum upgrade age controls when a new release is eligible.
+For a new release, select its name, image, Kubernetes version and approved
+bootstrap configuration from the release artifacts. The selector identifies the
+version offered through the channel; minimum upgrade age controls when a new
+release is eligible.
 
 | Variable | Value |
 | --- | --- |
 | `RELEASE_NAME` | New or existing release to make available. |
 | `MACHINE_IMAGE_NAME` | Existing machine image from the catalog. |
 | `KUBERNETES_VERSION` | Exact Kubernetes version the release should boot. |
-| `USER_DATA_TEMPLATE` | Path to the approved cloud-init template from the release artifacts. |
+| `BOOTSTRAP_CONFIG` | JSON file containing the approved `machineInit.infra` object: bootstrap files and pre-kubeadm commands. |
 | `CHANNEL_NAME` | Existing channel to update or select for a cluster. |
 | `VERSION_SELECTOR` | Channel selector: `major.minor` allows patch upgrades; `major.minor.patch` selects an exact Kubernetes version. |
 | `MINIMUM_UPGRADE_AGE` | Minimum release age before existing clusters may adopt it, such as `24h`. |
 
-Use the schema from the installed version. The [release definition](../apis/v1/clusterrelease_types.go)
-and [initialization fields](../apis/v1/common_types.go) describe optional settings,
-including additional bootstrap files and commands.
+Use the schema from the installed version. The [release definition](../../apis/v1/clusterrelease_types.go)
+and [initialization fields](../../apis/v1/common_types.go) describe optional settings,
+including additional bootstrap files and commands. The current schema requires
+a cloud-init header in `userDataTemplate`; node setup on the CAPI path comes
+from `machineInit.infra`.
 
 Use an image and initialization configuration tested together for the target
 provider and Kubernetes version. Include the required networking and identity
@@ -94,17 +105,17 @@ jq -n \
   --arg name "${RELEASE_NAME:?}" \
   --arg image "${MACHINE_IMAGE_NAME:?}" \
   --arg version "${KUBERNETES_VERSION:?}" \
-  --rawfile userData "${USER_DATA_TEMPLATE:?}" \
+  --slurpfile bootstrap "${BOOTSTRAP_CONFIG:?}" \
   '{metadata: {name: $name}, spec: {
     kubernetes: {version: $version},
     machineImageRef: {name: $image},
-    machineInit: {userDataTemplate: $userData}
+    machineInit: {userDataTemplate: "#cloud-config\n", infra: $bootstrap[0]}
   }}' > release.json
 cat release.json
 ```
 
-Include any `machineInit.infra` files and commands required by the image in
-`release.json`, then publish the reviewed request:
+Confirm the request includes the files and commands required by the image, then
+publish it:
 
 ```sh
 curl -i -H 'Content-Type: application/json' \
@@ -132,25 +143,25 @@ cat channel.json
 Copy the response's `ETag` value into `CHANNEL_ETAG`, keeping the double quotes.
 The API requires it in `If-Match` so the update cannot overwrite a newer change.
 
-Replace that selector's candidate list with the new release, preserving other
-selectors and settings. Keep only writable metadata from the GET response:
+Add the release as the first candidate, keeping the previous candidates and
+other selectors unchanged. Retain an eligible reference to each cluster's
+current release until those clusters have moved off it. Otherwise, reconciliation
+can fail while the new candidate is too young to adopt. Clusters with no current
+release have no previous reference to retain.
 
-```sh
-jq --arg selector "${VERSION_SELECTOR:?}" \
-  --arg release "${RELEASE_NAME:?}" \
-  --arg age "${MINIMUM_UPGRADE_AGE:?}" \
-  '{metadata: (.metadata | {name, uid}), spec}
-   | .spec.releases[$selector] = [{name: $release, minimumUpgradeAge: $age}]' \
-  channel.json > channel-update.json
-cat channel-update.json
-```
-
-Submit the reviewed update:
+The following request prepends the candidate and removes any duplicate reference
+to it. Review `channel.json` and the intended candidate order before submitting:
 
 ```sh
 curl -i -X PUT \
   -H "If-Match: ${CHANNEL_ETAG:?}" -H 'Content-Type: application/json' \
-  --data-binary @channel-update.json \
+  --data-binary "$(jq --arg selector "${VERSION_SELECTOR:?}" \
+    --arg release "${RELEASE_NAME:?}" --arg age "${MINIMUM_UPGRADE_AGE:?}" \
+    '{metadata: (.metadata | {name, uid}), spec}
+     | .spec.releases[$selector] =
+       ([{name: $release, minimumUpgradeAge: $age}]
+        + [(.spec.releases[$selector] // [])[] | select(.name != $release)])' \
+    channel.json)" \
   "${OPERATOR_API_URL:?}/v1/cluster-release-channels/${CHANNEL_NAME:?}"
 ```
 
@@ -160,7 +171,10 @@ timestamps and status are read-only.
 
 Monitor adopting clusters using the [rollout checks](#verify-the-rollout).
 Adoption depends on each cluster's selection and the release's eligibility; a
-channel update does not mean every cluster upgrades immediately.
+channel update does not mean every cluster upgrades immediately. A previous
+release can be marked `spec.lifecycle.deprecated: true` to signal that existing
+consumers should migrate. Keep its channel reference while those consumers still
+need it; deprecation and deletion are separate operations.
 
 ## Change a cluster's release selection
 
@@ -196,7 +210,7 @@ curl -i -X PUT \
 Expect HTTP 200. The manager resolves the selection subject to channel eligibility
 and minimum upgrade age. A successful API response means the request was stored.
 
-Worker releases are selected separately through [node profiles](../apis/v1/nodeprofile_types.go).
+Worker releases are selected separately through [node profiles](../../apis/v1/nodeprofile_types.go).
 Set `NODE_POOL_NAME` to the existing pool and `NODE_PROFILE` to its approved
 `profile:tag`. Fetch `cluster.json` again and copy its new ETag into `CLUSTER_ETAG`.
 Use this command to change the worker profile, then submit `cluster-update.json`
@@ -231,7 +245,7 @@ Check the stored resource and the workload cluster together:
 | `status.conditions` | Current `Synced`, `ControlPlaneReady` and `Ready` observations are `True`; inspect their reasons and messages if not. |
 | Backend operation | `NVKEControllerProvisioned=True` and `NVKEControllerProvisioning=False`. For requested upgrades or recycling, also confirm those operations finish and inspect any `NVKEControllerUpdateFailed` error. |
 
-Use the [workload cluster access procedure](../../docs/workload-clusters/access.md)
+Use the [workload cluster access procedure](../../../docs/workload-clusters/access.md)
 to obtain its kubeconfig and arrange a route or approved proxy to the workload
 API. Access to the management cluster alone does not provide that connection.
 Set `WORKLOAD_KUBECONFIG` to the resulting file and inspect nodes:
@@ -244,6 +258,11 @@ All expected nodes must be present and `Ready`. Control-plane nodes must run the
 selected Kubernetes version; worker nodes must match their selected node profiles.
 Compare actual node counts with the requested pools. API success, `currentRelease`
 or `Ready=True` alone does not establish that replacement or scaling has finished.
+If the release changes the image or initialization, verify those changes on
+newly provisioned or replaced nodes. Record their node or Machine identities and
+check the image build identifier and expected initialization results. Existing
+Ready nodes alone do not show that the candidate has booted.
+
 Record provider health separately: a ready Kubernetes node can coexist with an
 infrastructure health condition that still reports provisioning.
 
@@ -266,10 +285,10 @@ kubectl -n "${TENANT_NAMESPACE:?}" describe nvkeclusters.service.nvke.nvidia.com
 
 For a bad release, stop promoting it to other channels while investigating. A
 channel edit or Helm rollback does not undo a workload cluster upgrade. Follow
-the [workload upgrade guidance](../../docs/workload-clusters/upgrade.md) for supported
+the [workload upgrade guidance](../../../docs/workload-clusters/upgrade.md) for supported
 control-plane and worker operations; recovery from a partially completed upgrade
 needs the backend/provider owner's assessment. For package or datastore problems,
-see [upgrade and state retention](helm-installation.md#crd-ownership-upgrades-and-retention).
+see [upgrade and state retention](../helm-installation.md#crd-ownership-upgrades-and-retention).
 
 ## Retire unused releases
 
@@ -305,7 +324,9 @@ initial provisioning separately if the image or initialization is new.
 
 To validate a candidate on one cluster, [publish or select the release](#publish-or-select-a-release)
 and set `TEST_CHANNEL_NAME` to a new channel reserved for that cluster. Create it
-with the candidate release and no minimum age delay:
+with the candidate release and no minimum age delay. For an existing cluster,
+also retain its current release under the selector, as described in
+[update the channel](#update-the-channel):
 
 ```sh
 jq -n --arg name "${TEST_CHANNEL_NAME:?}" \
