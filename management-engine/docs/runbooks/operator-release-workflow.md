@@ -1,9 +1,9 @@
 # Operator release workflow
 
-This runbook is for operators publishing releases and making them available
-through channels. Routine release management and validation use the Cluster
-Service APIs. Administrators can provide additional checks when
-direct access to the datastore or workload cluster is needed.
+This runbook guides operators through publishing releases, managing release
+channels and validating rollout through the Cluster Service APIs. Administrators
+can provide additional checks when direct access to the datastore or workload
+cluster is needed.
 
 This runbook covers the routine release workflow:
 
