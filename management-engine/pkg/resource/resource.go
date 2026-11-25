@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package resource serves typed read and CRUDL APIs backed by Kubernetes custom resources.
-// ResourceHandler validates and converts resource values. ResourceServer persists them.
-// Registrations mount HTTP routes for the resource pairs selected by the host.
-// The host supplies datastore access, trusted namespace resolution, authentication,
-// authorization, and HTTP limits.
+// Hosts select resources, configure HTTP naming and limits, and supply datastore access,
+// trusted namespace resolution, authentication and authorization.
 package resource
 
 import (
@@ -70,8 +68,7 @@ type ResourceWriter[E any] interface {
 	Delete(context.Context, string, DeleteOptions) error
 }
 
-// ResourceServer provides HTTP-independent CRUDL over external resources E.
-// New pairs E with its internal datastore type I through ResourceHandler validation and conversion.
+// ResourceServer provides HTTP-independent CRUDL over external resources E, paired with datastore type I by New.
 // Create, Get and Update set RequestOptions.ETag when attached with WithOptions.
 // List returns Kubernetes snapshot pages. Direct writes use E's JSON field presence.
 type ResourceServer[E any] interface {
@@ -98,6 +95,8 @@ type ClientConfig struct {
 	// Namespace is required only for namespaced resources and resolves scope once per operation.
 	// The trusted host supplies it. The namespace must not come from untrusted resource input.
 	Namespace func(context.Context) (string, error)
+	// Naming selects the HTTP contract. Its zero value uses snake_case.
+	Naming Naming
 }
 
 // RequestOptions carries concurrency information for one operation.
@@ -146,4 +145,6 @@ type DeleteOptions struct{ PropagationPolicy string }
 type ServerOptions struct {
 	MaxBodyBytes   int64
 	RequestTimeout time.Duration
+	// Naming formats errors produced before resource dispatch.
+	Naming Naming
 }

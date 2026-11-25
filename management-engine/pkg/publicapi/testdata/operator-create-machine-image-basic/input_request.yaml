@@ -8,12 +8,12 @@ body:
   metadata:
     name: ubuntu-2404-amd64
   spec:
-    operatingSystem:
+    operating_system:
       family: ubuntu
       version: "24.04"
     architecture: amd64
-    buildDate: "2026-01-01"
+    build_date: "2026-01-01"
     nico:
-      ipxeScript: |
+      ipxe_script: |
         #!ipxe
         echo NVKE test image

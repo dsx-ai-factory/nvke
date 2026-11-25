@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// The tenant API serves workload clusters and catalog views within a trusted namespace.
+
 package main
 
 import (
@@ -30,7 +32,6 @@ func main() {
 			return nil
 		})
 	cfg := resource.ClientConfig{
-		Surface: "tenant",
 		// Remove the PoC namespace flag and resolve the authenticated caller's namespace once auth is wired.
 		Namespace: func(context.Context) (string, error) {
 			return namespace, nil

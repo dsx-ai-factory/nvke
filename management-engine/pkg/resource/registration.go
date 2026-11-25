@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// This file binds public resource types to datastore operations and HTTP routes.
+
 package resource
 
 import (
@@ -28,8 +30,7 @@ func NewRegistration[E ResourceHandler[I], I ResourceHandler[E]](path string, in
 		if err != nil {
 			return err
 		}
-		Register(mux, path, server, server, nil, info.Verbs...)
-		return nil
+		return Register(mux, path, server, server, nil, cfg.Naming, info.Verbs...)
 	}}
 }
 

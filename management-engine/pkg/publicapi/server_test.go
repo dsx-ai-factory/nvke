@@ -1,6 +1,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// These tests verify public API startup options and authentication boundaries.
+
 package publicapi
 
 import (
@@ -9,9 +11,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"flag"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
@@ -19,7 +23,35 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/dsx-ai-factory/nvke/auth/authn"
+	"github.com/dsx-ai-factory/nvke/management-engine/pkg/resource"
 )
+
+func TestRunFieldNaming(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		args      []string
+		wantError bool
+	}{
+		{name: "default"},
+		{name: "snake", args: []string{"--field-naming=snake_case"}},
+		{name: "camel", args: []string{"--field-naming=camelCase"}},
+		{name: "empty", args: []string{"--field-naming="}, wantError: true},
+		{name: "unknown", args: []string{"--field-naming=kebab-case"}, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			commandLine, args := flag.CommandLine, os.Args
+			t.Cleanup(func() { flag.CommandLine, os.Args = commandLine, args })
+			flag.CommandLine = flag.NewFlagSet("public-api", flag.ContinueOnError)
+			os.Args = append([]string{"public-api", "--version"}, tc.args...)
+			err := Run("test", Tenant(), resource.ClientConfig{})
+			if tc.wantError {
+				require.ErrorContains(t, err, "invalid --field-naming")
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
 
 func TestAuthentication(t *testing.T) {
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)

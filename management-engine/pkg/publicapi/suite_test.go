@@ -2,6 +2,8 @@
 
 // SPDX-License-Identifier: Apache-2.0
 
+// These fixtures compare public HTTP responses and canonical datastore state.
+
 package publicapi
 
 import (
@@ -50,12 +52,12 @@ type fixtureResponse struct {
 	Body       any         `json:"body"`
 }
 
-var _ = fixture.DescribeCaseSet(publicAPICaseSet("Operator API", "operator-", "operator", Operator,
+var _ = fixture.DescribeCaseSet(publicAPICaseSet("Operator API", "operator-", Operator(),
 	func() []client.ObjectList {
 		return []client.ObjectList{&v1.MachineImageList{}, &v1.ClusterReleaseList{}}
 	}))
 
-var _ = fixture.DescribeCaseSet(publicAPICaseSet("Tenant cluster API", "tenant-cluster-", "tenant", Tenant,
+var _ = fixture.DescribeCaseSet(publicAPICaseSet("Tenant cluster API", "tenant-cluster-", Tenant(),
 	func() []client.ObjectList {
 		return []client.ObjectList{&v1.NVKEClusterList{}}
 	}))
@@ -63,8 +65,8 @@ var _ = fixture.DescribeCaseSet(publicAPICaseSet("Tenant cluster API", "tenant-c
 // publicAPICaseSet configures isolated API fixtures with optional operator setup requests
 // and golden comparisons for a single request or a request batch.
 func publicAPICaseSet(
-	description, prefix, surface string,
-	registrations func() []resource.Registration,
+	description, prefix string,
+	surface Surface,
 	compareObjects func() []client.ObjectList,
 ) fixture.CaseSet {
 	return fixture.CaseSet{
@@ -92,12 +94,12 @@ func publicAPICaseSet(
 		},
 		DefineSteps: func(tc *fixture.Case, _ fixture.CaseSet) {
 			ginkgo.It("serves the fixture request", func(ctx ginkgo.SpecContext) {
-				server := newPublicAPIFixtureServer(ctx, tc, registrations, surface)
+				server := newPublicAPIFixtureServer(tc, surface)
 
 				if data, exists := tc.Input("input_setup.yaml"); exists {
 					setupServer := server
-					if surface == "tenant" {
-						setupServer = newPublicAPIFixtureServer(ctx, tc, Operator, "operator")
+					if surface.Name == "tenant" {
+						setupServer = newPublicAPIFixtureServer(tc, Operator())
 					}
 					var setup []fixtureRequest
 					gomega.Expect(yaml.UnmarshalStrict([]byte(data), &setup)).To(gomega.Succeed())
@@ -149,21 +151,16 @@ func publicAPICaseSet(
 
 // newPublicAPIFixtureServer mounts the selected API routes with request limits.
 // It registers cleanup and leaves redirects visible to test assertions.
-func newPublicAPIFixtureServer(
-	_ context.Context,
-	tc *fixture.Case,
-	registrations func() []resource.Registration,
-	surface string,
-) *httptest.Server {
+func newPublicAPIFixtureServer(tc *fixture.Case, surface Surface) *httptest.Server {
 	mux := http.NewServeMux()
-	config := resource.ClientConfig{Datastore: tc.Config, Surface: surface}
-	if surface == "tenant" {
+	config := resource.ClientConfig{Datastore: tc.Config, Surface: surface.Name}
+	if surface.Name == "tenant" {
 		config.Namespace = func(context.Context) (string, error) { return "org-a", nil }
 	}
-	for _, registration := range registrations() {
+	for _, registration := range surface.Registrations {
 		gomega.Expect(registration.Mount(mux, config)).To(gomega.Succeed())
 	}
-	server := httptest.NewServer(resource.WithLimits(mux, resource.ServerOptions{}))
+	server := httptest.NewServer(resource.WithLimits(mux, resource.ServerOptions{Naming: config.Naming}))
 	ginkgo.DeferCleanup(server.Close)
 	server.Client().CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return server
@@ -179,8 +176,8 @@ func normalizeFixtureResponse(snapshot *fixtureResponse) {
 		}
 	}
 	body, _ := snapshot.Body.(map[string]any)
-	if pageKey, ok := body["pageKey"].(string); ok && pageKey != "" {
-		body["pageKey"] = "PAGE_KEY"
+	if pageKey, ok := body["page_key"].(string); ok && pageKey != "" {
+		body["page_key"] = "PAGE_KEY"
 		snapshot.Headers.Del("Content-Length")
 	}
 	items, _ := body["items"].([]any)
@@ -196,11 +193,11 @@ func normalizeFixtureResponse(snapshot *fixtureResponse) {
 		if metadata["uid"] != nil {
 			metadata["uid"] = "UID"
 		}
-		if metadata["creationTimestamp"] != nil {
-			metadata["creationTimestamp"] = "1970-01-01T00:00:00Z"
+		if metadata["creation_timestamp"] != nil {
+			metadata["creation_timestamp"] = "1970-01-01T00:00:00Z"
 		}
-		if metadata["deletionTimestamp"] != nil {
-			metadata["deletionTimestamp"] = "1970-01-01T00:00:00Z"
+		if metadata["deletion_timestamp"] != nil {
+			metadata["deletion_timestamp"] = "1970-01-01T00:00:00Z"
 		}
 	}
 }

@@ -3,6 +3,8 @@
 // SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+// These tests verify concurrency, deletion and timeout behavior against Kubernetes.
+
 package resource
 
 import (
@@ -176,7 +178,7 @@ func TestRequestDeadlines(t *testing.T) {
 			start := time.Now()
 			if httpRequest {
 				mux := http.NewServeMux()
-				Register(mux, "/widgets", client, client, nil, OpUpdate)
+				require.NoError(t, Register(mux, "/widgets", client, client, nil, CamelCase, OpUpdate))
 				handler := WithLimits(mux, ServerOptions{RequestTimeout: 50 * time.Millisecond})
 				response := requestHTTP(handler, ctx, "PUT", "/widgets/"+name,
 					`{"metadata":{"name":"`+name+`"},"spec":{"value":"new"}}`, strconv.Quote(opts.ETag))

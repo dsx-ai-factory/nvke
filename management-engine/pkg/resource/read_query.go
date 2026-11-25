@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// This file validates catalog selectors and binds pagination to the selected view.
+
 package resource
 
 import (
@@ -73,6 +75,9 @@ func stringField(t reflect.Type, path []string) bool {
 	return false
 }
 
+// maxFieldSelectorBytes bounds selectors before parsing at either API boundary.
+const maxFieldSelectorBytes = 4096
+
 // listSelector validates bounded public controls for direct callers as well as HTTP callers.
 func listSelector(opts *ListOptions, supported []string) (fields.Selector, error) {
 	if opts.PageSize == 0 {
@@ -86,7 +91,7 @@ func listSelector(opts *ListOptions, supported []string) (fields.Selector, error
 	if len(opts.PageKey) > maxPageKeyBytes {
 		return nil, Invalid(FieldError{Field: pageKeyParameter, Code: invalidCode, Message: "The page key is too long."})
 	}
-	if len(opts.FieldSelector) > 4096 {
+	if len(opts.FieldSelector) > maxFieldSelectorBytes {
 		return nil, invalidSelector()
 	}
 	selector, err := fields.ParseSelector(opts.FieldSelector)

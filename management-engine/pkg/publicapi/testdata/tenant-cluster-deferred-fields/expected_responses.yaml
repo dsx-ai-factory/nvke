@@ -1,17 +1,17 @@
 - body:
     metadata:
-      creationTimestamp: "1970-01-01T00:00:00Z"
+      creation_timestamp: "1970-01-01T00:00:00Z"
       name: example-cluster
       uid: UID
     spec:
-      clusterNetwork:
+      cluster_network:
         pods:
-          cidrBlocks:
+          cidr_blocks:
           - 10.244.0.0/16
         services:
-          cidrBlocks:
+          cidr_blocks:
           - 10.96.0.0/12
-      controlPlaneClass: standard
+      control_plane_class: standard
       release:
         channel:
           name: stable
@@ -19,7 +19,7 @@
     Cache-Control:
     - no-store
     Content-Length:
-    - "310"
+    - "316"
     Content-Type:
     - application/json
     Date:
@@ -28,9 +28,9 @@
     - '"RESOURCE_VERSION"'
   statusCode: 201
 - body:
-    code: invalidRequest
+    code: invalid_request
     errors:
-    - code: invalidJson
+    - code: invalid_json
       message: Use one JSON object with documented fields and unique keys.
     status: 400
     title: The request is invalid.
@@ -38,16 +38,16 @@
     Cache-Control:
     - no-store
     Content-Length:
-    - "179"
+    - "181"
     Content-Type:
     - application/problem+json
     Date:
     - DATE
   statusCode: 400
 - body:
-    code: invalidRequest
+    code: invalid_request
     errors:
-    - code: invalidJson
+    - code: invalid_json
       message: Use one JSON object with documented fields and unique keys.
     status: 400
     title: The request is invalid.
@@ -55,16 +55,16 @@
     Cache-Control:
     - no-store
     Content-Length:
-    - "179"
+    - "181"
     Content-Type:
     - application/problem+json
     Date:
     - DATE
   statusCode: 400
 - body:
-    code: invalidRequest
+    code: invalid_request
     errors:
-    - code: invalidJson
+    - code: invalid_json
       message: Use one JSON object with documented fields and unique keys.
     status: 400
     title: The request is invalid.
@@ -72,16 +72,16 @@
     Cache-Control:
     - no-store
     Content-Length:
-    - "179"
+    - "181"
     Content-Type:
     - application/problem+json
     Date:
     - DATE
   statusCode: 400
 - body:
-    code: invalidRequest
+    code: invalid_request
     errors:
-    - code: invalidJson
+    - code: invalid_json
       message: Use one JSON object with documented fields and unique keys.
     status: 400
     title: The request is invalid.
@@ -89,16 +89,16 @@
     Cache-Control:
     - no-store
     Content-Length:
-    - "179"
+    - "181"
     Content-Type:
     - application/problem+json
     Date:
     - DATE
   statusCode: 400
 - body:
-    code: invalidRequest
+    code: invalid_request
     errors:
-    - code: invalidJson
+    - code: invalid_json
       message: Use one JSON object with documented fields and unique keys.
     status: 400
     title: The request is invalid.
@@ -106,16 +106,16 @@
     Cache-Control:
     - no-store
     Content-Length:
-    - "179"
+    - "181"
     Content-Type:
     - application/problem+json
     Date:
     - DATE
   statusCode: 400
 - body:
-    code: invalidRequest
+    code: invalid_request
     errors:
-    - code: invalidJson
+    - code: invalid_json
       message: Use one JSON object with documented fields and unique keys.
     status: 400
     title: The request is invalid.
@@ -123,7 +123,7 @@
     Cache-Control:
     - no-store
     Content-Length:
-    - "179"
+    - "181"
     Content-Type:
     - application/problem+json
     Date:
@@ -131,18 +131,18 @@
   statusCode: 400
 - body:
     metadata:
-      creationTimestamp: "1970-01-01T00:00:00Z"
+      creation_timestamp: "1970-01-01T00:00:00Z"
       name: example-cluster
       uid: UID
     spec:
-      clusterNetwork:
+      cluster_network:
         pods:
-          cidrBlocks:
+          cidr_blocks:
           - 10.244.0.0/16
         services:
-          cidrBlocks:
+          cidr_blocks:
           - 10.96.0.0/12
-      controlPlaneClass: standard
+      control_plane_class: standard
       release:
         channel:
           name: stable
@@ -150,7 +150,7 @@
     Cache-Control:
     - no-store
     Content-Length:
-    - "310"
+    - "316"
     Content-Type:
     - application/json
     Date:

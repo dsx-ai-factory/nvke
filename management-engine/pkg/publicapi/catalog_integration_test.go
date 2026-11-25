@@ -2,6 +2,8 @@
 
 // SPDX-License-Identifier: Apache-2.0
 
+// These fixtures verify tenant catalog visibility and filtering.
+
 package publicapi
 
 import (
@@ -18,7 +20,7 @@ import (
 )
 
 var _ = fixture.DescribeCaseSet(func() fixture.CaseSet {
-	set := publicAPICaseSet("Tenant catalog", "tenant-catalog-", "tenant", Tenant,
+	set := publicAPICaseSet("Tenant catalog", "tenant-catalog-", Tenant(),
 		func() []client.ObjectList { return nil })
 	set.Setup = seedCatalogObjects
 	return set
