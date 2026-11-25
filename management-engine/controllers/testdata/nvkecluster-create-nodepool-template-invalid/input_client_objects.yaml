@@ -43,13 +43,11 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: control-plane-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo control-plane-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -62,11 +60,9 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles: []
-      preKubeadmCommands: []
+      preBootstrapCommands: []
 ---
 apiVersion: service.nvke.nvidia.com/v1
 kind: MachineImage
@@ -93,13 +89,11 @@ spec:
   machineImageRef:
     name: worker-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-new-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-new-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -112,13 +106,11 @@ spec:
   machineImageRef:
     name: worker-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-existing-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-existing-release
 ---
 apiVersion: v1
@@ -143,7 +135,7 @@ data:
   controlplaneTmpl: &machineTemplate |
     {
       "bootstrapFiles": {{ .BootstrapFilesJSON }},
-      "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
+      "preKubeadmCommands": {{ .PreBootstrapCommandsJSON }},
       "machineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
         "kind": "NicoMachineTemplate",

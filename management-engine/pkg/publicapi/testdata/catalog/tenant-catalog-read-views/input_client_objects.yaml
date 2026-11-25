@@ -32,8 +32,7 @@ spec:
     supportedUntil: "2027-06-30T00:00:00Z"
   machineImageRef:
     name: img-ubuntu
-  machineInit:
-    userDataTemplate: "#cloud-config\n"
+  machineInit: {}
 ---
 apiVersion: service.nvke.nvidia.com/v1
 kind: ClusterRelease
@@ -48,10 +47,7 @@ spec:
     supportedUntil: "2027-02-28T00:00:00Z"
   machineImageRef:
     name: img-ubuntu
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
-      # PRIVATE-CATALOG-CANARY-control-plane-init
+  machineInit: {}
 ---
 apiVersion: service.nvke.nvidia.com/v1
 kind: ControlPlaneClass
@@ -84,10 +80,7 @@ metadata:
 spec:
   machineImageRef:
     name: img-ubuntu
-  machineInit:
-    userDataTemplate: |
-      #cloud-config
-      # PRIVATE-CATALOG-CANARY-worker-init
+  machineInit: {}
   profile: ubuntu-gpu
   tag: "2026.11"
 ---

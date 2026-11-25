@@ -49,29 +49,20 @@ type MachineImageReference struct {
 // It lives on the Release rather than the MachineImage so one image can back
 // several Releases whose initialization differs.
 type MachineInit struct {
-	// UserDataTemplate is rendered with machine-specific values, such as the
-	// hostname and the selected Kubernetes version, and the result is stored in
-	// the machine's CAPI bootstrap Secret. It must begin with a cloud-init
-	// header.
-	// +kubebuilder:validation:MinLength=1
-	// +kubebuilder:validation:MaxLength=65536
-	// +kubebuilder:validation:XValidation:rule="self.trim() != ''",message="userDataTemplate must not be blank"
-	// +kubebuilder:validation:XValidation:rule="self.startsWith('#cloud-config\\n') || self.startsWith('#cloud-config\\r\\n') || self.startsWith('#!') || self.startsWith('#include') || self.startsWith('#cloud-boothook') || self.startsWith('#part-handler') || self.startsWith('#cloud-config-archive') || self.startsWith('Content-Type:')",message="userDataTemplate must begin with a cloud-init header"
-	// +kubebuilder:validation:XValidation:rule="self.split('{{').size() == self.split('}}').size()",message="userDataTemplate has unbalanced Go template delimiters"
-	UserDataTemplate string `json:"userDataTemplate"`
-	// Infra supplies concrete bootstrap additions for the generic infra provider.
+	// Bootstrap supplies concrete bootstrap additions for the generic infra provider.
 	// +optional
-	Infra *InfraBootstrap `json:"infra,omitempty"`
+	Bootstrap *MachineBootstrap `json:"bootstrap,omitempty"`
 }
 
-// InfraBootstrap carries additional cloud-init files and commands without template rendering.
-type InfraBootstrap struct {
+// MachineBootstrap carries additional cloud-init files and commands without template rendering.
+type MachineBootstrap struct {
 	// +optional
 	// +listType=atomic
 	BootstrapFiles []BootstrapFile `json:"bootstrapFiles,omitempty"`
+	// PreBootstrapCommands run on the machine before it bootstraps into the cluster.
 	// +optional
 	// +listType=atomic
-	PreKubeadmCommands []string `json:"preKubeadmCommands,omitempty"`
+	PreBootstrapCommands []string `json:"preBootstrapCommands,omitempty"`
 }
 
 // BootstrapFile describes a cloud-init write_files entry supported by the generic infra API.

@@ -29,10 +29,7 @@
         hidden: true
       machineImageRef:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
-          #cloud-config
-          {}
+      machineInit: {}
       profile: ubuntu-gpu
       tag: "2026.09"
 - method: POST
@@ -45,10 +42,7 @@
     spec:
       machineImageRef:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
-          #cloud-config
-          {}
+      machineInit: {}
       profile: other
       tag: "2026.11"
 - method: POST
@@ -63,10 +57,7 @@
         deprecated: true
       machineImageRef:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
-          #cloud-config
-          {}
+      machineInit: {}
       profile: ubuntu-gpu
       tag: "2026.10"
 - method: POST
@@ -79,9 +70,6 @@
     spec:
       machineImageRef:
         name: img-ubuntu
-      machineInit:
-        userDataTemplate: |
-          #cloud-config
-          {}
+      machineInit: {}
       profile: ubuntu-gpu
       tag: "2026.11"

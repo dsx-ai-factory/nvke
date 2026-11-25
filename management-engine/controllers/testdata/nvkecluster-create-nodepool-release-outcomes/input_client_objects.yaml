@@ -43,13 +43,11 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: control-plane-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo control-plane-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -62,11 +60,9 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles: []
-      preKubeadmCommands: []
+      preBootstrapCommands: []
 ---
 apiVersion: service.nvke.nvidia.com/v1
 kind: MachineImage
@@ -108,13 +104,11 @@ spec:
   machineImageRef:
     name: worker-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-new-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-new-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -127,13 +121,11 @@ spec:
   machineImageRef:
     name: other-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-sibling-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-sibling-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -146,13 +138,11 @@ spec:
   machineImageRef:
     name: missing-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-no-image-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-no-image-release
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -165,13 +155,11 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-deprecated-release
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-deprecated-release
   lifecycle:
     deprecated: true
@@ -186,13 +174,11 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-ambiguous-a
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-ambiguous-a
 ---
 apiVersion: service.nvke.nvidia.com/v1
@@ -205,13 +191,11 @@ spec:
   machineImageRef:
     name: test-image
   machineInit:
-    userDataTemplate: |
-      #cloud-config
-    infra:
+    bootstrap:
       bootstrapFiles:
         - path: /etc/nvke-release
           content: worker-ambiguous-b
-      preKubeadmCommands:
+      preBootstrapCommands:
         - echo worker-ambiguous-b
 ---
 apiVersion: v1
@@ -236,7 +220,7 @@ data:
   nodepoolTmpl: &machineTemplate |
     {
       "bootstrapFiles": {{ .BootstrapFilesJSON }},
-      "preKubeadmCommands": {{ .PreKubeadmCommandsJSON }},
+      "preKubeadmCommands": {{ .PreBootstrapCommandsJSON }},
       "machineTemplate": {
         "apiVersion": "infrastructure.cluster.x-k8s.io/v1alpha1",
         "kind": "NicoMachineTemplate",

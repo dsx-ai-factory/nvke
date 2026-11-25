@@ -14,8 +14,13 @@ body:
     machineImageRef:
       name: ubuntu-2404-amd64
     machineInit:
-      userDataTemplate: |
-        #cloud-config
-        hostname: nvke-control-plane
+      bootstrap:
+        bootstrapFiles:
+          - path: /etc/nvke/release
+            owner: root:root
+            permissions: "0644"
+            content: control-plane-v1
+        preBootstrapCommands:
+          - hostnamectl set-hostname nvke-control-plane
     lifecycle:
       deprecated: true

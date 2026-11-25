@@ -195,7 +195,10 @@ var baseResources = map[string]string{
 		"spec": {
 			"kubernetes": {"version": "1.36.3"},
 			"machineImageRef": {"name": "nvke-nico-vms-24.04-amd64-fde"},
-			"machineInit": {"userDataTemplate": "#cloud-config\nhostname: {{ .Hostname }}\n"}
+			"machineInit": {"bootstrap": {
+				"bootstrapFiles": [{"path": "/etc/nvke/release", "content": "control-plane"}],
+				"preBootstrapCommands": ["echo control-plane"]
+			}}
 		}
 	}`,
 	"nodeprofiles": `{
@@ -206,7 +209,10 @@ var baseResources = map[string]string{
 			"profile": "ubuntu",
 			"tag": "24.04",
 			"machineImageRef": {"name": "nvke-nico-vms-24.04-amd64-fde"},
-			"machineInit": {"userDataTemplate": "#cloud-config\nhostname: {{ .Hostname }}\n"}
+			"machineInit": {"bootstrap": {
+				"bootstrapFiles": [{"path": "/etc/nvke/release", "content": "worker"}],
+				"preBootstrapCommands": ["echo worker"]
+			}}
 		}
 	}`,
 	"controlplaneclasses": `{
@@ -255,8 +261,21 @@ func ipxe(script string) map[string]any {
 	return map[string]any{"ipxeScript": script}
 }
 
-func userData(template string) map[string]any {
-	return map[string]any{"userDataTemplate": template}
+// bootstrap builds spec.machineInit with a bootstrap group. A nil files or
+// commands argument leaves that list absent rather than null.
+func bootstrap(files []any, commands ...any) map[string]any {
+	group := map[string]any{}
+	if files != nil {
+		group["bootstrapFiles"] = files
+	}
+	if commands != nil {
+		group["preBootstrapCommands"] = commands
+	}
+	return map[string]any{"bootstrap": group}
+}
+
+func bootstrapFile(fields map[string]any) []any {
+	return []any{fields}
 }
 
 // mutate copies the base resource and applies change to its spec.
@@ -831,20 +850,33 @@ func TestReleaseAdmission(t *testing.T) {
 				{name: "missing image reference", change: func(s map[string]any) { delete(s, "machineImageRef") }, invalid: true},
 				{name: "image reference not a DNS name", change: func(s map[string]any) { s["machineImageRef"] = map[string]any{"name": "Not A Name"} }, invalid: true},
 				{name: "missing machine init", change: func(s map[string]any) { delete(s, "machineInit") }, invalid: true},
-				{name: "empty user data", change: func(s map[string]any) { s["machineInit"] = userData("") }, invalid: true},
-				{name: "blank user data", change: func(s map[string]any) { s["machineInit"] = userData("  \n ") }, invalid: true},
-				{name: "user data without a cloud-init header", change: func(s map[string]any) { s["machineInit"] = userData("hostname: {{ .Hostname }}\n") }, invalid: true},
-				{name: "include file user data", change: func(s map[string]any) { s["machineInit"] = userData("#include\nhttp://example.test/init\n") }},
-				{name: "multipart user data", change: func(s map[string]any) {
-					s["machineInit"] = userData("Content-Type: multipart/mixed; boundary=BOUNDARY\n")
+				// The image and the NVKE controller's own steps can be enough on their own.
+				{name: "empty machine init", change: func(s map[string]any) { s["machineInit"] = map[string]any{} }},
+				{name: "empty bootstrap lists", change: func(s map[string]any) { s["machineInit"] = bootstrap([]any{}) }},
+				{name: "bootstrap commands only", change: func(s map[string]any) { s["machineInit"] = bootstrap(nil, "systemctl enable nvke-agent") }},
+				{name: "bootstrap file with owner and permissions", change: func(s map[string]any) {
+					s["machineInit"] = bootstrap(bootstrapFile(map[string]any{
+						"path": "/etc/nvke/release", "owner": "root:root", "permissions": "0644", "content": "release",
+					}))
 				}},
-				{name: "user data template action left open", change: func(s map[string]any) { s["machineInit"] = userData("#cloud-config\nhostname: {{ .Hostname\n") }, invalid: true},
-				{name: "user data template action never opened", change: func(s map[string]any) { s["machineInit"] = userData("#cloud-config\nhostname: .Hostname }}\n") }, invalid: true},
-				// User data is not required to be cloud-config: cloud-init also
-				// accepts a script, an include file and MIME multipart.
-				{name: "shell script user data", change: func(s map[string]any) {
-					s["machineInit"] = userData("#!/bin/bash\nhostnamectl set-hostname {{ .Hostname }}\n")
-				}},
+				{name: "bootstrap file without path", change: func(s map[string]any) {
+					s["machineInit"] = bootstrap(bootstrapFile(map[string]any{"content": "release"}))
+				}, invalid: true},
+				{name: "bootstrap file with empty path", change: func(s map[string]any) {
+					s["machineInit"] = bootstrap(bootstrapFile(map[string]any{"path": "", "content": "release"}))
+				}, invalid: true},
+				{name: "bootstrap file without content", change: func(s map[string]any) {
+					s["machineInit"] = bootstrap(bootstrapFile(map[string]any{"path": "/etc/nvke/release"}))
+				}, invalid: true},
+				{name: "bootstrap file with empty content", change: func(s map[string]any) {
+					s["machineInit"] = bootstrap(bootstrapFile(map[string]any{"path": "/etc/nvke/release", "content": ""}))
+				}, invalid: true},
+				{name: "bootstrap file with empty owner", change: func(s map[string]any) {
+					s["machineInit"] = bootstrap(bootstrapFile(map[string]any{"path": "/etc/nvke/release", "owner": "", "content": "release"}))
+				}, invalid: true},
+				{name: "bootstrap file with empty permissions", change: func(s map[string]any) {
+					s["machineInit"] = bootstrap(bootstrapFile(map[string]any{"path": "/etc/nvke/release", "permissions": "", "content": "release"}))
+				}, invalid: true},
 			} {
 				t.Run(tt.name, func(t *testing.T) {
 					schema.check(t, tt.invalid, mutate(t, resource, tt.change), nil)
@@ -872,7 +904,8 @@ func TestReleaseImmutabilityBoundary(t *testing.T) {
 				{name: "deprecate", change: func(s map[string]any) { s["lifecycle"] = map[string]any{"deprecated": true} }},
 				{name: "undeprecate", change: func(s map[string]any) { s["lifecycle"] = map[string]any{"deprecated": false} }},
 				{name: "change image reference", change: func(s map[string]any) { s["machineImageRef"] = map[string]any{"name": "other-image"} }, invalid: true},
-				{name: "change user data", change: func(s map[string]any) { s["machineInit"] = userData("#cloud-config\nhostname: other\n") }, invalid: true},
+				{name: "change bootstrap commands", change: func(s map[string]any) { s["machineInit"] = bootstrap(nil, "echo other") }, invalid: true},
+				{name: "clear machine init", change: func(s map[string]any) { s["machineInit"] = map[string]any{} }, invalid: true},
 			} {
 				t.Run(tt.name, func(t *testing.T) {
 					schema.check(t, tt.invalid, mutate(t, resource, tt.change), runtime.DeepCopyJSON(published))
