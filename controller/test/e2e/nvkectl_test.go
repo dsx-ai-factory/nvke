@@ -156,15 +156,21 @@ func validateNvkectlPostCreate(test *tenantTest) {
 		// enableCPNodeRecycling only changes what a later upgrade would do, so it
 		// starts nothing that could collide with the delete below. The one-way
 		// fields each hold the update lock for a workflow, and a version bump
-		// recycles nodes. The create-time flag is already true, so this patch sets
-		// it to false; that makes the stored-value check meaningful.
+		// recycles nodes. The patch sets the flag to the opposite of the stored
+		// value, so the assertion cannot pass when the patch was ignored. That holds
+		// on a reused cluster too, where the stored value is not known in advance.
 		It("applies a patch to the provisioned cluster", func(ctx context.Context) {
+			current, err := test.lifecycle.GetByName(ctx, test.cluster.Name)
+			Expect(err).NotTo(HaveOccurred(), "should read the cluster before patching")
+			Expect(current.EnableCPNodeRecycling).NotTo(BeNil(), "the current field should be reported")
+			want := !*current.EnableCPNodeRecycling
+
 			patched, err := test.nvkectlRunner.PatchCluster(ctx, test.cluster.Name,
-				[]byte("enableCPNodeRecycling: false\n"))
+				[]byte(fmt.Sprintf("enableCPNodeRecycling: %t\n", want)))
 			Expect(err).NotTo(HaveOccurred(), "should patch the cluster")
 
 			Expect(patched.EnableCPNodeRecycling).NotTo(BeNil(), "the patched field should be reported")
-			Expect(*patched.EnableCPNodeRecycling).To(BeFalse(), "the patch should have been applied")
+			Expect(*patched.EnableCPNodeRecycling).To(Equal(want), "the patch should have been applied")
 		}, SpecTimeout(5*time.Minute))
 
 		// The smoke asserts this too, but against a controller holding no clusters. A
