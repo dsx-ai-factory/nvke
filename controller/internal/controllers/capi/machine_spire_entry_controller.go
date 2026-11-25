@@ -5,6 +5,7 @@ package capi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -143,15 +144,16 @@ func (c *MachineSpireEntryController) deleteOrphanedSiblings(ctx context.Context
 	if err != nil {
 		return err
 	}
+	var errs []error
 	for _, entry := range siblings {
 		if _, ok := live[entry.Name]; ok {
 			continue
 		}
 		if err := c.deleteEntry(ctx, entry, "sibling entry has no live Machine"); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 func (c *MachineSpireEntryController) runOrphanSweep(ctx context.Context) error {
@@ -182,6 +184,12 @@ func (c *MachineSpireEntryController) sweepOrphanedEntries(ctx context.Context, 
 	if err != nil {
 		return err
 	}
+	// The site's own nodes are Machines, so none at all means a bad list, not a fleet of orphans.
+	if len(existing) == 0 {
+		c.logger.Warn("Skipping orphaned ClusterStaticEntry sweep: no Machine has a host ID", "entries", len(entries))
+		return nil
+	}
+	var errs []error
 	for i := range entries {
 		entry := &entries[i]
 		if _, ok := existing[entry.Name]; ok {
@@ -191,10 +199,10 @@ func (c *MachineSpireEntryController) sweepOrphanedEntries(ctx context.Context, 
 			continue
 		}
 		if err := c.deleteEntry(ctx, entry, "entry has no Machine"); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // listManagedEntries returns the host ClusterStaticEntries this controller, or the pre-import CWE, labeled.

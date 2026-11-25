@@ -5,6 +5,7 @@ package capi
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
@@ -211,14 +213,30 @@ func testSpireMachine(deleting bool) *clusterv1.Machine {
 	return machine
 }
 
+// testLiveMachine is an unrelated live Machine, so the sweep sees a populated Machine list.
+func testLiveMachine() *clusterv1.Machine {
+	return &clusterv1.Machine{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "worker-live",
+			Namespace:   "cluster-live",
+			Annotations: map[string]string{keys.MachineHostID.String(): testNewHostID},
+		},
+	}
+}
+
 func newTestSpireEntryController(t *testing.T, objs ...client.Object) *MachineSpireEntryController {
+	t.Helper()
+	return newTestSpireEntryControllerWithInterceptor(t, interceptor.Funcs{}, objs...)
+}
+
+func newTestSpireEntryControllerWithInterceptor(t *testing.T, funcs interceptor.Funcs, objs ...client.Object) *MachineSpireEntryController {
 	t.Helper()
 	scheme := runtime.NewScheme()
 	require.NoError(t, clusterv1.AddToScheme(scheme))
 	require.NoError(t, spirev1alpha1.AddToScheme(scheme))
 	return &MachineSpireEntryController{
 		cfg:         config.Config{SpireClassName: "spire"},
-		k8sClient:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build(),
+		k8sClient:   fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).WithInterceptorFuncs(funcs).Build(),
 		logger:      slog.New(slog.DiscardHandler),
 		trustDomain: "example.org",
 	}
@@ -325,9 +343,14 @@ func TestMachineSpireEntryControllerSweepOrphanedEntries(t *testing.T) {
 	fresh := now.Add(-orphanEntryGracePeriod / 2)
 
 	tests := map[string]struct {
-		objs        []client.Object
-		wantRemoved bool
+		objs           []client.Object
+		noLiveMachines bool
+		wantRemoved    bool
 	}{
+		"old entry is kept when no Machine has a host ID": {
+			objs:           []client.Object{testSpireEntry(testTPMParent, true, old)},
+			noLiveMachines: true,
+		},
 		"old managed entry without a Machine is deleted": {
 			objs:        []client.Object{testSpireEntry(testTPMParent, true, old)},
 			wantRemoved: true,
@@ -364,13 +387,40 @@ func TestMachineSpireEntryControllerSweepOrphanedEntries(t *testing.T) {
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			controller := newTestSpireEntryController(t, test.objs...)
+			objs := test.objs
+			if !test.noLiveMachines {
+				objs = append(objs, testLiveMachine())
+			}
+			controller := newTestSpireEntryController(t, objs...)
 
 			require.NoError(t, controller.sweepOrphanedEntries(t.Context(), now))
 
 			require.Equal(t, !test.wantRemoved, entryExists(t, controller.k8sClient, machineSpireEntryName(testOldHostID)))
 		})
 	}
+}
+
+func TestMachineSpireEntryControllerSweepContinuesPastDeleteErrors(t *testing.T) {
+	t.Parallel()
+	old := time.Now().Add(-2 * orphanEntryGracePeriod)
+	failing := testSpireEntry(testTPMParent, true, old)
+	failing.Name = "host-failing"
+	orphan := testSpireEntry(testTPMParent, true, old)
+	errDenied := errors.New("denied")
+	controller := newTestSpireEntryControllerWithInterceptor(t, interceptor.Funcs{
+		Delete: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.DeleteOption) error {
+			if obj.GetName() == failing.Name {
+				return errDenied
+			}
+			return c.Delete(ctx, obj, opts...)
+		},
+	}, failing, orphan, testLiveMachine())
+
+	err := controller.sweepOrphanedEntries(t.Context(), time.Now())
+
+	require.ErrorIs(t, err, errDenied)
+	require.True(t, entryExists(t, controller.k8sClient, failing.Name))
+	require.False(t, entryExists(t, controller.k8sClient, orphan.Name))
 }
 
 func TestIsManagedHostEntry(t *testing.T) {
