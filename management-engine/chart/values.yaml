@@ -19,6 +19,7 @@ manager:
     repository: management-engine
     tag: dev
   infrastructureTemplateConfigMap: ""
+  infrastructureTemplateNamespace: ""
   nodeSelector: {}
   nvkeController:
     endpoint: ""

@@ -3,6 +3,8 @@
 
 controller:
   enabled: false
+manager:
+  infrastructureTemplateConfigMap: infra-templates
 state:
   rbac:
     subjects:

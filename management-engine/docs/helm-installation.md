@@ -32,13 +32,21 @@ helm template cluster-service chart --namespace cluster-service-system -f config
 
 The sample delivers a development infrastructure template ConfigMap through
 `state.configMaps`, a list of objects with `name`, `namespace` and `data`.
-Create the tenant namespace (`tenant-a` in the sample) before installation, and
-replace the contents with the templates for your provider.
+Replace the contents with the templates for your provider. Keep this ConfigMap
+in an operator-owned namespace on the datastore cluster.
 Go template expressions inside those strings remain literal for the manager to
 interpret. `manager.infrastructureTemplateConfigMap` names that ConfigMap. The manager
-looks up that name in each NVKECluster's tenant namespace. Supply one entry per
-tenant namespace, reusing the same ConfigMap name; when reusing state, publish
-those ConfigMaps on the datastore cluster before creating tenant clusters.
+reads it from `manager.infrastructureTemplateNamespace`, which defaults to the
+datastore state namespace. All tenants share this template; tenant-local
+ConfigMaps are ignored. The state package grants the manager `get` access to
+only this ConfigMap. For separate state and runtime releases, set the same
+ConfigMap name and namespace in both releases and publish the ConfigMap before
+creating clusters. For upgrades, publish the shared template and add its scoped
+permission before replacing the manager. Retain tenant-local access until the
+old manager is replaced, then remove the old copies and permissions. Coordinate
+state and manager upgrades when they use separate releases. When running the
+manager directly, set `--infra-template-namespace` alongside
+`--infra-template-configmap`.
 
 Set `manager.image.repository` and `manager.image.tag` to a published image,
 or use a digest reference as the repository. Set `manager.nvkeController.endpoint`
@@ -58,17 +66,19 @@ Merge the working template example with site settings:
 helm template cluster-service chart --namespace cluster-service-system -f config/samples/runtime-values.yaml -f config/samples/dsx-values.yaml > dsx.yaml
 ```
 
-Replace the example registry, image tag, endpoint and tenant namespace with
-reviewed site inputs. The manager needs network access to the datastore's
+Replace the example registry, image tag, endpoint, template namespace and tenant
+namespace with reviewed site inputs. The manager needs network access to the datastore's
 Kubernetes API and the configured NVKE controller endpoint. Scrapers need access
 to the optional metrics Service. Tenant API integration responsibilities are
 summarized below. The chart owns backend, kubeconfig and election namespace
 arguments. `manager.args` supplies additional options such as `--namespace`;
-if used, that namespace must match the tenant ConfigMaps and requests.
+if used, that namespace limits tenant requests, independently of the shared
+template namespace.
 
 Use Helm's `--create-namespace` during installation, or arrange namespace creation
 through the installer; `helm template` sets namespace references but creates
-nothing. Tenant namespaces and any explicitly separate state namespace must exist.
+nothing. Tenant namespaces, the shared template namespace and any explicitly
+separate state namespace must exist.
 The examples demonstrate rendering; live reconciliation is validated separately.
 
 ## Tenant and operator APIs

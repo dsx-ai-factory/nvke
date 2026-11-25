@@ -33,6 +33,7 @@ spec:
         - --health-probe-bind-address=:8081
         - --metrics-bind-address=:8443
         - --infra-template-configmap=management-engine-infra-templates
+        - --infra-template-namespace=$(POD_NAMESPACE)
         - --nvke-controller-endpoint=http://nvke-controller.nvke-controller.svc.cluster.local:8080/api
         - --nvke-controller-token-file=/var/run/secrets/nvke-controller/token
         - --zap-log-level=debug

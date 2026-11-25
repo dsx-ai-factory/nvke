@@ -21,3 +21,7 @@ SPDX-License-Identifier: Apache-2.0
 {{- end -}}
 {{- required (printf "missing %s rules in %s" .kind .file) $rules | toYaml -}}
 {{- end -}}
+
+{{- define "management-engine.infraTemplateNamespace" -}}
+{{- default (include "management-engine.stateNamespace" .) .Values.manager.infrastructureTemplateNamespace -}}
+{{- end -}}

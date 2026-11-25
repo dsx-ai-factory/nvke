@@ -54,6 +54,7 @@ func main() {
 	var metricsCertPath, metricsCertName, metricsCertKey string
 	var nvkeControllerEndpoint, nvkeControllerTokenFile string
 	var infraTemplateConfigMapName string
+	var infraTemplateNamespace string
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", "0", "The address the metric endpoint binds to; 0 disables it.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
@@ -98,6 +99,13 @@ func main() {
 		"ConfigMap name for the infrastructure request body template",
 	)
 
+	flag.StringVar(
+		&infraTemplateNamespace,
+		"infra-template-namespace",
+		"",
+		"Datastore namespace containing the shared infrastructure template ConfigMap",
+	)
+
 	zapOpts := zap.Options{}
 	zapOpts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -127,6 +135,10 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&zapOpts)))
 
+	if infraTemplateNamespace == "" {
+		setupLog.Error(nil, "--infra-template-namespace is required")
+		os.Exit(1)
+	}
 	if infraTemplateConfigMapName == "" {
 		setupLog.Error(nil, "--infra-template-configmap is required")
 		os.Exit(1)
@@ -160,6 +172,8 @@ func main() {
 
 	if err := (&controllers.NVKEClusterReconciler{
 		Client:                     mgr.GetClient(),
+		InfraTemplateReader:        mgr.GetAPIReader(),
+		InfraTemplateNamespace:     infraTemplateNamespace,
 		NVKEController:             nvkeControllerClient,
 		InfraTemplateConfigMapName: infraTemplateConfigMapName,
 	}).SetupWithManager(mgr); err != nil {

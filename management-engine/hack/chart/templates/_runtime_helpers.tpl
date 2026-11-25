@@ -14,6 +14,7 @@ SPDX-License-Identifier: Apache-2.0
         {{- end }}
         {{- if .Values.manager.infrastructureTemplateConfigMap }}
         - {{ printf "--infra-template-configmap=%s" .Values.manager.infrastructureTemplateConfigMap | quote }}
+        - {{ printf "--infra-template-namespace=%s" (include "management-engine.infraTemplateNamespace" .) | quote }}
         {{- end }}
         {{- range .Values.manager.args }}
         - {{ . | quote }}

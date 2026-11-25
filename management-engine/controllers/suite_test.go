@@ -131,6 +131,8 @@ func setupWithManager(ctx SpecContext, tc *fixture.Case, nvkeControllerClient NV
 		NVKEController:             nvkeControllerClient,
 		PollInterval:               pollInterval,
 		InfraTemplateConfigMapName: "infra-template",
+		InfraTemplateNamespace:     testNamespace,
+		InfraTemplateReader:        mgr.GetAPIReader(),
 	}
 	wrap := func(next reconcile.Reconciler) reconcile.Reconciler {
 		return reconcile.Func(func(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {

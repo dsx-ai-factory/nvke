@@ -134,6 +134,11 @@
             }
           }
         },
+        "infrastructureTemplateNamespace": {
+          "type": "string",
+          "maxLength": 63,
+          "pattern": "^$|^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+        },
         "stateNamespace": {
           "type": "string",
           "maxLength": 63,

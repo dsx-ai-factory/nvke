@@ -34,6 +34,7 @@ spec:
         args:
           - --leader-elect
           - --leader-election-namespace=$(STATE_NAMESPACE)
+          - --infra-template-namespace=$(STATE_NAMESPACE)
           - --kubeconfig=/etc/management-api/kubeconfig
           - --health-probe-bind-address=:8081
           - --metrics-bind-address=:8443

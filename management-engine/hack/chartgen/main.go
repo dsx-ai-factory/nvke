@@ -64,6 +64,7 @@ func generate(binary string, check bool) (err error) {
 		{"config/dev/tenant-api-rbac.yaml", "files/api/tenant-api-rbac.yaml"},
 		{"config/dev/operator-api-rbac.yaml", "files/api/operator-api-rbac.yaml"},
 		{"config/rbac/role.yaml", "files/roles/role.yaml"},
+		{"config/rbac/infra_template_reader_role.yaml", "files/roles/infra_template_reader_role.yaml"},
 		{"config/rbac/leader_election_role.yaml", "files/roles/leader_election_role.yaml"},
 		{"config/rbac/metrics_auth_role.yaml", "files/roles/metrics_auth_role.yaml"},
 		{"hack/chart/values.schema.json", "values.schema.json"},
@@ -249,7 +250,7 @@ func customizeValues(path string) error {
 // filterManagerArgs leaves connection and election settings to named chart inputs.
 func filterManagerArgs(args []string) ([]string, error) {
 	return filterNamedArgs(args, "kubeconfig", "context", "leader-election-namespace",
-		"nvke-controller-endpoint", "nvke-controller-token-file", "infra-template-configmap")
+		"nvke-controller-endpoint", "nvke-controller-token-file", "infra-template-configmap", "infra-template-namespace")
 }
 
 func filterNamedArgs(args []string, owned ...string) ([]string, error) {
