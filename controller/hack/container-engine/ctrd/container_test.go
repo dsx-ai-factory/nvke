@@ -49,6 +49,8 @@ func (h *harness) callsMatching(prefix string) []string {
 }
 
 func TestRunKindNode(t *testing.T) {
+	t.Setenv("KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER", "")
+	require.NoError(t, os.Unsetenv("KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER"))
 	h := newHarness(t)
 	h.kindNetwork()
 	h.setFile("images", "docker.io/kindest/node:v1.37.0@sha256:a1ed56cfb0e7b93589bdf97c8cd566405a265939e3620fc4f5de89adff580ae5 application/vnd.oci.image.index.v1+json sha256:aaa 1.0_MiB linux/arm64 -\n")

@@ -42,7 +42,17 @@ func (e *engine) networkPath(name, ext string) string {
 	return filepath.Join(e.networksDir(), name+ext)
 }
 
+func checkNetworkName(name string) error {
+	if !nameSpec.MatchString(name) {
+		return fmt.Errorf("invalid network name %q", name)
+	}
+	return nil
+}
+
 func (e *engine) loadNetwork(name string) (*networkMeta, error) {
+	if err := checkNetworkName(name); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(e.networkPath(name, ".json"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, fmt.Errorf("network %s not found", name)
@@ -177,6 +187,9 @@ func firstAddress(subnet *net.IPNet) string {
 // createNetwork implements `network create`. Only bridge networks exist. The
 // IPv6 subnet that kind asks for is configured; an IPv4 subnet is chosen when none is given.
 func (e *engine) createNetwork(name string, subnets []string, options map[string]string) (string, error) {
+	if err := checkNetworkName(name); err != nil {
+		return "", err
+	}
 	var network *networkMeta
 	err := e.withLock(func() error {
 		if _, err := e.loadNetwork(name); err == nil {
@@ -256,11 +269,13 @@ func (e *engine) removeNetwork(name string) error {
 				return err
 			}
 		}
-		for _, path := range []string{e.networkPath(name, ".json"), e.networkPath(name, ".conflist")} {
-			if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-				return err
-			}
+		// The metadata goes last, so that a failed removal can be retried.
+		if err := os.Remove(e.networkPath(name, ".conflist")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
 		}
-		return os.RemoveAll(filepath.Join(e.cfg.Root, "ipam", name))
+		if err := os.RemoveAll(filepath.Join(e.cfg.Root, "ipam", name)); err != nil {
+			return err
+		}
+		return os.Remove(e.networkPath(name, ".json"))
 	})
 }

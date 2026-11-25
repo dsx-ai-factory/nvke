@@ -192,6 +192,9 @@ func TestBuild(t *testing.T) {
 	t.Run("through the command", func(t *testing.T) {
 		h := newHarness(t)
 		t.Setenv("FROM_ENV", "e")
+		// A build argument without a value reads the environment, so UNSET must be absent.
+		t.Setenv("UNSET", "")
+		require.NoError(t, os.Unsetenv("UNSET"))
 		require.Equal(t, 0, h.run("build", "--platform", "linux/arm64", "--tag", "docker.local/cwe:tilt", "-f", dockerfile,
 			"--build-arg", "A=b", "--build-arg", "FROM_ENV", "--build-arg", "UNSET", ctx), h.stderr.String())
 		require.Len(t, h.callsMatching("buildctl"), 1)

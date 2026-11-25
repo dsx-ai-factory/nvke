@@ -89,6 +89,9 @@ var (
 
 func (e *engine) containerFromFlags(flags *parsedFlags) (*containerMeta, error) {
 	var err error
+	if flags.has("init") {
+		return nil, notSupportedError("--init")
+	}
 	meta := &containerMeta{
 		ID:         randomID(),
 		Created:    time.Now().UTC(),
@@ -238,7 +241,10 @@ func parsePublish(specs []string) ([]portMapping, error) {
 			return nil, notSupportedError("--publish " + spec)
 		}
 		hostPort, _ := strconv.Atoi(match[2])
-		containerPort, _ := strconv.Atoi(match[3])
+		containerPort, err := strconv.Atoi(match[3])
+		if err != nil || containerPort < 1 || containerPort > 65535 || hostPort > 65535 {
+			return nil, fmt.Errorf("invalid port in --publish %s", spec)
+		}
 		// Kind writes the protocol in capitals.
 		protocol := strings.ToLower(match[4])
 		if protocol == "" {
@@ -347,11 +353,16 @@ func (e *engine) makeContainer(meta *containerMeta) error {
 	if err := e.ctrCreate(spec); err != nil {
 		return err
 	}
-	if err := e.copyUp(meta); err != nil {
-		_ = e.ctrDeleteContainer(meta.ID)
-		return err
+	err := e.copyUp(meta)
+	if err == nil {
+		err = e.saveContainer(meta)
 	}
-	return e.saveContainer(meta)
+	if err != nil {
+		if derr := e.ctrDeleteContainer(meta.ID); derr != nil {
+			err = errors.Join(err, derr)
+		}
+	}
+	return err
 }
 
 // writeContainerFiles writes what /etc/hostname, /etc/hosts and /etc/resolv.conf
@@ -396,24 +407,17 @@ func (e *engine) copyUp(meta *containerMeta) error {
 	if len(anonymous) == 0 {
 		return nil
 	}
-	mnt, err := os.MkdirTemp(e.cfg.Root, "mnt-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(mnt)
-	if err := e.ctrMountSnapshot(mnt, meta.ID); err != nil {
-		return err
-	}
-	defer func() { _, _ = e.output("umount", mnt) }()
-	for _, vol := range anonymous {
-		source := filepath.Join(mnt, vol.Destination)
-		if info, err := os.Stat(source); err == nil && info.IsDir() {
-			if _, err := e.output("cp", "-a", source+"/.", vol.Source); err != nil {
-				return err
+	return e.withSnapshot(meta.ID, func(mnt string) error {
+		for _, vol := range anonymous {
+			source := filepath.Join(mnt, vol.Destination)
+			if info, err := os.Stat(source); err == nil && info.IsDir() {
+				if _, err := e.output("cp", "-a", source+"/.", vol.Source); err != nil {
+					return err
+				}
 			}
 		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func (e *engine) exitCodeFile(id string) string { return filepath.Join(e.containerDir(id), "exitcode") }

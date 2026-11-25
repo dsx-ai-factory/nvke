@@ -88,7 +88,12 @@ ce_kind_load() {
     return
   fi
   dir="$(mktemp -d)"
-  "$(ce_cli)" save "${image}" >"${dir}/image.tar" &&
+  # ctrd has no archive on stdout.
+  if [[ "$(ce_cli)" == ctrd ]]; then
+    "$(ce_cli)" save -o "${dir}/image.tar" "${image}"
+  else
+    "$(ce_cli)" save "${image}" >"${dir}/image.tar"
+  fi &&
     "${KIND_BIN:-kind}" load image-archive "${dir}/image.tar" --name "${cluster}" || status=$?
   rm -rf "${dir}"
   return "${status}"

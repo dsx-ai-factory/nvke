@@ -5,7 +5,9 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -219,4 +221,26 @@ func (e *engine) ctrMountSnapshot(target, id string) error {
 		return fmt.Errorf("mounting the root file system of %s: %w", id, err)
 	}
 	return nil
+}
+
+// withSnapshot runs fn with the container's root file system mounted in a
+// temporary directory. A failed unmount is reported, and the directory is then
+// left alone: removing it recursively would delete through the mount.
+func (e *engine) withSnapshot(id string, fn func(mnt string) error) (err error) {
+	mnt, err := os.MkdirTemp(e.cfg.Root, "mnt-")
+	if err != nil {
+		return err
+	}
+	if err := e.ctrMountSnapshot(mnt, id); err != nil {
+		_ = os.Remove(mnt)
+		return err
+	}
+	defer func() {
+		if _, uerr := e.output("umount", mnt); uerr != nil {
+			err = errors.Join(err, fmt.Errorf("unmounting %s: %w", mnt, uerr))
+			return
+		}
+		_ = os.Remove(mnt)
+	}()
+	return fn(mnt)
 }

@@ -4,6 +4,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"io"
@@ -137,32 +138,24 @@ func (e *engine) cp(args []string) error {
 	if err != nil {
 		return err
 	}
-	mnt, err := os.MkdirTemp(e.cfg.Root, "mnt-")
-	if err != nil {
-		return err
-	}
-	defer os.RemoveAll(mnt)
-	if err := e.ctrMountSnapshot(mnt, meta.ID); err != nil {
-		return err
-	}
-	defer func() { _, _ = e.output("umount", mnt) }()
-
-	root, err := os.OpenRoot(mnt)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-	relative := strings.TrimPrefix(path.Clean("/"+destination), "/")
-	if target, err := root.Stat(relative); err == nil && target.IsDir() {
-		relative = path.Join(relative, filepath.Base(flags.args[0]))
-	}
-	file, err := root.OpenFile(relative, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
-	if err != nil {
-		return fmt.Errorf("copying to %s in %s: %w", destination, meta.Name, err)
-	}
-	if _, err := file.Write(data); err != nil {
-		_ = file.Close()
-		return err
-	}
-	return file.Close()
+	return e.withSnapshot(meta.ID, func(mnt string) error {
+		root, err := os.OpenRoot(mnt)
+		if err != nil {
+			return err
+		}
+		defer root.Close()
+		relative := cmp.Or(strings.TrimPrefix(path.Clean("/"+destination), "/"), ".")
+		if target, err := root.Stat(relative); err == nil && target.IsDir() {
+			relative = path.Join(relative, filepath.Base(flags.args[0]))
+		}
+		file, err := root.OpenFile(relative, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, info.Mode().Perm())
+		if err != nil {
+			return fmt.Errorf("copying to %s in %s: %w", destination, meta.Name, err)
+		}
+		if _, err := file.Write(data); err != nil {
+			_ = file.Close()
+			return err
+		}
+		return file.Close()
+	})
 }
