@@ -324,9 +324,7 @@ initial provisioning separately if the image or initialization is new.
 
 To validate a candidate on one cluster, [publish or select the release](#publish-or-select-a-release)
 and set `TEST_CHANNEL_NAME` to a new channel reserved for that cluster. Create it
-with the candidate release and no minimum age delay. For an existing cluster,
-also retain its current release under the selector, as described in
-[update the channel](#update-the-channel):
+with the candidate release and no minimum age delay:
 
 ```sh
 jq -n --arg name "${TEST_CHANNEL_NAME:?}" \
@@ -337,7 +335,9 @@ jq -n --arg name "${TEST_CHANNEL_NAME:?}" \
 cat test-channel.json
 ```
 
-Create the reviewed channel:
+For an existing cluster, edit `test-channel.json` before continuing: add its
+current release after the candidate in `spec.releases[VERSION_SELECTOR]`, retaining
+its existing minimum age. Review the edited request, then create the channel:
 
 ```sh
 curl -i -H 'Content-Type: application/json' \
