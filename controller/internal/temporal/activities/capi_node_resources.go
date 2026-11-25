@@ -22,6 +22,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients/capi"
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients/shared"
 	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
@@ -284,6 +285,15 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		return "", fmt.Errorf("capi machine %s has no IP addresses in status or infrastructure ref", machine.Name)
 	}
 
+	// A KubeVirt VM's IP is a pod IP, unroutable from here, so its agent is
+	// reached at the load balancer address KubeVirtSpiffeController publishes
+	// on the Machine. Retry until it does: without the address the node agent
+	// is unreachable and the node cannot join.
+	dialAddress := keys.MachineAgentDialAddress.Value(machine.Annotations)
+	if dialAddress == "" && capi.IsKubeVirtMachineRef(machine.Spec.InfrastructureRef) {
+		return "", fmt.Errorf("capi machine %s has no node agent dial address yet", machine.Name)
+	}
+
 	// Record the type the infra provider settled on for templateless Nico nodes
 	// (which carry no controller-selected type). Only authoritative once ready, and must
 	// never block provisioning; CAPD and template-backed nodes are unaffected.
@@ -312,6 +322,14 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 			return nonRetryableIfNotFound("failed to get node", err)
 		}
 		nodeForUpdate.IP = ipAddress
+		if dialAddress != "" {
+			capiProvider := db.CAPINodeProvider{}
+			if nodeForUpdate.Capi != nil {
+				capiProvider = *nodeForUpdate.Capi
+			}
+			capiProvider.AgentDialAddress = dialAddress
+			nodeForUpdate.Capi = &capiProvider
+		}
 		// Sticky: only stamp the type when the node has no type yet, so we never
 		// clobber a controller-selected (Forge) type or an already-recorded value.
 		stampInstanceType := observedInstanceTypeID != uuid.Nil && nodeForUpdate.NicoInstanceTypeID() == uuid.Nil
@@ -343,6 +361,7 @@ func (a *Activities) waitForCAPIMachineReady(ctx context.Context, input WaitForC
 		"nodeID", input.NodeID,
 		"nodeName", node.Name,
 		"ip", ipAddress,
+		"dialAddress", dialAddress,
 	)
 
 	return ipAddress, nil

@@ -117,5 +117,10 @@ func (c *Controller) Reconcile(ctx context.Context, key dbreconcile.Key) (reconc
 // ownedKeys returns the Machine annotations this controller keeps in step
 // with the node record.
 func ownedKeys() []keys.Key {
-	return []keys.Key{keys.MachineAgentConnection, keys.MachineSpireAttestationMethod, keys.MachineSpiffeEnabled}
+	return []keys.Key{
+		keys.MachineAgentConnection,
+		keys.MachineSpireAttestationMethod,
+		keys.MachineSpiffeEnabled,
+		keys.MachineAgentTokenSource,
+	}
 }

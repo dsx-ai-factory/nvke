@@ -108,6 +108,9 @@ data:
         dsxIdentityExchangeURL: {{ if $tlsJwt.enabled }}{{ required "nodeAgent.tlsJwt.dsxIdentityExchangeURL is required when TLS/JWT is enabled" (trim $tlsJwt.dsxIdentityExchangeURL) | quote }}{{ else }}""{{ end }}
         subjectTenant: {{ if $tlsJwt.enabled }}{{ required "nodeAgent.tlsJwt.subjectTenant is required when TLS/JWT is enabled" (trim $tlsJwt.subjectTenant) | quote }}{{ else }}""{{ end }}
         subjectService: {{ if $tlsJwt.enabled }}{{ required "nodeAgent.tlsJwt.subjectService is required when TLS/JWT is enabled" (trim $tlsJwt.subjectService) | quote }}{{ else }}""{{ end }}
+      kubeVirt:
+        spiffeIDClassName: {{ trim .Values.nodeAgent.kubeVirt.spiffeIDClassName | quote }}
+        addressPool: {{ trim .Values.nodeAgent.kubeVirt.addressPool | quote }}
       externalMTLSEnabled: {{ .Values.nodeAgent.externalMTLS.enabled }}
     oidc:
       managementOIDCAuth:

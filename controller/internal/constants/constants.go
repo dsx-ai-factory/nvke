@@ -93,6 +93,7 @@ const (
 	// controller starts managing DSX IMDS entries too, avoiding SSA ownership churn.
 	FieldManagerNicoSpiffe                    = "nico-tpm-spiffe-controller"
 	FieldManagerLaunchLayerSpiffe             = "launchlayer-spiffe-controller"
+	FieldManagerKubeVirtSpiffe                = "kubevirt-spiffe-controller"
 	FieldManagerMachineSpireEntry             = "machine-spire-entry-controller"
 	FieldManagerSpireNicoTPMBootstrapIdentity = "spire-nico-tpm-bootstrap-identity-controller"
 	FieldManagerBootstrapAuthorization        = "bootstrap-authorization-controller"

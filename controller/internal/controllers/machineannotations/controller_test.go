@@ -119,6 +119,7 @@ func TestReconcileLeavesMachineUnchanged(t *testing.T) {
 				keys.MachineAgentConnection.String():        "spiffe",
 				keys.MachineSpireAttestationMethod.String(): "tpm",
 				keys.MachineSpiffeEnabled.String():          "true",
+				keys.MachineAgentTokenSource.String():       "tokenExchange",
 			},
 		},
 		"Machine without host-id predates the controller's Machine identity": {

@@ -261,6 +261,7 @@ func MachineAnnotations(node db.Node) map[string]string {
 		keys.MachineHostID.String():                        node.ID.String(),
 		keys.MachineSpireAttestationMethod.String():        string(node.SpireAttestationMethod),
 		keys.MachineSpiffeEnabled.String():                 strconv.FormatBool(node.SpiffeEnabled),
+		keys.MachineAgentTokenSource.String():              string(node.NodeAgentTokenSource.Effective()),
 		clusterv1.ExcludeNodeDrainingAnnotation:            "cwe-controlled",
 		clusterv1.ExcludeWaitForNodeVolumeDetachAnnotation: "cwe-controlled",
 	}

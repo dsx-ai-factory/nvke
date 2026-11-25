@@ -75,3 +75,64 @@ DSX Identity exchanges that canonical source identity into
 The configured `subjectTrustDomain` must equal that exchanged trust domain.
 SPIFFE-only nodes that do not use DSX Identity exchange retain the legacy
 `/host/<node UUID>` local identity.
+
+## Nodes in virtual machines
+
+CAPI nodes whose machine template is a CAPK `KubevirtMachineTemplate` run as
+KubeVirt VMs. By default a VM node runs a SPIRE agent like a bare-metal node.
+To have its node agent get its token from the DSX metadata service instead
+(`--dsx-identity-metadata-url`), set `tokenFrom: metadataService` in the
+control plane's or node pool's `nodeAgentConfig` block when you create it:
+
+```json
+"nodeAgentConfig": {
+  "tokenFrom": "metadataService"
+}
+```
+
+Such a node runs no SPIRE agent and gets no join token, so it needs TLS/JWT
+with external mTLS. The setting can't be changed after creation.
+
+For each VM node, `KubeVirtSpiffeController` creates these objects in the
+cluster the VMs run in, and deletes them with the `KubevirtMachine`:
+
+- A `LoadBalancer` Service in front of the VM, because its pod address is not
+  reachable from the controller. The controller dials the agent there.
+  The VM's `VirtualMachine` owns the Service, so it is also removed when the
+  VM is. `nodeAgent.kubeVirt.addressPool` sets the MetalLB pool.
+- For `metadataService` nodes, a ClusterSPIFFEID registering
+  `spiffe://<local-trust-domain>/tenant/<subjectTenant>/service/<subjectService>/vm/<node UUID>`
+  for the VM's pod. `nodeAgent.kubeVirt.spiffeIDClassName` must match the
+  SPIRE controller manager serving the metadata sidecar.
+
+Both select the pod by the node's UUID, which the controller labels the VM's
+pod with, because CAPK's own pod labels carry the node name and node names are
+reused.
+
+`capi.rbac.kubeVirt: true` grants the controller these permissions, and read
+access to `VirtualMachines`, in the management cluster. When the `KubevirtCluster` uses `infraClusterSecretRef`,
+the identity in that kubeconfig needs them instead.
+
+The VM template must request the sidecar and use `bridge` binding (the sidecar
+does not work with `masquerade`):
+
+```yaml
+spec:
+  template:
+    spec:
+      virtualMachineTemplate:
+        spec:
+          template:
+            metadata:
+              annotations:
+                spiffe.nvidia.com/inject-dsx-imds: "true"
+            spec:
+              domain:
+                devices:
+                  interfaces:
+                    - name: default
+                      bridge: {}
+              networks:
+                - name: default
+                  pod: {}
+```

@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
@@ -52,5 +53,47 @@ func TestClient_renderInfraMachine(t *testing.T) {
 
 		_, err := New().renderInfraMachine("", "ns", db.Node{}, nodeSet, db.NodePool{}, db.Cluster{})
 		require.Error(t, err)
+	})
+}
+
+// The selector side of this lives in KubeVirtSpiffeController; without the
+// label it writes nothing a Service could select.
+func TestUnit_ApplyKubeVirtMachinePodLabels(t *testing.T) {
+	t.Parallel()
+	nodeID := uuid.MustParse("3f2a9c11-4b7d-4a0e-8c3f-1d2e5a6b7c80")
+
+	t.Run("labels a KubevirtMachine's VM pod with the node ID", func(t *testing.T) {
+		t.Parallel()
+		infraMachine := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": KubeVirtInfraGroup + "/" + KubeVirtInfraAPIVersion,
+			"kind":       KubeVirtMachineKind,
+			"spec": map[string]any{"virtualMachineTemplate": map[string]any{
+				"spec": map[string]any{"template": map[string]any{
+					"metadata": map[string]any{"labels": map[string]any{"keep": "me"}},
+				}},
+			}},
+		}}
+
+		require.NoError(t, applyKubeVirtMachinePodLabels(db.Node{ID: nodeID}, infraMachine))
+
+		labels, found, err := unstructured.NestedStringMap(infraMachine.Object,
+			"spec", "virtualMachineTemplate", "spec", "template", "metadata", "labels")
+		require.NoError(t, err)
+		require.True(t, found)
+		require.Equal(t, map[string]string{"keep": "me", NodeIDLabel: nodeID.String()}, labels)
+	})
+
+	t.Run("leaves another infrastructure kind alone", func(t *testing.T) {
+		t.Parallel()
+		infraMachine := &unstructured.Unstructured{Object: map[string]any{
+			"apiVersion": "infrastructure.cluster.x-k8s.io/v1beta1",
+			"kind":       "DockerMachineTemplate",
+		}}
+
+		require.NoError(t, applyKubeVirtMachinePodLabels(db.Node{ID: nodeID}, infraMachine))
+
+		_, found, err := unstructured.NestedStringMap(infraMachine.Object, "spec")
+		require.NoError(t, err)
+		require.False(t, found)
 	})
 }

@@ -90,6 +90,14 @@ type TLSJWTConfig struct {
 	DSXIdentityExchangeURL string `controllerconfig:"nodeAgent.tlsJWT.dsxIdentityExchangeURL"`
 }
 
+// KubeVirtConfig configures the controller's per-VM resources for KubeVirt VM nodes.
+type KubeVirtConfig struct {
+	SPIFFEIDClassName string `controllerconfig:"nodeAgent.kubeVirt.spiffeIDClassName"`
+	// AddressPool is the MetalLB pool for VM node agent Services. It must be
+	// reachable from the controller.
+	AddressPool string `controllerconfig:"nodeAgent.kubeVirt.addressPool"`
+}
+
 // NodeAgentConfig configures connections to and SPIRE attestation for managed node agents.
 type NodeAgentConfig struct {
 	// Port is the secure port that the NVKE node agent listens on.
@@ -104,6 +112,8 @@ type NodeAgentConfig struct {
 
 	// TLSJWT contains TLS/JWT transport settings.
 	TLSJWT TLSJWTConfig
+
+	KubeVirt KubeVirtConfig
 
 	// UpdateMethod selects apt or bundle installation for opted-in clusters.
 	UpdateMethod string `controllerconfig:"nodeAgent.updateMethod"`

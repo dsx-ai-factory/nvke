@@ -70,6 +70,9 @@ nodeAgent:
     dsxIdentityExchangeURL: ""
     subjectTenant: ""
     subjectService: ""
+  kubeVirt:
+    spiffeIDClassName: ""
+    addressPool: ""
   externalMTLSEnabled: false
 oidc:
   managementOIDCAuth:
