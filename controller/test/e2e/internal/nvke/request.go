@@ -829,6 +829,7 @@ func nodePoolRequest(clusterID uuid.UUID, pool api.NodePoolCreateConfig) api.Cre
 		ProvisioningMonitorDisabled: pool.ProvisioningMonitorDisabled,
 		RecycleBudget:               pool.RecycleBudget,
 		TeleportEnabled:             pool.TeleportEnabled,
+		NodeAgentConfig:             pool.NodeAgentConfig,
 	}
 }
 

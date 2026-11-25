@@ -1313,12 +1313,7 @@ type Node struct {
 
 // NodeAgentConfig Desired control-plane node-agent configuration.
 type NodeAgentConfig struct {
-	// TokenFrom Where a node's agent gets the token it authenticates to the controller with.
-	// tokenExchange runs a SPIRE agent on the node and exchanges its JWT-SVID.
-	// metadataService runs no SPIRE agent: the agent reads an already-exchanged token
-	// from the DSX metadata service, which the node's infrastructure must provide, and
-	// requires TLS/JWT with external mTLS. Defaults to tokenExchange. Set at creation
-	// and cannot be changed.
+	// TokenFrom Where new control-plane nodes' agents get their token.
 	TokenFrom *NodeAgentTokenSource `json:"tokenFrom,omitempty"`
 
 	// Version Exact agent release version. An empty value disables agent convergence.

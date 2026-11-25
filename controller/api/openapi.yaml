@@ -1190,7 +1190,9 @@ components:
           description: Exact agent release version. An empty value disables agent convergence.
         tokenFrom:
           x-fern-ignore: true
-          $ref: "#/components/schemas/NodeAgentTokenSource"
+          allOf:
+            - $ref: "#/components/schemas/NodeAgentTokenSource"
+          description: Where new control-plane nodes' agents get their token.
     ControlPlaneComponentConfig:
       description: Arguments for one control-plane component.
       type: object
