@@ -51,6 +51,7 @@ allowLegacyCalicoClusterCreation: false
 allowControlPlaneWithoutVIP: false
 nicoControllersEnabled: false
 bootstrapControllersEnabled: false
+kubeletServingCSRApprovalEnabled: false
 profilesDir: test/fixtures/profiles
 runbooksDir: test/fixtures/runbooks
 tenantAccessEnabled: false

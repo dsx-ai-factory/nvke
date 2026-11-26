@@ -82,6 +82,9 @@ controllers:
   bootstrap:
     # -- Run the Kubernetes-native bootstrap controllers. Each runs only for Machines that opt in by label.
     enabled: false
+  kubeletServingCSRApproval:
+    # -- Run the Machine-scoped kubelet serving CSR approver. Each Machine still opts in by label.
+    enabled: false
   nico:
     # -- Run controllers that watch NICo infrastructure resources.
     enabled: true

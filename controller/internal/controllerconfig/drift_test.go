@@ -109,6 +109,7 @@ var configMapOnly = []string{
 	"allowLegacyCalicoClusterCreation",
 	"allowControlPlaneWithoutVIP",
 	"bootstrapControllersEnabled",
+	"kubeletServingCSRApprovalEnabled",
 	"nodeMetadataAllowlistedLabelKeys",
 	"machineMetadataAllowlistedLabelKeys",
 	"machineMetadataAllowlistedAnnotationKeys",

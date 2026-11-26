@@ -56,6 +56,7 @@ type Config struct {
 	AllowLegacyCalicoClusterCreation         bool                       `json:"allowLegacyCalicoClusterCreation"`
 	NicoControllersEnabled                   bool                       `json:"nicoControllersEnabled"`
 	BootstrapControllersEnabled              bool                       `json:"bootstrapControllersEnabled"`
+	KubeletServingCSRApprovalEnabled         bool                       `json:"kubeletServingCSRApprovalEnabled"`
 	ProfilesDir                              string                     `json:"profilesDir"`
 	RunbooksDir                              string                     `json:"runbooksDir"`
 	TenantAccessEnabled                      bool                       `json:"tenantAccessEnabled"`

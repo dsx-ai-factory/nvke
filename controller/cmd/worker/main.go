@@ -322,6 +322,7 @@ func main() {
 		"enableNodeProvisioningMonitor", enableNodeProvisioningMonitor,
 		"enableNicoControllers", cfg.NicoControllersEnabled,
 		"enableBootstrapControllers", cfg.BootstrapControllersEnabled,
+		"enableKubeletServingCSRApproval", cfg.KubeletServingCSRApprovalEnabled,
 		"enableSpiffe", cfg.SpiffeEnabled,
 		"enableTenantAccess", cfg.TenantAccessEnabled)
 
@@ -420,18 +421,17 @@ func main() {
 		logger.Info("NICo controllers disabled by configuration")
 	}
 
-	if cfg.BootstrapControllersEnabled {
-		kubeadmConfigCRDInstalled, err := bootstrap.KubeadmConfigCRDInstalled(k8sControllerManager.GetRESTMapper())
-		if err != nil {
-			logger.Error("Failed to look up the KubeadmConfig CRD", "error", err)
-			os.Exit(1)
+	var clusterCache clustercache.ClusterCache
+	if cfg.BootstrapControllersEnabled || cfg.KubeletServingCSRApprovalEnabled {
+		indexes := []clustercache.CacheOptionsIndex{}
+		if cfg.BootstrapControllersEnabled {
+			indexes = append(indexes, kubeletcsr.ClientCSRCacheIndexes()...)
 		}
-		if !kubeadmConfigCRDInstalled {
-			logger.Error("Required KubeadmConfig CRD is not installed while bootstrap controllers are enabled; install Cluster API before starting the NVKE controller")
-			os.Exit(1)
+		if cfg.KubeletServingCSRApprovalEnabled {
+			indexes = append(indexes, kubeletcsr.ServingCSRCacheIndexes()...)
 		}
-
-		clusterCache, err := clustercache.SetupWithManager(ctx, k8sControllerManager, clustercache.Options{
+		var err error
+		clusterCache, err = clustercache.SetupWithManager(ctx, k8sControllerManager, clustercache.Options{
 			SecretClient: k8sControllerManager.GetClient(),
 			Client: clustercache.ClientOptions{
 				UserAgent: "nvke-controller",
@@ -443,13 +443,25 @@ func main() {
 					},
 				},
 			},
-			Cache: clustercache.CacheOptions{Indexes: kubeletcsr.ClientCSRCacheIndexes()},
+			Cache: clustercache.CacheOptions{Indexes: indexes},
 			ClusterFilter: func(cluster *clusterv1.Cluster) bool {
 				return capi.IsNVKEManagedCluster(cluster, cfg.ManagedByLabelValue)
 			},
 		}, controller.Options{})
 		if err != nil {
 			logger.Error("Failed to set up cluster cache", "error", err)
+			os.Exit(1)
+		}
+	}
+
+	if cfg.BootstrapControllersEnabled {
+		kubeadmConfigCRDInstalled, err := bootstrap.KubeadmConfigCRDInstalled(k8sControllerManager.GetRESTMapper())
+		if err != nil {
+			logger.Error("Failed to look up the KubeadmConfig CRD", "error", err)
+			os.Exit(1)
+		}
+		if !kubeadmConfigCRDInstalled {
+			logger.Error("Required KubeadmConfig CRD is not installed while bootstrap controllers are enabled; install Cluster API before starting the NVKE controller")
 			os.Exit(1)
 		}
 
@@ -489,6 +501,20 @@ func main() {
 		}
 	} else {
 		logger.Info("Bootstrap controllers disabled by configuration")
+	}
+
+	if cfg.KubeletServingCSRApprovalEnabled {
+		kubeletServingCSRController := kubeletcsr.NewServingCSRController(
+			k8sControllerManager.GetClient(),
+			clusterCache,
+			logger.With("logger", "kubelet-serving-csr-controller"),
+		)
+		if err := kubeletServingCSRController.SetupWithManager(k8sControllerManager); err != nil {
+			logger.Error("Failed to set up kubelet serving CSR controller", "error", err)
+			os.Exit(1)
+		}
+	} else {
+		logger.Info("Kubelet serving CSR approval controller disabled by configuration")
 	}
 
 	var teleportClient teleport.Client

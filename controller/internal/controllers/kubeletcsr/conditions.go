@@ -7,12 +7,13 @@ import (
 	"context"
 	"fmt"
 
+	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/events"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/keys"
 )
 
@@ -36,25 +37,35 @@ const (
 	KubeletClientCSRApprovalReason = "NVKEValidatedBootstrapIdentity"
 )
 
-func setKubeletClientCertificateCondition(
-	ctx context.Context,
-	k8sClient client.Client,
-	machine *clusterv1.Machine,
-	status metav1.ConditionStatus,
-	reason string,
-	message string,
-) error {
-	return setMachineCondition(
-		ctx,
-		k8sClient,
-		machine,
-		KubeletClientCertificateIssuedCondition,
-		status,
-		reason,
-		message,
-		constants.FieldManagerKubeletClientCSR,
-	)
-}
+const (
+	// KubeletServingCSRApprovalReadyCondition reports whether the controller can evaluate kubelet serving CSRs for this Machine.
+	KubeletServingCSRApprovalReadyCondition = keys.Domain + "/KubeletServingCSRApprovalReady"
+
+	// KubeletServingCSRApprovalReadyReason means the controller can evaluate kubelet serving CSRs for this Machine.
+	KubeletServingCSRApprovalReadyReason = "Ready"
+	// KubeletServingCSRWaitingForNodeReason means CAPI has not associated the Machine with a Node yet.
+	KubeletServingCSRWaitingForNodeReason = "WaitingForNodeAssociation"
+	// KubeletServingCSRWaitingForAddressesReason means the Machine has no provider addresses yet.
+	KubeletServingCSRWaitingForAddressesReason = "WaitingForAddresses"
+	// KubeletServingCSRNodeNameConflictReason means the node name is associated with more than one Machine.
+	KubeletServingCSRNodeNameConflictReason = "NodeNameConflict"
+	// KubeletServingCSRFailedReason means an operation failed while approving a serving CSR. The message is the error.
+	KubeletServingCSRFailedReason = "ServingCSRFailed"
+	// KubeletServingCSROptedOutReason means the Machine is no longer opted in to kubelet serving CSR approval.
+	KubeletServingCSROptedOutReason = "ServingCSRApprovalOptedOut"
+)
+
+const (
+	// KubeletCSRApprovedReason is the Event reason when a kubelet CSR is approved.
+	KubeletCSRApprovedReason = "KubeletCSRApproved"
+	// KubeletServingCSRRejectedReason is the Event reason when a serving CSR fails validation.
+	KubeletServingCSRRejectedReason = "ServingCSRRejected"
+)
+
+const (
+	approveCSRAction      = "ApproveCSR"
+	updateConditionAction = "UpdateCondition"
+)
 
 func setMachineCondition(
 	ctx context.Context,
@@ -65,6 +76,7 @@ func setMachineCondition(
 	reason string,
 	message string,
 	fieldOwner string,
+	recorder events.EventRecorder,
 ) error {
 	conditions := []metav1.Condition{}
 	if current := meta.FindStatusCondition(machine.Status.Conditions, conditionType); current != nil {
@@ -104,6 +116,8 @@ func setMachineCondition(
 	); err != nil {
 		return fmt.Errorf("failed to patch Machine %s condition: %w", conditionType, err)
 	}
-
+	if recorder != nil {
+		recorder.Eventf(machine, nil, corev1.EventTypeNormal, reason, updateConditionAction, "%s", message)
+	}
 	return nil
 }

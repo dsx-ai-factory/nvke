@@ -165,6 +165,7 @@ const (
 	BootstrapIdentitySpireWorkloadEntryConfig Key = "bootstrap-identity-spire-workload-entry-config"
 	SyncBootstrapAuthorization                Key = "sync-bootstrap-authorization"
 	ApproveKubeletClientCSR                   Key = "approve-kubelet-client-csr"
+	ApproveKubeletServingCSRs                 Key = "approve-kubelet-serving-csrs"
 
 	// NodeMachineHealthIssue is the health-issue annotation on a Kubernetes
 	// Node.
