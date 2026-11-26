@@ -117,6 +117,17 @@ var _ = DescribeTableSubtree("NVKE with backend", withNicoVMSReleaseEntries(
 		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
 		validate: validations{provisioningOnly: true, mokkaGPU: true, cisBenchmark: true},
 	}),
+	Entry("CAPD Mokka pool lifecycle", Ordered, ContinueOnFailure, Label("capd", "mokka-pool-lifecycle"), testSpec{
+		buildSpec: capdSpec,
+		shape: clusterShape{
+			controlPlaneConfig: &nvke.ControlPlaneConfigSpec{DesiredCount: 1},
+			workerPools: []nvke.NodePoolSpec{
+				{Name: "mokka-gb300", NodeNamePrefix: "mg", DesiredNodeCount: 1, NodeLabels: map[string]string{mokkaLabelKey: "gb300"}},
+			},
+		},
+		options:  nvke.Options{Provision: 10 * time.Minute, Delete: 5 * time.Minute, Poll: 5 * time.Second},
+		validate: validations{provisioningOnly: true, mokkaGPU: true, mokkaPoolLifecycle: true},
+	}),
 	Entry("CAPD", Ordered, ContinueOnFailure, Label("capd", "happy-path", "kube-vip-route-withdrawal", "cert-renewal"), testSpec{
 		buildSpec: capdSpec,
 		shape: clusterShape{
@@ -759,6 +770,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 			if spec.validate.mokkaGPU {
 				validateMokkaGPU(&test)
 			}
+			if spec.validate.mokkaPoolLifecycle {
+				validateMokkaPoolLifecycle(&test)
+			}
 			if spec.validate.tenantChecks {
 				capabilities, capabilitiesErr := runCapabilities()
 				gpuRuntime := planTenantGPURuntime(tenantGPURuntime, capabilities, capabilitiesErr)
@@ -1059,6 +1073,8 @@ type validations struct {
 	// cisBenchmarkAfterScale scans the cluster while scale has added a node to
 	// each worker pool, before scaling them back down.
 	cisBenchmarkAfterScale bool
+	// mokkaPoolLifecycle adds, scales and removes a different-model pool after runtime installation.
+	mokkaPoolLifecycle bool
 }
 
 // managementCluster is the cluster the controller runs on, which a tenant test reaches

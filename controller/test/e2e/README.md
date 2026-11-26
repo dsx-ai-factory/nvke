@@ -84,6 +84,30 @@ the session then ends, and the request after it rebuilds against a new Ready pod
 Specs that replace the pod themselves do not pay that, because `SetOIDCEnabled`
 drops the shared forwards once the rollout completes.
 
+## Mixed-GPU pool lifecycle
+
+`CAPD Mokka pool lifecycle` starts with a simulated GB300 pool, installs GPU
+Operator, then adds an H100 pool through the NVKE API. It scales H100 from one
+node to two and back to one, then deletes that pool. Scale-down explicitly
+calls node deletion after lowering desired count, matching NVKE's current API.
+At each checkpoint it checks pool membership, GPU model/count, Ready nodes and
+model-selected GPU workloads. A persistent GB300 GPU pod must retain its UID
+and node, have zero restarts and continue emitting heartbeats; the largest
+observed heartbeat gap is logged without imposing an availability SLO.
+
+Run the scenario with the existing local CAPD runner (Docker, Kind and the
+usual local runner prerequisites are required):
+
+```bash
+LOCAL_NKE_E2E_LABEL_FILTER=mokka-pool-lifecycle make test-e2e-backend-local
+```
+
+The entry has the `capd` label, so full CAPD runs select it. The shorter
+`core-docker` pull-request smoke selection does not. Module unit tests check
+that wrong model/capacity, mislabeled pools, stale nodes and workload
+replacement/restarts are rejected. This exercises GPU simulation with the
+existing pinned stack; it does not qualify physical drivers, CUDA or AICR.
+
 ## Configuration
 
 The tests can be configured using an `e2e-config.yaml` file. A missing config file is not an error; the tests will simply use sensible defaults for a local Tilt environment. 
