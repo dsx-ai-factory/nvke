@@ -883,7 +883,7 @@ func TestChartExistingManagerIdentity(t *testing.T) {
 func TestChartOwnedFlags(t *testing.T) {
 	for _, name := range []string{
 		"leader-election-namespace", "nvke-controller-endpoint", "nvke-controller-token-file",
-		"infra-template-configmap", "kubeconfig", "context",
+		"infra-template-configmap", "infra-template-namespace", "kubeconfig", "context",
 	} {
 		for _, prefix := range []string{"-", "--"} {
 			t.Run(prefix+name, func(t *testing.T) {
@@ -1115,5 +1115,110 @@ func TestChartNumericNamespaces(t *testing.T) {
 		if len(namespaces) != 2 || namespaces["123"] != 1 || namespaces["456"] != 1 {
 			t.Fatalf("%s namespaces changed: %v", kind, namespaces)
 		}
+	}
+}
+
+func TestChartSharedInfrastructureTemplate(t *testing.T) {
+	for _, tc := range []struct {
+		name, values, namespace string
+		runtime, state          bool
+	}{
+		{"combined", `{
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra"
+  }
+}`, "runtime", true, true},
+		{"operator namespace", `{
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra",
+    "infrastructureTemplateNamespace": "operators"
+  }
+}`, "operators", true, true},
+		{"state only", `{
+  "controller": {
+    "enabled": false
+  },
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra",
+    "infrastructureTemplateNamespace": "operators"
+  },
+  "state": {
+    "rbac": {
+      "subjects": [
+        {
+          "kind": "User",
+          "name": "remote-manager",
+          "apiGroup": "rbac.authorization.k8s.io"
+        }
+      ]
+    }
+  }
+}`, "operators", false, true},
+		{"remote", `{
+  "state": {
+    "enabled": false
+  },
+  "manager": {
+    "infrastructureTemplateConfigMap": "infra",
+    "stateNamespace": "datastore",
+    "stateAccess": {
+      "mode": "remote",
+      "kubeconfigSecret": {
+        "name": "client",
+        "key": "config"
+      }
+    }
+  }
+}`, "datastore", true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			objects, output, err := renderChart(t, tc.values)
+			if err != nil {
+				t.Fatalf("render: %v\n%s", err, output)
+			}
+			if tc.runtime {
+				deployments := objectsOfKind(objects, "Deployment")
+				containers, _, _ := unstructured.NestedSlice(deployments[0].Object, "spec", "template", "spec", "containers")
+				args, _, _ := unstructured.NestedStringSlice(containers[0].(map[string]any), "args")
+				if !strings.Contains(strings.Join(args, " "), "--infra-template-namespace="+tc.namespace) {
+					t.Fatalf("wrong template namespace: %v", args)
+				}
+			}
+			found := false
+			for _, role := range objects {
+				if role.GetKind() != "Role" && role.GetKind() != "ClusterRole" {
+					continue
+				}
+				rules, _, _ := unstructured.NestedSlice(role.Object, "rules")
+				for _, raw := range rules {
+					rule := raw.(map[string]any)
+					resources, _, _ := unstructured.NestedStringSlice(rule, "resources")
+					if !strings.Contains(" "+strings.Join(resources, " ")+" ", " configmaps ") {
+						continue
+					}
+					found = true
+					names, _, _ := unstructured.NestedStringSlice(rule, "resourceNames")
+					verbs, _, _ := unstructured.NestedStringSlice(rule, "verbs")
+					if role.GetKind() != "Role" || role.GetNamespace() != tc.namespace ||
+						strings.Join(names, ",") != "infra" || strings.Join(verbs, ",") != "get" {
+						t.Fatalf("overbroad template permission: %v", role.Object)
+					}
+					bound := false
+					for _, binding := range objectsOfKind(objects, "RoleBinding") {
+						ref, _, _ := unstructured.NestedString(binding.Object, "roleRef", "name")
+						subjects, _, _ := unstructured.NestedSlice(binding.Object, "subjects")
+						if binding.GetNamespace() == tc.namespace && ref == role.GetName() && len(subjects) == 1 {
+							bound = true
+						}
+					}
+					if !bound {
+						t.Fatalf("template permission is not bound: %s/%s", tc.namespace, role.GetName())
+					}
+				}
+			}
+			if found != tc.state {
+				t.Fatalf("template role present=%v, want %v", found, tc.state)
+			}
+		})
 	}
 }

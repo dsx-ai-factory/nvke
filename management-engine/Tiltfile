@@ -47,16 +47,10 @@ def register(ctx):
     k8s_yaml(encode_yaml({
         "apiVersion": "v1", "kind": "Namespace", "metadata": {"name": "tenant-test"},
     }))
-    # Reconciliation reads the same infrastructure templates in the tenant namespace.
-    template = read_yaml(os.path.join(ctx.provider_dir, "config/dev/infra-templates.yaml"))
-    template["metadata"]["name"] = "management-engine-" + template["metadata"]["name"]
-    template["metadata"]["namespace"] = "tenant-test"
-    k8s_yaml(encode_yaml(template))
     k8s_resource(
         new_name="management-engine-rest-config",
         objects=[
             "tenant-test:namespace",
-            "management-engine-infra-templates:configmap:tenant-test",
         ],
         resource_deps=["management-engine-config"],
         labels=["3-management-engine"],

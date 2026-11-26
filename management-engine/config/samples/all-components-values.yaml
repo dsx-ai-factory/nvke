@@ -9,7 +9,7 @@ manager:
 state:
   configMaps:
     - name: infra-templates
-      namespace: tenant-a
+      namespace: cluster-service-system
       data:
         clusterTmpl: |
           {

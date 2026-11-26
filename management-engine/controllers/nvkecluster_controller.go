@@ -69,12 +69,14 @@ type NVKEClusterReconciler struct {
 	NVKEController             NVKEControllerClient
 	PollInterval               time.Duration
 	InfraTemplateConfigMapName string
+	InfraTemplateNamespace     string
+	// InfraTemplateReader bypasses the tenant-scoped cache for the shared ConfigMap.
+	InfraTemplateReader client.Reader
 }
 
 // +kubebuilder:rbac:groups=service.nvke.nvidia.com,resources=nvkeclusters,verbs=get;list;watch;patch
 // +kubebuilder:rbac:groups=service.nvke.nvidia.com,resources=nvkeclusters/status,verbs=update;patch
 // +kubebuilder:rbac:groups=service.nvke.nvidia.com,resources=controlplaneclasses;clusterreleases;clusterreleasechannels;machineimages;nodeprofiles,verbs=get;list;watch
-// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get;list;watch
 
 func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (result ctrl.Result, retErr error) {
 	log := ctrl.LoggerFrom(ctx)
@@ -136,8 +138,8 @@ func (r *NVKEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request)
 
 func (r *NVKEClusterReconciler) reconcileCluster(ctx context.Context, cluster *internalv1.NVKECluster) (ctrl.Result, error) {
 	var infraTemplate corev1.ConfigMap
-	key := client.ObjectKey{Namespace: cluster.Namespace, Name: r.InfraTemplateConfigMapName}
-	if err := r.Get(ctx, key, &infraTemplate); err != nil {
+	key := client.ObjectKey{Namespace: r.InfraTemplateNamespace, Name: r.InfraTemplateConfigMapName}
+	if err := r.InfraTemplateReader.Get(ctx, key, &infraTemplate); err != nil {
 		err = fmt.Errorf("get infrastructure template ConfigMap %s: %w", key, err)
 		conditions.Set(cluster, metav1.Condition{
 			Type:    internalv1.ClusterReconciledCondition,

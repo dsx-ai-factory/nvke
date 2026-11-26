@@ -10,6 +10,9 @@
 {{- $roles := list
   (dict "file" "roles/role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "manager-role")
   (dict "file" "roles/leader_election_role" "kind" "Role" "subjects" $subjects "namespace" $namespace "suffix" "leader-election-role") }}
+{{- if .Values.manager.infrastructureTemplateConfigMap }}
+{{- $roles = append $roles (dict "file" "roles/infra_template_reader_role" "kind" "Role" "subjects" $subjects "namespace" (include "management-engine.infraTemplateNamespace" .) "suffix" "infra-template-reader" "templateReader" true) }}
+{{- end }}
 {{- $localMetrics := and .Values.controller.enabled .Values.manager.enabled (eq .Values.manager.stateAccess.mode "inCluster") .Values.metrics.enabled .Values.metrics.secure }}
 {{- if or $localMetrics .Values.state.rbac.metricsAuth }}
 {{- $roles = append $roles (dict "file" "roles/metrics_auth_role" "kind" "ClusterRole" "subjects" $subjects "namespace" $namespace "suffix" "metrics-auth-role") }}
@@ -55,7 +58,13 @@ metadata:
   namespace: {{ $role.namespace | quote }}
   {{- end }}
 rules:
+  {{- if $role.templateReader }}
+  {{- $rules := include "management-engine.roleRules" (dict "root" $ "file" $role.file "kind" $role.kind) | fromYamlArray }}
+  {{- $_ := set (first $rules) "resourceNames" (list $.Values.manager.infrastructureTemplateConfigMap) }}
+  {{- toYaml $rules | nindent 2 }}
+  {{- else }}
   {{- include "management-engine.roleRules" (dict "root" $ "file" $role.file "kind" $role.kind) | nindent 2 }}
+  {{- end }}
 {{- if $role.subjects }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
