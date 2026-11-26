@@ -302,6 +302,7 @@ names another.
 | `e2e-config.yaml`, `site-inputs/` | The suite's config, and the archives the site was given |
 | diagnostics | On a failure, what the suite collected |
 | `kaps-bench-results.tar.gz` | kaps-bench's output dir from every run spec it ran, absent when no run spec got far enough for kaps-bench to write one |
+| `qualify-e2e-artifacts/kube-bench/` | With `--tenant-gpu-runtime`, the tenant's kube-bench scan: `results.json` with every node's report, and `summary.txt` |
 
 A run that fails once its stream is chosen still writes
 `qualify-result.json`, errored when the suite never wrote a report, as the
@@ -313,8 +314,8 @@ the JUnit and JSON reports, `tenant-diagnostics.json` and
 `site-cluster-state.txt`) before they are moved there. Nothing else is
 scrubbed: those files still carry node addresses, the Forge ids, the NGC org
 and the Teleport login, and `nvkectl-diagnostics.tar.gz`,
-`kaps-bench-results.tar.gz` and the `site-bundle*` files are moved as the suite
-wrote them. Only
+`kaps-bench-results.tar.gz`, `qualify-e2e-artifacts/` and the `site-bundle*`
+files are moved as the suite wrote them. Only
 `qualify-result.json` is fit to attach to a pull request.
 
 When anything was built, the result is written from `plan-as-run.json`, so it
@@ -439,7 +440,7 @@ Some combinations are refused before anything is built:
 | `--dry-run` | off | plans, verifies, resolves and stages the site inputs, then prints the suite's arguments without taking a machine |
 | `--keep-site` | off | keeps the site node after the run, pass or fail, and a tenant whose specs failed |
 | `--keep-tenant` | off | keeps every tenant, passed or not, and the site node they hang off. The spec that deletes a tenant is skipped, so tenant deletion is not tested |
-| `--tenant-gpu-runtime` | off | installs the GPU runtime on the tenant with AICR, then runs AICR's deployment checks and the tenant GPU checks. It installs only on GB200 and Ubuntu 24.04 and skips with the reason elsewhere. Every timeout grows by the 65 minutes the two specs may take. It needs `aicr`, `helm`, `kubectl`, and `timeout` or `gtimeout` (see [Tools](#tools)) |
+| `--tenant-gpu-runtime` | off | installs the GPU runtime on the tenant with AICR, then runs AICR's deployment checks, a kube-bench scan of the tenant that reports its findings without failing (results in `<run-dir>/qualify-e2e-artifacts/kube-bench/`), and the tenant GPU checks. It installs only on GB200 and Ubuntu 24.04 and skips with the reason elsewhere. Every timeout grows by the 65 minutes the two specs may take. It needs `aicr`, `helm`, `kubectl`, and `timeout` or `gtimeout` (see [Tools](#tools)) |
 | `--plan FILE` | plan `--scope` | reads that plan instead of planning |
 | `--scope`, `--subject` | `full`, `nvke` | what to plan when `--plan` is not given |
 | `--version` | the highest version | the version of the subject to plan, as `qualify plan --version` takes it |

@@ -111,7 +111,7 @@ docs/qualification/hardware-qualification.md.`,
 	f.BoolVar(&o.fromSource, "from-source", false, "build every image the site stages from the checkout and pull none: --build for all of them, and --registry local")
 	f.BoolVar(&o.keepSite, "keep-site", false, "keep the site node after the run, and a tenant whose specs failed; they must then be deleted by hand. The site node's SSH key is written under --run-dir")
 	f.BoolVar(&o.keepTenant, "keep-tenant", false, "keep every tenant after the run, passed or not, and the site node they hang off; skips the spec that deletes the tenant, and they must then be deleted by hand. The site node's SSH key is written under --run-dir")
-	f.BoolVar(&o.tenantGPURuntime, "tenant-gpu-runtime", false, "install the GPU runtime on the tenant with AICR and run AICR's checks and the tenant GPU checks; installs only on GB200 and Ubuntu 24.04, holds the tenant up to 65 minutes longer, and needs aicr, helm and kubectl")
+	f.BoolVar(&o.tenantGPURuntime, "tenant-gpu-runtime", false, "install the GPU runtime on the tenant with AICR and run AICR's checks, a report-only CIS benchmark scan of the tenant, and the tenant GPU checks; installs only on GB200 and Ubuntu 24.04, holds the tenant up to 65 minutes longer, and needs aicr, helm and kubectl")
 	f.BoolVar(&o.dryRun, "dry-run", false, "plan, verify, resolve and stage, and print the suite's arguments without taking a machine")
 	f.DurationVar(&o.wait, "wait", 0, "how long to keep asking for an artifact that is not published yet, registry images and CDN files alike")
 	f.StringVar(&o.runDir, "run-dir", "", "where the run's files are kept (default: a new directory under the user cache)")

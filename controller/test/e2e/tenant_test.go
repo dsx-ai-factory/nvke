@@ -765,6 +765,9 @@ func tenantSubtree(resolve managementResolver) func(spec testSpec) {
 				tenantFailed := func() bool { return failed }
 				if tenantGPURuntime {
 					validateTenantGPURuntime(&test, gpuRuntime, tenantFailed)
+					if gpuRuntime.installs() {
+						reportCISBenchmark(&test, "after the GPU runtime install", tenantFailed, Label("gpu", "gpu-runtime", "cis-benchmark"))
+					}
 				}
 				validateTenant(laneTenantTarget(&test, tenantFailed), gpuRuntime.tenantSettings(laneTenantSettings, spec.shape, tenantWorkers))
 				if len(kapsBenchRunSpecs) > 0 {

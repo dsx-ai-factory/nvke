@@ -32,6 +32,10 @@ const (
 	scanPodTerminalPhase = "Succeeded or Failed"
 )
 
+// ErrArtifacts marks a Check error from writing the artifacts. The scan ran,
+// so the Outcome returned with it is complete.
+var ErrArtifacts = errors.New("writing the kube-bench artifacts")
+
 // Scanner runs kube-bench on every node of a cluster.
 type Scanner struct {
 	// Clientset reaches the cluster under test.
@@ -318,7 +322,8 @@ func (s Scanner) cleanup(ctx context.Context, serviceAccount *corev1.ServiceAcco
 }
 
 // Check scans the cluster, judges the reports against the embedded register,
-// and, when outDir is not empty, writes the artifacts there.
+// and, when outDir is not empty, writes the artifacts there. When writing them
+// fails, it returns the Outcome with an error that wraps ErrArtifacts.
 func Check(ctx context.Context, s Scanner, cluster Cluster, outDir string) (Outcome, error) {
 	nodes, err := s.Scan(ctx)
 	if err != nil {
@@ -331,7 +336,7 @@ func Check(ctx context.Context, s Scanner, cluster Cluster, outDir string) (Outc
 	out := Evaluate(cluster, nodes, reg)
 	if outDir != "" {
 		if err := WriteArtifacts(outDir, nodes, out); err != nil {
-			return out, err
+			return out, fmt.Errorf("%w: %w", ErrArtifacts, err)
 		}
 	}
 	return out, nil
