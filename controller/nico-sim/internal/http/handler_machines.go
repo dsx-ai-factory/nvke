@@ -52,7 +52,11 @@ func (s *Server) handleGetMachine(w nethttp.ResponseWriter, r *nethttp.Request) 
 				return
 			}
 			if instance.GetMachineId() == machineID {
-				writeJSON(w, nethttp.StatusOK, simulatedMachine(instance))
+				machine := simulatedMachine(instance)
+				if labels := s.failureDomains.machineLabels(instance.GetId()); len(labels) > 0 {
+					machine.SetLabels(labels)
+				}
+				writeJSON(w, nethttp.StatusOK, machine)
 				return
 			}
 		}

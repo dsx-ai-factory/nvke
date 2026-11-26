@@ -19,6 +19,10 @@ import (
 )
 
 const (
+	// DefaultControlPlaneFailureDomainFallbackGracePeriod applies when the controller
+	// config leaves controlPlaneFailureDomainFallback.gracePeriod unset.
+	DefaultControlPlaneFailureDomainFallbackGracePeriod = 10 * time.Minute
+
 	// InfraProviderNico is the API-facing name for the Nico provider block.
 	InfraProviderNico = "nico"
 	// InfraProviderInfra is the API-facing name for the generic CAPI provider block.
@@ -430,6 +434,11 @@ type Config struct {
 	// AllowControlPlaneWithoutVIP permits control-plane lifecycle operations without a VIP for development.
 	// The API endpoint remains tied to the initializing node's IP.
 	AllowControlPlaneWithoutVIP bool `controllerconfig:"allowControlPlaneWithoutVIP"`
+
+	// ControlPlaneFailureDomainFallbackGracePeriod is how long a pending control-plane node must keep
+	// reporting its failure domain out of capacity before it is moved to another eligible domain.
+	// Zero means DefaultControlPlaneFailureDomainFallbackGracePeriod.
+	ControlPlaneFailureDomainFallbackGracePeriod time.Duration `controllerconfig:"controlPlaneFailureDomainFallback.gracePeriod"`
 
 	// KubeVip configures kube-vip BGP ASNs.
 	KubeVip KubeVipConfig

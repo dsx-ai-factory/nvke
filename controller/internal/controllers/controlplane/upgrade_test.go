@@ -15,8 +15,10 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
+	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 	"github.com/dsx-ai-factory/nvke/controller/internal/testutil"
 )
@@ -136,7 +138,7 @@ func TestReconcileNodesNeedingRolloutWithoutControlPlaneVIP(t *testing.T) {
 			}
 			r := &reconciler{cfg: config.Config{AllowControlPlaneWithoutVIP: allow}, db: mockTx, logger: slog.Default()}
 
-			_, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+			_, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 
 			if allow {
 				require.ErrorIs(t, err, surgeError)
@@ -212,7 +214,7 @@ func TestReconcileNodesNeedingRolloutRecordsIntentAfterSurgeExists(t *testing.T)
 	}).Return(oldNode, nil)
 	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
 
-	recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+	recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 
 	require.NoError(t, err)
 	assert.True(t, recorded, "reconcileNodesNeedingRollout should report that it recorded a delete")
@@ -280,7 +282,7 @@ func TestReconcileNodesNeedingRolloutSkipsWhenReplacementNotJoined(t *testing.T)
 	}).Return([]db.Node{oldNode, newNode}, nil)
 	r := &reconciler{cfg: config.Config{}, db: mockTx, logger: slog.Default()}
 
-	recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+	recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 
 	require.NoError(t, err)
 	assert.False(t, recorded, "reconcileNodesNeedingRollout must not report a recorded delete when the replacement has not joined")
@@ -350,12 +352,88 @@ func TestReconcileNodesNeedingRolloutSkipsWhenDeleteInFlight(t *testing.T) {
 				nodePinnedControlPlaneConfigs: configs,
 			}
 
-			recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, domainAllocator{}, nil)
+			recorded, err := r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, failuredomains.Allocator{}, nil)
 
 			require.NoError(t, err)
 			assert.False(t, recorded, "reconcileNodesNeedingRollout must not report a recorded delete when a delete is already in flight")
 			mockTx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
 			mockTx.AssertNotCalled(t, "CreateWorkflowOutboxEntry", mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+		})
+	}
+}
+
+// Regression: releasing an in-flight rollout target's domain uncounted it twice and
+// placed the surge beside an active node instead of in the empty domain.
+func TestReconcileNodesNeedingRolloutSurgeDomain(t *testing.T) {
+	t.Parallel()
+
+	currentSpec := nicoCPSpec("nvke-1.34.2", "", "1.34.2")
+	currentID, staleID := uuid.New(), uuid.New()
+	configs := map[uuid.UUID]db.ControlPlaneConfigSpec{currentID: currentSpec, staleID: staleCPSpec(t, currentSpec)}
+	snapshot := &failuredomains.Snapshot{Eligible: []string{"fd-a", "fd-b", "fd-c"}}
+
+	node := func(name, domain string, configID uuid.UUID, inFlight bool) db.Node {
+		n := makeCPControllerNode(name, configID)
+		n.FailureDomain = domain
+		if inFlight {
+			n.Conditions.DeleteRequested = db.NewCondition(true, "")
+		}
+		return n
+	}
+
+	tests := []struct {
+		name      string
+		cpNodes   []db.Node
+		wantSurge string
+	}{
+		{
+			name: "in-flight target is skipped; its domain keeps its active node's count",
+			cpNodes: []db.Node{
+				node("a1", "fd-a", staleID, true), node("a2", "fd-a", currentID, false), node("b1", "fd-b", currentID, false),
+			},
+			wantSurge: "fd-c",
+		},
+		{
+			name: "next live target's domain is released",
+			cpNodes: []db.Node{
+				node("a1", "fd-a", staleID, true), node("a2", "fd-a", currentID, false), node("b1", "fd-b", staleID, false),
+			},
+			wantSurge: "fd-b",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			cluster := clusterWithCurrentSnapshot(currentSpec, 1)
+			cluster.EnableCPNodeRecycling = true
+			cluster.ProviderType = db.ProviderTypeCAPI
+			for i := range tt.cpNodes {
+				tt.cpNodes[i].ClusterID = cluster.ID
+			}
+			cp := &controlPlane{
+				nodes:                         tt.cpNodes,
+				failureDomains:                snapshot,
+				clusterControlPlaneConfig:     cluster.ControlPlaneConfig,
+				nodePinnedControlPlaneConfigs: configs,
+			}
+			newNodeProvider, err := clients.GetNewNodeProvider(cluster)
+			require.NoError(t, err)
+
+			mockTx := &testutil.MockTx{}
+			mockTx.On("ListClusterNodeNames", mock.Anything, cluster.ID).Return([]string{}, nil)
+			mockTx.On("ListNodes", mock.Anything, mock.Anything).Return(tt.cpNodes, nil).Maybe()
+			var surgeDomain string
+			mockTx.On("CreateNode", mock.Anything, mock.Anything).Run(func(args mock.Arguments) {
+				surgeDomain = args.Get(1).(*db.Node).FailureDomain
+			}).Return(db.Node{Name: "surge"}, nil).Once()
+			r := &reconciler{cfg: config.Config{AllowControlPlaneWithoutVIP: true}, db: mockTx, logger: slog.Default()}
+
+			allocator := failuredomains.NewControlPlaneAllocator(tt.cpNodes, snapshot)
+			_, err = r.reconcileNodesNeedingRollout(context.Background(), cluster, cp, allocator, newNodeProvider)
+
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantSurge, surgeDomain)
 		})
 	}
 }

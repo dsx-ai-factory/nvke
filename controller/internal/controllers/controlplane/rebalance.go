@@ -14,6 +14,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/clients"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
+	"github.com/dsx-ai-factory/nvke/controller/internal/failuredomains"
 	"github.com/dsx-ai-factory/nvke/controller/internal/nodes"
 )
 
@@ -76,7 +77,7 @@ func (r *reconciler) reconcileControlPlaneRebalance(
 	ctx context.Context,
 	cluster db.Cluster,
 	cp *controlPlane,
-	allocator domainAllocator,
+	allocator failuredomains.Allocator,
 	newNodeProvider clients.NewNodeProvider,
 ) (bool, error) {
 	ranker := cluster.ControlPlaneConfig.ScaleDownRanker()
@@ -156,7 +157,7 @@ func (r *reconciler) reconcileControlPlaneRebalance(
 		return false, fmt.Errorf("resolving capped control-plane config snapshot: %w", err)
 	}
 
-	allocator.release(cp.failureDomains.domainOf(leastPreferredControlPlaneNode(eligible, ranker)))
+	allocator.Release(cp.failureDomains.DomainOf(leastPreferredControlPlaneNode(eligible, ranker)))
 	created, err := r.scaleUp(ctx, cluster, 1, "control-plane rebalance surge", allocator, newNodeProvider, withRebalanceReplacement(snapshotID))
 	if err != nil {
 		return false, fmt.Errorf("surging control-plane rebalance replacement: %w", err)
@@ -414,10 +415,10 @@ func leastPreferredControlPlaneNodeToShed(cp *controlPlane, surge db.Node, ranke
 		return db.Node{}, false
 	}
 	// Prefer a worse node in the surge's own domain so the shed keeps the spread.
-	if domain := cp.failureDomains.domainOf(surge); domain != "" {
+	if domain := cp.failureDomains.DomainOf(surge); domain != "" {
 		var sameDomain []db.Node
 		for _, node := range candidates {
-			if cp.failureDomains.domainOf(node) == domain && ranker.ScaleDownRank(node) > ranker.ScaleDownRank(surge) {
+			if cp.failureDomains.DomainOf(node) == domain && ranker.ScaleDownRank(node) > ranker.ScaleDownRank(surge) {
 				sameDomain = append(sameDomain, node)
 			}
 		}

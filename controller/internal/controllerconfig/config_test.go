@@ -101,6 +101,8 @@ credentialMonitoring:
   inspectionInterval: 1h
   observationMaxAge: 3h
   warningDays: 45
+controlPlaneFailureDomainFallback:
+  gracePeriod: 15m
 kubeadmImageRepository: registry.k8s.io
 cniImageRegistry: ""
 installCNIAfterInit: false
@@ -194,6 +196,7 @@ apiAuth:
 	assert.Equal(t, time.Hour, cfg.CredentialMonitoring.InspectionInterval.Duration)
 	assert.Equal(t, 3*time.Hour, cfg.CredentialMonitoring.ObservationMaxAge.Duration)
 	assert.Equal(t, 45, cfg.CredentialMonitoring.WarningDays)
+	assert.Equal(t, 15*time.Minute, cfg.ControlPlaneFailureDomainFallback.GracePeriod.Duration)
 	assert.Equal(t, "dsxImds", cfg.NodeAgent.SpireAttestationMethod)
 	assert.Equal(t, "acme", cfg.NodeAgent.DSXImds.OperatorTenant)
 	assert.Equal(t, exampleChecksum, cfg.NodeAgent.DSXImds.PluginChecksum)
@@ -1141,6 +1144,36 @@ teleport:
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), `environment must be "prod" or "non-prod"`)
 	})
+}
+
+func TestValidateControlPlaneFailureDomainFallbackGracePeriod(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		section string
+		want    time.Duration
+		wantErr bool
+	}{
+		{name: "absent section leaves the controller default", section: ""},
+		{name: "positive grace period", section: "controlPlaneFailureDomainFallback:\n  gracePeriod: 3m\n", want: 3 * time.Minute},
+		{name: "zero grace period", section: "controlPlaneFailureDomainFallback:\n  gracePeriod: 0s\n", wantErr: true},
+		{name: "negative grace period", section: "controlPlaneFailureDomainFallback:\n  gracePeriod: -1m\n", wantErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			file, err := controllerconfig.Load(writeConfig(t, minimalConfig+tc.section))
+			if tc.wantErr {
+				require.ErrorContains(t, err, "controlPlaneFailureDomainFallback: gracePeriod must be greater than 0")
+				return
+			}
+			require.NoError(t, err)
+			var cfg config.Config
+			file.ApplyTo(&cfg)
+			assert.Equal(t, tc.want, cfg.ControlPlaneFailureDomainFallbackGracePeriod)
+		})
+	}
 }
 
 // Both cases exercise metav1.Duration's own UnmarshalJSON, not custom code in
