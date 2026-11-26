@@ -15,7 +15,7 @@
 # A digest is content-addressed, so a mirror serving the same content answers
 # to the same digest.
 ARG GOLANG_IMAGE=docker.io/golang:1.27.4@sha256:fe517acaa580cc7915457080f850c37e618b3c1e750f98b58fc6429b605147a1
-ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian12:debug-nonroot@sha256:d5563cc7f2f44313f332e91138cc8c6a158899afeeeab2fce3b0f9ccdb3cf9ee
+ARG RUNTIME_IMAGE=gcr.io/distroless/static-debian13:debug-nonroot@sha256:3e7f48d714a3298b4df1a69fbc8809dd6fadd16c306838862fffc2895b168158
 
 FROM ghcr.io/spiffe/k8s-spiffe-workload-jwt-exec-auth:1.0.1@sha256:ac41337c043e986596dcabc961d569daf9f16a261fe307e665e0562238c30fb3 AS spiffe-jwt-exec-auth
 
