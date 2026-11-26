@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Cloud Workflow Engine (CWE) orchestrates NVKE (NVIDIA Kubernetes Engine) cluster creation and lifecycle operations. The system uses Temporal for workflow orchestration and provides a REST API for cluster management operations.
+The NVKE controller orchestrates NVKE (NVIDIA Kubernetes Engine) cluster creation and lifecycle operations. The system uses Temporal for workflow orchestration and provides a REST API for cluster management operations.
 
 ### Key Technologies
 - **Language**: Go — the floor is the `go` directive in the root `go.work`, not
@@ -18,7 +18,7 @@ Cloud Workflow Engine (CWE) orchestrates NVKE (NVIDIA Kubernetes Engine) cluster
 - **Workflow Engine**: Temporal
 - **Database**: PostgreSQL with Bun ORM
 - **API**: OpenAPI 3.0 with oapi-codegen for Go server/client generation
-- **Dependencies**: Managed via Flox
+- **Toolchain**: an optional, repository-wide Flox environment pins tool versions; see Setup Commands
 
 ## Architecture invariants — read before touching any handler, reconciler, or workflow
 
@@ -45,7 +45,9 @@ This indirection is deliberate. It guarantees that a committed cluster always ha
 
 ## Setup Commands
 
-Before running any CLI commands, activate the Flox environment. It is
+Flox is optional. Without it, plain `make` works from whatever is on `PATH`.
+When `flox` is on `PATH` and you are not already inside the environment
+(`FLOX_ENV` is unset), prefer it, so tool versions match CI. The environment is
 repository-wide and lives at the repository root, so `flox activate` works from
 here by searching upwards; only the version check needs the root path:
 ```bash
@@ -65,7 +67,7 @@ flox activate -- make test
 flox activate -- make lint
 ```
 
-For code generation, do not invoke `oapi-codegen` directly; run `make generate`. The generator version is pinned in `api/oapi-codegen.mod` and run through `go generate`, so the output does not depend on whatever is on `PATH`. Flox is optional here as everywhere, but prefer `flox activate -- make <target>` when `flox` is available and you are not already inside the environment.
+For code generation, do not invoke `oapi-codegen` directly; run `make generate`. The generator version is pinned in `api/oapi-codegen.mod` and run through `go generate`, so the output does not depend on whatever is on `PATH`.
 
 ### Build
 ```bash
@@ -81,7 +83,7 @@ make fmt          # Format code with gofumpt and goimports
 ### Test
 ```bash
 make test                  # Run unit tests with coverage
-make test-integration      # Run integration tests (requires running CWE deployment, 3h timeout)
+make test-integration      # Run integration tests (requires a running controller deployment, 3h timeout)
 ```
 
 ### Code Generation
@@ -109,7 +111,7 @@ make debug        # Run with delve debugger on :12345
 All Go files must use the repository's Apache-2.0 SPDX header. Run `make license` to add missing headers.
 
 ### Prometheus metric naming
-All metric names use the `nvke_controller_` prefix — never `cwe_` (legacy) (e.g. `nvke_controller_node_provision_total`, not `cwe_node_provision_total`). Metrics live in `internal/metrics/` and `internal/dbmetrics/`.
+All metric names use the `nvke_controller_` prefix (e.g. `nvke_controller_node_provision_total`). Metrics live in `internal/metrics/` and `internal/dbmetrics/`.
 
 ### Linting Notes
 - Use `FIXME:` for things to address in a future PR, with a tracking link
@@ -127,11 +129,16 @@ All metric names use the `nvke_controller_` prefix — never `cwe_` (legacy) (e.
 │   └── client.gen.go       # Generated client
 ├── cmd/
 │   ├── credential-audit/   # Offline tool that records manual T1 credential audit evidence
-│   └── worker/             # Main CWE worker entrypoint
-├── deploy/dashboards/      # Grafana reference JSON (import-only; see deploy/dashboards/AGENTS.md)
+│   └── worker/             # Main worker entrypoint
+├── deploy/
+│   ├── charts/             # Helm charts
+│   ├── ...                 # e2e, Helm values and Kubernetes manifests
+│   └── dashboards/         # Grafana reference JSON (import-only; see deploy/dashboards/AGENTS.md)
 ├── docs/                   # Developer guides (API authentication, BYO OS)
+├── e2e/                    # Fault-injection (gofail) and tracing suites
 ├── hack/
 │   └── remote-sync/        # Mutagen templates for Mac→Linux Tilt
+├── integration-test/       # Integration tests against a live controller deployment
 ├── internal/
 │   ├── config/             # Configuration: environment variables and nvke-controller-config fields
 │   ├── controllers/        # Background controllers (auto-provisioner, health checks)
@@ -141,9 +148,16 @@ All metric names use the `nvke_controller_` prefix — never `cwe_` (legacy) (e.
 │   └── temporal/
 │       ├── activities/     # Temporal activity implementations
 │       └── workflows/      # Temporal workflow implementations
+├── k8s-apis/               # Release CRD types (its own Go module)
+├── nico-sim/               # Local NICo simulator (see nico-sim/AGENTS.md)
 ├── profiles/
-│   └── configProfiles/     # Kubernetes config profiles (YAML)
-└── integration-test/       # End-to-end integration tests
+│   └── example/            # Example config profile bundle; fleet profiles are supplied at deploy time
+├── scripts/                # dev-env.sh behind the dev-* make targets
+├── test/
+│   ├── e2e/                # E2E suite run against the cluster in KUBECONFIG
+│   ├── fixtures/           # Release, profile and runbook fixtures
+│   └── kubeadm/            # kubeadm bring-up tests
+└── tilt.d/                 # Personal Tilt extensions (gitignored except README)
 ```
 
 ## API Development
@@ -186,7 +200,7 @@ See [`api/README.md`](api/README.md#compatibility) and
 
 ### Running PostgreSQL locally
 ```bash
-docker run -d --name=cwe-postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres postgres:17.4
+make dev-postgres-start   # dev-postgres-stop and dev-postgres-clean undo it
 ```
 
 ## Configuration
@@ -228,11 +242,11 @@ Preferred day-to-day path is CAPI + Tilt (see `README.md` in this directory).
 1. Start local Temporal: `temporal server start-dev`
 2. Start PostgreSQL (see above)
 3. Install the release CRDs and the fixture releases into the cluster in `KUBECONFIG`.
- CWE exits at startup without the CRDs, and provisioning fails without the releases:
+ The controller exits at startup without the CRDs, and provisioning fails without the releases:
  ```bash
  make releases-install
  ```
-4. Run CWE, with `hack/local-controller-config.yaml`:
+4. Run the controller, with `hack/local-controller-config.yaml`:
  ```bash
  make run
  ```
@@ -293,7 +307,7 @@ To test mTLS calls to tenant clusters locally using SPIFFE/SPIRE:
 # Setup and start SPIRE agent (includes port-forward)
 make dev-spire-start
 
-# Start CWE with SPIRE: a copy of the local config with spire.spiffeEnabled set
+# Start the controller with SPIRE: a copy of the local config with spire.spiffeEnabled set
 mkdir -p .local
 yq '.spire.spiffeEnabled = true' hack/local-controller-config.yaml > .local/controller-config.spire.yaml
 CONTROLLER_CONFIG_PATH=.local/controller-config.spire.yaml make run
@@ -313,7 +327,7 @@ make test
 ```
 
 ### Integration Tests
-These run against a live CWE deployment:
+These run against a live controller deployment:
 ```bash
 cd integration-test
 NVKE_CONTROLLER_API_URL=http://localhost:8080/api go test -tags integration_test -v -timeout=3h

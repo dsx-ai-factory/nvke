@@ -339,10 +339,10 @@ suite out of the build — none of which turns anything else red.
 **Do not add a coverage threshold and do not quote a coverage percentage as
 evidence that a change is tested.** See [docs/coverage-policy.md](docs/coverage-policy.md).
 
-`make lint` in `agent/` is the check CI runs on every push, so treat a failure
-there as a blocked merge. `make notices-check` regenerates the file and fails on
-any difference — if it reports a change, commit the regenerated file rather than
-reverting it.
+`make lint` in `agent/` is what the golangci-lint member of the required `gate`
+check runs, so treat a failure there as a blocked merge. `make notices-check`
+regenerates the file and fails on any difference — if it reports a change,
+commit the regenerated file rather than reverting it.
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org/).
 Branches follow `<type>/<short-description>`, for example `fix/kubeadm-reset-timeout`.
@@ -350,20 +350,27 @@ Push branches to a fork and open the pull request from there, never from a
 branch on `dsx-ai-factory/nvke`, even with write access
 ([CONTRIBUTING.md](CONTRIBUTING.md#work-from-a-fork)).
 
-Most checks are built through a `pull-request/<number>` branch rather than the
-`pull_request` event, because the self-hosted runners do not pick up
+The required checks are `gate` and `DCO`, and both report for every author.
+`gate` ([merge-gate.yml](.github/workflows/merge-gate.yml)) runs on the
+`pull_request` event on GitHub-hosted runners and calls the fast checks as its
+members, among them golangci-lint, `govulncheck`, `actionlint`, `shellcheck`,
+the notices gate and the unit tests.
+
+The advisory checks are built through a `pull-request/<number>` branch
+instead; most of them need self-hosted runners, which do not pick up
 `pull_request`. `copy-pr-bot` creates that branch. Expect those checks to appear
 on it rather than on your own branch.
 
-⚠️ **This is not a fork-only mechanism, despite what this file used to say.**
+⚠️ **This is not a fork-only mechanism.**
 The bot gates on **author vetting**, not on whether the pull request comes from
 a fork. Same-repository pull requests from unvetted authors are not mirrored
-either, and receive none of the checks that depend on it — `golangci-lint`,
-CodeQL, `govulncheck`, `gitleaks`, `grype`, `actionlint`, `shellcheck`, the
-image build and the notices gate.
+either, and receive none of the checks that depend on it, among them CodeQL,
+`gitleaks`, `grype`, the image build, the OS-matrix unit tests, the package
+reproducibility build, the OS image builds and the end-to-end suites. None of
+them is required, so their absence does not block the merge either.
 
-**Absence of a check does not look like failure.** The seven workflows on the
-real `pull_request` event still report, so the pull request page shows a column
+**Absence of a check does not look like failure.** The workflows on the real
+`pull_request` event still report, so the pull request page shows a column
 of green ticks with the other checks simply missing. If you are reviewing, check
 that the checks you care about are *present*, not just passing:
 
