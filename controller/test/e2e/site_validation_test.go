@@ -52,21 +52,26 @@ type siteNamespace struct {
 // Required by name because a namespace with nothing in it passes every
 // readiness check: an item that installed nothing would otherwise read as
 // healthy.
-var siteNamespaces = []siteNamespace{
-	{name: kubeSystemNamespace, source: "kubeadm"},
-	{name: "cert-manager", source: "cert-manager's default namespace, installed with CAPI"},
-	{name: "capi-system", source: "clusterctl init, before the deploy path"},
-	{name: "capnico-system", source: "deploy path item capnico"},
-	{name: "postgres", source: "deploy path item postgresql"},
-	{name: "temporal", source: "deploy path item temporal"},
-	{name: "spire-server", source: "deploy path item spire"},
-	// Not a release namespace: the spire chart's recommended layout puts its
-	// agent and CSI driver here, so no deploy path file names it as a release.
-	{name: "spire-system", source: "the spire chart's layout for its agent"},
-	{name: "nktp", source: "deploy path item nktp"},
-	// NVKE_CONTROLLER_NAMESPACE where the controller is not in nvke-controller,
-	// as for every other check that finds it.
-	{name: controller.Namespace(), source: "deploy path item controller"},
+//
+// The controller's namespace is passed in rather than read at package
+// initialization, because a validation profile sets it after that.
+func siteNamespaces(controllerNamespace string) []siteNamespace {
+	return []siteNamespace{
+		{name: kubeSystemNamespace, source: "kubeadm"},
+		{name: "cert-manager", source: "cert-manager's default namespace, installed with CAPI"},
+		{name: "capi-system", source: "clusterctl init, before the deploy path"},
+		{name: "capnico-system", source: "deploy path item capnico"},
+		{name: "postgres", source: "deploy path item postgresql"},
+		{name: "temporal", source: "deploy path item temporal"},
+		{name: "spire-server", source: "deploy path item spire"},
+		// Not a release namespace: the spire chart's recommended layout puts its
+		// agent and CSI driver here, so no deploy path file names it as a release.
+		{name: "spire-system", source: "the spire chart's layout for its agent"},
+		{name: "nktp", source: "deploy path item nktp"},
+		// NVKE_CONTROLLER_NAMESPACE where the controller is not in nvke-controller,
+		// as for every other check that finds it.
+		{name: controllerNamespace, source: "deploy path item controller"},
+	}
 }
 
 const (
@@ -118,16 +123,68 @@ type siteChecks struct {
 	// certManager requires cert-manager: its Certificates checked, and an
 	// Issuer tried.
 	certManager bool
+	// scope, when set, holds the workload, pod, Certificate, Argo CD
+	// Application and CloudNativePG cluster checks to its namespaces.
+	scope siteScope
+}
+
+// siteScope is the namespaces the scoped checks hold to. nil is the whole
+// cluster.
+type siteScope map[string]bool
+
+// splitScope divides items into those in scope, returned first, and those
+// outside it. A nil scope keeps every item in.
+func splitScope[T any](scope siteScope, items []T, namespace func(T) string) ([]T, []T) {
+	if scope == nil {
+		return items, nil
+	}
+	var in, out []T
+	for _, item := range items {
+		if scope[namespace(item)] {
+			in = append(in, item)
+		} else {
+			out = append(out, item)
+		}
+	}
+	return in, out
+}
+
+func unstructuredNamespace(object unstructured.Unstructured) string {
+	return object.GetNamespace()
+}
+
+// reportOutsideScope records what a scoped check found outside its scope,
+// as problems holds it when the spec ends, failed or not. It fails nothing:
+// on a shared management cluster those namespaces are other teams'.
+func reportOutsideScope(check string, problems *[]string) {
+	DeferCleanup(func() {
+		if len(*problems) > 0 {
+			AddReportEntry(check+" outside "+fieldScope+", not failing the check", strings.Join(*problems, "\n"))
+		}
+	})
 }
 
 // siteLaneChecks are the site lane's: the stack's namespaces, and fail fast
 // so that a broken site cannot spend the minutes teardown needs.
-var siteLaneChecks = siteChecks{
-	namespaces:     siteNamespaces,
-	failFast:       true,
-	probeNamespace: "default",
-	probeImage:     probeImage{ref: kube.KubectlImage},
-	certManager:    true,
+func siteLaneChecks() siteChecks {
+	return siteChecks{
+		namespaces:     siteNamespaces(controller.Namespace()),
+		failFast:       true,
+		probeNamespace: "default",
+		probeImage:     probeImage{ref: kube.KubectlImage},
+		certManager:    true,
+	}
+}
+
+// siteLaneExpectations are what the site lane installs beyond what every
+// management cluster has: cert-manager, which comes with CAPI, and the stack's default
+// StorageClass. It installs no other optional component.
+func siteLaneExpectations(storageClass string) siteExpectations {
+	return siteExpectations{
+		section:        sectionManagementCluster,
+		components:     map[string]string{componentCertManager: siteComponentNamespaces[componentCertManager]},
+		storageClasses: []string{storageClass},
+	}
 }
 
 // probeImage is what every probe and server pod runs, and the Secrets its
@@ -226,6 +283,8 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 
 	It("runs every workload the platform and the deploy path install", func(ctx SpecContext) {
 		connect()
+		var outside []string
+		reportOutsideScope("workloads", &outside)
 		Eventually(func(ctx context.Context) error {
 			var (
 				deployments  appsv1.DeploymentList
@@ -237,12 +296,18 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 					return err
 				}
 			}
-			return joinProblems("workloads", workloadProblems(checks.namespaces, deployments.Items, statefulSets.Items, daemonSets.Items))
+			d, otherD := splitScope(checks.scope, deployments.Items, func(d appsv1.Deployment) string { return d.Namespace })
+			st, otherSt := splitScope(checks.scope, statefulSets.Items, func(st appsv1.StatefulSet) string { return st.Namespace })
+			ds, otherDs := splitScope(checks.scope, daemonSets.Items, func(ds appsv1.DaemonSet) string { return ds.Namespace })
+			outside = workloadProblems(nil, otherD, otherSt, otherDs)
+			return joinProblems("workloads", workloadProblems(checks.namespaces, d, st, ds))
 		}).WithContext(ctx).WithTimeout(siteSettle).WithPolling(sitePoll).Should(Succeed())
 	}, Label("readiness", "site-software"), NodeTimeout(siteSettle+time.Minute))
 
 	It("has no pod failing in any namespace", func(ctx SpecContext) {
 		connect()
+		var outside []string
+		reportOutsideScope("pods", &outside)
 		pods := func(ctx context.Context) error {
 			var (
 				pods corev1.PodList
@@ -258,6 +323,8 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 			if excused > 0 {
 				GinkgoLogr.Info("pod check leaves out the runner's namespace and earlier validation probes", "namespace", checks.excusedNamespace, "pods", excused)
 			}
+			checked, other := splitScope(checks.scope, checked, func(pod corev1.Pod) string { return pod.Namespace })
+			outside = podProblems(other, jobs.Items)
 			return joinProblems("pods", podProblems(checked, jobs.Items))
 		}
 		Eventually(pods).WithContext(ctx).WithTimeout(siteSettle).WithPolling(sitePoll).Should(Succeed())
@@ -269,13 +336,23 @@ func validateSitePostDeploy(resolve func() (site.Cluster, site.Spec, bool), chec
 		if !checks.certManager {
 			Skip("the cluster is not expected to run cert-manager")
 		}
+		var outside []string
+		reportOutsideScope("certificates", &outside)
 		Eventually(func(ctx context.Context) error {
 			certificates := &unstructured.UnstructuredList{}
 			certificates.SetGroupVersionKind(schema.GroupVersionKind{Group: "cert-manager.io", Version: "v1", Kind: "CertificateList"})
 			if err := c.List(ctx, certificates); err != nil {
 				return err
 			}
-			return joinProblems("certificates", certificateProblems(certificates.Items))
+			in, other := splitScope(checks.scope, certificates.Items, unstructuredNamespace)
+			outside = nil
+			if len(other) > 0 {
+				outside = certificateProblems(other)
+			}
+			if checks.scope != nil && len(in) == 0 {
+				return joinProblems("certificates", []string{"none in a namespace " + fieldScope + " covers"})
+			}
+			return joinProblems("certificates", certificateProblems(in))
 		}).WithContext(ctx).WithTimeout(siteCheck).WithPolling(sitePoll).Should(Succeed())
 	}, Label("readiness", "site-software"), NodeTimeout(siteCheck+time.Minute))
 
@@ -757,7 +834,7 @@ func healthCheckProblems(endpoint, body string) error {
 // so it does not count as a mismatch.
 func versionProblems(want, server string, nodes []corev1.Node) []string {
 	if want == "" {
-		return []string{"no expected Kubernetes version is set (" + siteKubernetesVersionEnv + ")"}
+		return []string{"no expected Kubernetes version is set (managementCluster.kubernetesVersion or " + siteKubernetesVersionEnv + ")"}
 	}
 	wanted, err := utilversion.ParseGeneric(want)
 	if err != nil {

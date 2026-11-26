@@ -54,7 +54,8 @@ func root() *cobra.Command {
   publish    ship a stream's result and JUnit report to a destination
   verify     check that everything a plan names is published
   summary    render a plan, or the streams' JUnit reports, as Markdown
-  local      run one stream on hardware from this checkout, as the workflow does`,
+  local      run one stream on hardware from this checkout, as the workflow does
+  validate   run the validation image against a management cluster`,
 		SilenceUsage: true,
 	}
 	cmd.AddCommand(planCmd())
@@ -63,5 +64,6 @@ func root() *cobra.Command {
 	cmd.AddCommand(verifyCmd())
 	cmd.AddCommand(summaryCmd())
 	cmd.AddCommand(localCmd())
+	cmd.AddCommand(validateCmd())
 	return cmd
 }

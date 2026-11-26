@@ -254,6 +254,17 @@ func TestE2E(t *testing.T) {
 	klog.SetLogger(GinkgoLogr)
 	slog.SetDefault(slog.New(logr.ToSlogHandler(GinkgoLogr)))
 
+	notes, err := useValidateProfile(os.LookupEnv, t.Setenv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, note := range notes {
+		// Printed rather than logged: the image runs without -test.v, which
+		// shows a t.Log line only for a failed test.
+		fmt.Fprintln(os.Stdout, note)
+	}
+	validateProfileNotes = notes
+
 	suiteConfig, reporterConfig := GinkgoConfiguration()
 	if !labelFilterGiven() {
 		filter, err := validationLabelFilter(os.LookupEnv)

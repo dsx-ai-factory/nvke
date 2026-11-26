@@ -99,6 +99,16 @@ func dig(t *testing.T, doc any, keys ...string) any {
 	return doc
 }
 
+func TestStackStorageClass(t *testing.T) {
+	if got := (Stack{}).StorageClass(); got != defaultStorageClassName {
+		t.Errorf("default StorageClass() = %q, want %q", got, defaultStorageClassName)
+	}
+	named := Stack{StorageClassManifest: "https://example/sc.yaml", StorageClassName: "fast"}
+	if got := named.StorageClass(); got != "fast" {
+		t.Errorf("named StorageClass() = %q, want fast", got)
+	}
+}
+
 func TestSBOMRender(t *testing.T) {
 	d := testSBOM().withDefaults()
 	d.DatabasePassword = "db-secret"
