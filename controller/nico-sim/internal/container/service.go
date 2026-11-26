@@ -18,6 +18,7 @@ import (
 
 const (
 	defaultNodeNetwork = "kind"
+	defaultNodeShmSize = "16g"
 	defaultNodeImage   = "cwe-capd-kindest-node:local"
 	defaultDocker      = "docker"
 
@@ -69,6 +70,7 @@ type Config struct {
 	SSHKeyGroupID          string
 	InstanceTypeID         string
 	NodeNetwork            string
+	NodeShmSize            string
 	NodeImage              string
 	SpireAttestationMethod string
 	DockerBinary           string
@@ -77,6 +79,10 @@ type Config struct {
 func (c Config) withDefaults() Config {
 	if strings.TrimSpace(c.NodeNetwork) == "" {
 		c.NodeNetwork = defaultNodeNetwork
+	}
+	c.NodeShmSize = strings.TrimSpace(c.NodeShmSize)
+	if c.NodeShmSize == "" {
+		c.NodeShmSize = defaultNodeShmSize
 	}
 	if strings.TrimSpace(c.NodeImage) == "" {
 		c.NodeImage = defaultNodeImage
@@ -98,7 +104,7 @@ func (c Config) validate() error {
 	for key, value := range map[string]string{
 		"org": c.OrgID, "tenant": c.TenantID, "site": c.SiteID, "vpc": c.VPCID,
 		"subnet": c.SubnetID, "ssh key group": c.SSHKeyGroupID,
-		"instance type": c.InstanceTypeID, "node network": c.NodeNetwork,
+		"instance type": c.InstanceTypeID, "node network": c.NodeNetwork, "node shm size": c.NodeShmSize,
 		"node image": c.NodeImage, "docker binary": c.DockerBinary,
 	} {
 		if strings.TrimSpace(value) == "" {
@@ -263,6 +269,7 @@ func (s *Service) createInstance(ctx context.Context, instanceID string, req nic
 		"--tmpfs", "/var/lib/etcd:size=4g",
 		"--restart", "always",
 		"--network", s.cfg.NodeNetwork,
+		"--shm-size", s.cfg.NodeShmSize,
 		"--env", "KUBECONFIG=/etc/kubernetes/admin.conf",
 		"--env", "KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER=fuse-overlayfs",
 		// containerd cannot write image whiteouts onto an overlayfs rootfs; kind gives /var a volume too.
