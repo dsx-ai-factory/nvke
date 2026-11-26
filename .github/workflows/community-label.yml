@@ -1,0 +1,136 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+#
+# Labels pull requests from community contributors as `community`, so
+# maintainers can find and prioritize them with `label:community`.
+#
+# Advisory. It gates nothing and changes nothing about who may review, vet or
+# merge. needs-workflow-approval and needs-ok-to-test describe a head's CI
+# state; this describes the author, which never changes, so the workflow never
+# clears the label.
+#
+# WHO COUNTS AS COMMUNITY
+#
+# An author whose association with the repository is not OWNER, MEMBER or
+# COLLABORATOR, and who does not have write access. Bots are skipped. The
+# permission check is a backstop: a member whose org membership is private can
+# be reported as CONTRIBUTOR to this token. A private member without write
+# access is still labelled.
+#
+# A label removed by hand comes back on reopen or on the next manual sweep
+# while the author still qualifies. Nothing records the removal.
+#
+# No checkout here, so the write token never meets fork code. Do not add one.
+
+name: PR Community Label
+
+on:
+  pull_request_target:
+    types: [opened, reopened]
+  # Backfills every open pull request. Run once after this workflow lands, or
+  # after the label is deleted and recreated.
+  workflow_dispatch: {}
+
+concurrency:
+  # A literal name, not ${{ github.workflow }}. See merge-gate.yml.
+  group: PR Community Label-${{ github.event.pull_request.number || 'sweep' }}
+  cancel-in-progress: true
+
+permissions: {}
+
+env:
+  COMMUNITY_LABEL: community
+
+jobs:
+  label:
+    name: Label community pull requests
+    if: github.repository_id == '1323115536'
+    runs-on: ubuntu-latest
+    permissions:
+      # createLabel, the first time the label is needed.
+      issues: write
+      pull-requests: write
+    timeout-minutes: 10
+    steps:
+      - name: Label pull requests from outside the org
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          COMMUNITY_LABEL: ${{ env.COMMUNITY_LABEL }}
+        with:
+          # Octokit retries 5xx and dropped connections; 4xx still fail at once.
+          retries: 3
+          script: |
+            const LABEL = process.env.COMMUNITY_LABEL;
+            const INTERNAL = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
+
+            // Created here rather than by hand, so a deleted label comes back
+            // with its colour and description instead of one addLabels invents.
+            try {
+              await github.rest.issues.getLabel({ ...context.repo, name: LABEL });
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+              try {
+                await github.rest.issues.createLabel({
+                  ...context.repo,
+                  name: LABEL,
+                  color: 'c2e0c6',
+                  description: 'Author is not an org member, a collaborator, or a holder of write access.',
+                });
+              } catch (createError) {
+                // 422: a concurrent run created it between the get and the create.
+                if (createError.status !== 422) {
+                  throw createError;
+                }
+                await github.rest.issues.getLabel({ ...context.repo, name: LABEL });
+              }
+            }
+
+            async function hasWriteAccess(login) {
+              try {
+                const { data } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  ...context.repo,
+                  username: login,
+                });
+                // `permission` folds maintain into write and triage into read.
+                return data.permission === 'admin' || data.permission === 'write';
+              } catch (error) {
+                // 404: not a collaborator at all.
+                if (error.status === 404) {
+                  return false;
+                }
+                throw error;
+              }
+            }
+
+            async function isCommunity(pr) {
+              if (pr.user.type === 'Bot' || INTERNAL.has(pr.author_association)) {
+                return false;
+              }
+              return !(await hasWriteAccess(pr.user.login));
+            }
+
+            const prs = context.eventName === 'pull_request_target'
+              ? [context.payload.pull_request]
+              : await github.paginate(github.rest.pulls.list, {
+                  ...context.repo,
+                  state: 'open',
+                  per_page: 100,
+                });
+
+            let added = 0;
+            for (const pr of prs) {
+              if (pr.labels.some((l) => l.name === LABEL) || !(await isCommunity(pr))) {
+                continue;
+              }
+              await github.rest.issues.addLabels({
+                ...context.repo,
+                issue_number: pr.number,
+                labels: [LABEL],
+              });
+              core.info(`#${pr.number} by ${pr.user.login} (${pr.author_association})`);
+              added += 1;
+            }
+
+            core.info(`${prs.length} checked: ${added} labelled ${LABEL}`);
