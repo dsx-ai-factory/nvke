@@ -312,8 +312,10 @@ package: package-all ## Default package = all arches
 .PHONY: nfpm
 nfpm: $(NFPM_BIN) ## Build the pinned Debian packaging tool.
 
+# nfpm is a build-host tool. Built without cgo it is static and runs on any
+# Linux, including a NixOS guest without nix-ld, even with CC exported.
 $(NFPM_BIN):
-	@GOBIN=$(abspath $(dir $(NFPM_BIN))) GOPROXY='https://proxy.golang.org|direct' go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
+	@CGO_ENABLED=0 GOBIN=$(abspath $(dir $(NFPM_BIN))) GOPROXY='https://proxy.golang.org|direct' go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
 
 # Usage: $(call build_deb,amd64)
 define build_deb

@@ -140,13 +140,15 @@ notices-check: ## Verify THIRD_PARTY_NOTICES.md is up to date. (advisory; not in
 ARCH ?= amd64
 VARIANT ?= non-fde
 
-image: ## Bake with native or NixOS VM package builds (ARCH=amd64|arm64, VARIANT=fde|non-fde).
+image: ## Bake with native or Nix-path package builds (ARCH=amd64|arm64, VARIANT=fde|non-fde).
 	@case "$(VARIANT)" in fde|non-fde) ;; *) echo "VARIANT must be fde or non-fde" >&2; exit 1 ;; esac
 	$(MAKE) -C packer os-image-$(VARIANT) ARCH=$(ARCH)
 
 image-native: ## Bake with native Linux KVM; fail if acceleration is unavailable.
 	$(MAKE) image REQUIRE_ACCELERATION=1
 
-test-qemu: ## Test QEMU architecture, firmware, and accelerator selection without a VM.
+test-qemu: ## Test QEMU selection, the build entrypoint and the macOS package-build driver, without a VM.
 	bash ./packer/scripts/qemu-arch-test.sh
 	python3 ./packer/scripts/test_build_entrypoint.py
+	python3 ./nix/test_stock_guest.py
+	python3 ./nix/test_build_packages_stock.py

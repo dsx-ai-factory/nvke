@@ -2,12 +2,15 @@
 # SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 set -euo pipefail
-# CC is explicit so the build does not depend on the guest's shell init.
-# OCI_BIN: the guest runs podman (builder.nix), which cni-ovn's image build needs.
-export SOURCE_ROOT="$REPO_ROOT" NKE_BUILD_IN_PLACE=1 CC=/run/current-system/sw/bin/nke-ubuntu-cc \
-  OCI_BIN=podman
+# CC is explicit so the build does not depend on the guest's shell init. The
+# package VM installs the compiler system-wide; stock-guest.sh, which runs this
+# from a devShell, passes the shell's in NKE_UBUNTU_CC.
+# OCI_BIN: both guests build cni-ovn's image with podman, not docker.
+export SOURCE_ROOT="$REPO_ROOT" NKE_BUILD_IN_PLACE=1 \
+  CC=${NKE_UBUNTU_CC:-/run/current-system/sw/bin/nke-ubuntu-cc} OCI_BIN=podman
 for package in kubeadm-distro cni-calico cni-ovn spire-agent doca-ovs; do
-  cache=/root/.cache/nke-packages/$package
+  # /root/.cache in the package VM; the build user's own cache in the stock builder.
+  cache=$HOME/.cache/nke-packages/$package
   for directory in bin dist; do
     mkdir -p "$cache/$directory"
     ln -sfn "$cache/$directory" "$REPO_ROOT/os-image/packages/$package/$directory"

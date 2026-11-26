@@ -92,8 +92,10 @@ repro-check: ## Build `debs` twice into throwaway OUT_DIRs and diff every output
 .PHONY: nfpm
 nfpm: $(NFPM_BIN) ## Build the pinned nfpm (goreleaser) into ./bin.
 
+# nfpm is a build-host tool. Built without cgo it is static and runs on any
+# Linux, including a NixOS guest without nix-ld, even with CC exported.
 $(NFPM_BIN):
-	@GOBIN=$(dir $(NFPM_BIN)) $(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
+	@CGO_ENABLED=0 GOBIN=$(dir $(NFPM_BIN)) $(GO) install github.com/goreleaser/nfpm/v2/cmd/nfpm@v$(NFPM_VERSION)
 
 ##@ Checks
 
