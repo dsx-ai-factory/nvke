@@ -102,6 +102,11 @@ func clusterWith(provisioned, provisioning api.ConditionStatus) api.Cluster {
 	}
 }
 
+// recoveryTimeout gives a wait room for the read after a failed one. A
+// millisecond-scale deadline can expire on a slow runner before that read,
+// leaving the failure as the last thing the wait saw.
+const recoveryTimeout = 100 * time.Millisecond
+
 func shortPollInterval(t *testing.T) {
 	t.Helper()
 	old := pollInterval
@@ -452,7 +457,7 @@ func TestWaitControlPlaneJoined_TimeoutForgetsARecoveredReadFailure(t *testing.T
 	}
 
 	err := WaitControlPlaneJoined(
-		context.Background(), client, uuid.New(), 3, 5*time.Millisecond, quietLogger(),
+		context.Background(), client, uuid.New(), 3, recoveryTimeout, quietLogger(),
 	)
 	if err == nil {
 		t.Fatal("expected WaitControlPlaneJoined to time out")
@@ -500,7 +505,7 @@ func TestWaitProvisioned_TimeoutForgetsARecoveredReadFailure(t *testing.T) {
 		},
 	}
 
-	_, err := WaitProvisioned(context.Background(), client, uuid.New(), 5*time.Millisecond, quietLogger())
+	_, err := WaitProvisioned(context.Background(), client, uuid.New(), recoveryTimeout, quietLogger())
 	if err == nil {
 		t.Fatal("expected WaitProvisioned to time out")
 	}
