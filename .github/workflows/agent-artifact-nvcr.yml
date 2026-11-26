@@ -155,6 +155,7 @@ jobs:
             --username '$oauthtoken' --password-stdin
 
       - name: Push per-architecture artifacts
+        id: push
         working-directory: agent
         shell: bash
         env:
@@ -171,7 +172,10 @@ jobs:
               tags="${tags:+${tags},}${alias}-${arch}"
             done
 
-            ( cd "bin/linux_${arch}" && oras push "${REPO}:${tags}" \
+            # Capture the digest from the push output so the index step can
+            # reference manifests by digest rather than re-fetching by tag.
+            # All aliases share the same binary, so one digest per arch suffices.
+            output=$(cd "bin/linux_${arch}" && oras push "${REPO}:${tags}" \
                 --artifact-type application/vnd.nvidia.nvke.agent.v1 \
                 --artifact-platform "linux/${arch}" \
                 --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
@@ -179,7 +183,10 @@ jobs:
                 --annotation "org.opencontainers.image.version=${VERSION}" \
                 --annotation "org.opencontainers.image.licenses=Apache-2.0" \
                 --annotation "org.opencontainers.image.title=nvke-agent" \
-                nvke-agent:application/octet-stream )
+                nvke-agent:application/octet-stream)
+            echo "${output}"
+            digest=$(echo "${output}" | grep '^Digest:' | awk '{print $2}')
+            echo "digest_${arch}=${digest}" >> "${GITHUB_OUTPUT}"
           done
 
       - name: Create multi-arch index
@@ -188,6 +195,8 @@ jobs:
           VERSION: ${{ steps.meta.outputs.version }}
           ALIASES: ${{ steps.meta.outputs.aliases }}
           REPO: ${{ steps.meta.outputs.repo }}
+          DIGEST_AMD64: ${{ steps.push.outputs.digest_amd64 }}
+          DIGEST_ARM64: ${{ steps.push.outputs.digest_arm64 }}
         run: |
           set -euo pipefail
           read -ra aliases <<< "${ALIASES}"
@@ -197,7 +206,7 @@ jobs:
               --annotation "org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}" \
               --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
               --annotation "org.opencontainers.image.version=${VERSION}" \
-              "${alias}-amd64" "${alias}-arm64"
+              "${REPO}@${DIGEST_AMD64}" "${REPO}@${DIGEST_ARM64}"
           done
 
       - name: Show published index
@@ -208,9 +217,9 @@ jobs:
           set -euo pipefail
           oras manifest fetch --pretty "${REPO}:sha-${GITHUB_SHA}"
 
-      # This publisher captured no digest at all: the index is assembled from
-      # the per-arch tag names rather than their digests, so nothing in the
-      # run ever learned what it published.
+      # The per-arch digests this job parses out of oras are step outputs,
+      # alive only long enough to build the index. Record the index itself,
+      # resolved here from its sha- tag.
       - name: Record the published digest
         uses: ./.github/actions/record-digest
         with:
