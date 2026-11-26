@@ -119,12 +119,22 @@ func NewTransport(
 }
 
 // Dial opens a connection to the node's agent and returns it with the cleanup
-// the caller must invoke.
+// the caller must invoke. A failed call on the connection, and a failure to set
+// it up, is a *ProbeError carrying its cause.
 func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, func(), error) {
 	if node.IP == "" {
-		return nil, nil, ErrNoAddress
+		return nil, nil, &ProbeError{Cause: ProbeCauseNoAddress, Err: ErrNoAddress}
 	}
+	conn, cleanup, err := t.dial(ctx, node)
+	if err != nil {
+		return nil, nil, transportSetupError(err)
+	}
+	return conn, cleanup, nil
+}
+
+func (t *Transport) dial(ctx context.Context, node db.Node) (*grpc.ClientConn, func(), error) {
 	endpoint := net.JoinHostPort(node.IP, t.cfg.NodeAgent.Port)
+	recorder := &connRecorder{}
 
 	var closeFuncs []func() error
 	cleanup := func() {
@@ -182,8 +192,7 @@ func (t *Transport) Dial(ctx context.Context, node db.Node) (*grpc.ClientConn, f
 
 	conn, err := grpc.NewClient(
 		endpoint,
-		grpc.WithTransportCredentials(transportCredentials),
-		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
+		append(recorder.dialOptions(transportCredentials), grpc.WithStatsHandler(otelgrpc.NewClientHandler()))...,
 	)
 	if err != nil {
 		cleanup()

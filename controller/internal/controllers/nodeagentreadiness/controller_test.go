@@ -77,6 +77,10 @@ func TestUnit_AgentProbeUsesDedicatedDeadline(t *testing.T) {
 		}}
 		database := &testutil.MockDB{}
 		database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
+		database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+		tx := &testutil.MockTx{}
+		database.MockTx = tx
+		tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(node, nil).Once()
 		c := NewAgentReadinessController(config.Config{
 			NodeHealthCheckTimeout: time.Minute,
 			AgentReadiness:         config.AgentReadinessConfig{Timeout: probeTimeout},
@@ -87,7 +91,8 @@ func TestUnit_AgentProbeUsesDedicatedDeadline(t *testing.T) {
 		require.Equal(t, probeTimeout, time.Since(started))
 		require.Equal(t, 2*time.Minute, result.RequeueAfter)
 		database.AssertExpectations(t)
-		database.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+		tx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+		tx.AssertExpectations(t)
 	})
 }
 
@@ -176,6 +181,10 @@ func TestUnit_AgentProbeNoIPConditionUnchangedSkipsWrite(t *testing.T) {
 	}}
 	database := &testutil.MockDB{}
 	database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
+	database.On("RunInTx", mock.Anything, mock.Anything).Return(nil).Once()
+	tx := &testutil.MockTx{}
+	database.MockTx = tx
+	tx.On("GetNodeForUpdate", mock.Anything, nodeID).Return(node, nil).Once()
 	client := &countingAgentClient{}
 	c := NewAgentReadinessController(config.Config{}, slog.New(slog.DiscardHandler), dbwrapper.New(database, nil), client)
 
@@ -183,7 +192,8 @@ func TestUnit_AgentProbeNoIPConditionUnchangedSkipsWrite(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, 2*time.Minute, result.RequeueAfter)
 	require.Zero(t, client.getAgentVersionCalls)
-	database.AssertNotCalled(t, "RunInTx", mock.Anything, mock.Anything)
+	tx.AssertNotCalled(t, "UpdateNode", mock.Anything, mock.Anything)
+	tx.AssertExpectations(t)
 	database.AssertExpectations(t)
 }
 
