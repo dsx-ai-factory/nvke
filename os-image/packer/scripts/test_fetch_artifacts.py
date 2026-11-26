@@ -47,7 +47,7 @@ fi
                 )
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertEqual((artifacts / "nvke-agent.deb").read_text(), arch)
-                self.assertTrue((artifacts / "nvke-agent-spire.conf").is_file())
+                self.assertFalse((artifacts / "nvke-agent-spire.conf").exists())
                 self.assertFalse((artifacts / "nvke-agent").exists())
                 self.assertFalse((artifacts / "nvke-agent.service").exists())
 

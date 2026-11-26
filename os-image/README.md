@@ -388,9 +388,9 @@ exactly one `spire-agent_*.deb`, the inputs exactly one
 `--architecture` or `all`, checked with `dpkg-deb`.
 
 `--source-files-dir` supplies the checkout's image-owned provisioning files:
-`nvke-agent-spire.conf`, `wait-spiffe-socket.sh`, `conntrack-tune.service`,
-`configure-conntrack.sh`, `10-nke-conntrack-timeouts.conf`,
-`99-disable-network-config.cfg`, and `00-dhcp-all.yaml`. All seven are required,
+`conntrack-tune.service`, `configure-conntrack.sh`,
+`10-nke-conntrack-timeouts.conf`, `99-disable-network-config.cfg`, and
+`00-dhcp-all.yaml`. All five are required,
 copied unchanged, and staged with the same modes as the Make build.
 
 The runner must authenticate these files before calling the composer and keep

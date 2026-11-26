@@ -189,6 +189,20 @@ test -x /usr/local/lib/spire-agent/tpm_attestor_agent
 test -x /usr/local/bin/get_tpm_pubhash
 test -x /usr/lib/nvke/spire-configure.sh
 test -x /usr/lib/nvke/wait-spiffe-socket.sh
+# The identity ordering comes from nvke-node-identity: dpkg owns the script and
+# the drop-in, and systemd merges that drop-in (and only that one) into the
+# agent's unit. The old drop-in in /etc would add every line a second time, so it
+# must be gone. DropInPaths is the canonical path, /usr/lib on a merged-/usr image.
+dpkg-query -W -f='${Status}\n' nvke-node-identity | grep -Fxq 'install ok installed'
+identity_dropin=/lib/systemd/system/nvke-agent.service.d/50-nvke-identity.conf
+for path in /usr/lib/nvke/wait-spiffe-socket.sh "${identity_dropin}"; do
+  test "$(dpkg-query -S "${path}" | cut -d: -f1)" = nvke-node-identity
+done
+test ! -e /etc/systemd/system/nvke-agent.service.d/10-spire.conf
+test "$(systemctl show nvke-agent.service -p DropInPaths --value)" = "$(readlink -f "${identity_dropin}")"
+systemctl show nvke-agent.service -p After --value | tr ' ' '\n' | grep -Fxq spire-agent.service
+systemctl show nvke-agent.service -p Wants --value | tr ' ' '\n' | grep -Fxq spire-agent.service
+test "$(systemctl show nvke-agent.service -p ExecStartPre | grep -o 'path=/usr/lib/nvke/wait-spiffe-socket.sh' | wc -l)" = 1
 dpkg-query -W -f='${Status}\n' 'nvke-cni-calico-manifests-*' | grep -Fxq 'install ok installed'
 # The paths above would also pass against the raw-binary install this package
 # replaced, so assert dpkg actually owns them.

@@ -20,7 +20,6 @@ if [[ "${installed_series}" != "${UBUNTU_SERIES}" ]]; then
 fi
 
 sudo install -d -m 0755 /usr/lib/nvke /etc/nke /var/lib/nke /usr/local/bin
-sudo install -m 0755 "${SRC}/wait-spiffe-socket.sh" /usr/lib/nvke/wait-spiffe-socket.sh
 # Conntrack limits. conntrack-tune.service generates its sysctl.d file at
 # every boot from that node's RAM; nothing here computes it, so the build VM's
 # RAM never reaches the image. Only the RAM-independent TIME_WAIT file is
@@ -60,12 +59,20 @@ fi
 id -u etcd >/dev/null 2>&1 || sudo useradd -r -s /bin/false -d /var/lib/etcd etcd
 sudo install -d -m 0700 -o etcd -g etcd /var/lib/etcd
 
-# Keep image-specific identity ordering in a drop-in so agent upgrades retain it.
-sudo install -d -m 0755 /etc/systemd/system/nvke-agent.service.d
-sudo install -m 0644 "${SRC}/nvke-agent-spire.conf" /etc/systemd/system/nvke-agent.service.d/10-spire.conf
 # The package enables the agent and creates the default environment file, but
 # the golden image has no instance identity yet: start only on first boot.
 sudo env NKE_AGENT_SKIP_START=1 dpkg -i "${SRC}/nvke-agent.deb"
+
+# The image's identity ordering: nvke-agent starts after spire-agent and waits
+# for the SPIFFE socket. It is a package of its own, not part of nvke-agent's, so
+# an agent upgrade retains it, and installed after the agent it drops its
+# ordering in beside the agent's unit.
+identity_deb="$(find "${SRC}/debs" -maxdepth 1 -type f -name 'nvke-node-identity_*.deb' -print -quit 2>/dev/null || true)"
+if [[ -z "${identity_deb}" ]]; then
+  echo "no nvke-node-identity deb in ${SRC}/debs; nvke-agent would start before SPIRE and could not attest" >&2
+  exit 1
+fi
+sudo dpkg -i "${identity_deb}"
 
 # Stage the CNI debs as a local flat apt repo, so cluster create's `apt-get
 # install nvke-cni-...` resolves offline with apt's dependency handling intact.
