@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+
+	auth "github.com/dsx-ai-factory/nvke/auth/authn"
 )
 
 func TestHTTPOutcome(t *testing.T) {
@@ -103,4 +105,30 @@ func TestResponseWriterRetainsSpecificRejectionReason(t *testing.T) {
 	writer.WriteHeader(http.StatusBadRequest)
 
 	require.Equal(t, rejectionReasonInvalidClusterNetwork, state.rejectionReason)
+}
+
+func TestPrincipalGroups(t *testing.T) {
+	tests := []struct {
+		name   string
+		claim  any
+		want   []string
+		wantOK bool
+	}{
+		{"absent", nil, nil, false},
+		{"string array", []any{"a", "b"}, []string{"a", "b"}, true},
+		{"empty array", []any{}, []string{}, true},
+		{"one non-string", []any{"a", 1.0}, nil, false},
+		{"bare string", "a", nil, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			claims := map[string]any{}
+			if tt.claim != nil {
+				claims["groups"] = tt.claim
+			}
+			got, ok := principalGroups(&auth.Principal{Claims: claims})
+			require.Equal(t, tt.wantOK, ok)
+			require.Equal(t, tt.want, got)
+		})
+	}
 }

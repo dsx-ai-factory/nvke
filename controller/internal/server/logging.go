@@ -9,11 +9,19 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	auth "github.com/dsx-ai-factory/nvke/auth/authn"
+
+	"github.com/dsx-ai-factory/nvke/controller/api"
 )
 
 // maxUserAgentLogLength caps the logged User-Agent, which the client controls.
 const (
 	maxUserAgentLogLength = 256
+
+	// maxAuditGroups caps the groups an audit event lists. Each group is also
+	// cut to auth.ElideForLog's bound.
+	maxAuditGroups = 32
 
 	rejectionReasonRequestParsingFailed     = "request_parsing_failed"
 	rejectionReasonRequestValidationFailed  = "request_validation_failed"
@@ -24,8 +32,20 @@ const (
 
 type requestLogStateKey struct{}
 
+// requestLogState carries what inner layers learn about a request out to the
+// logging middleware, which logs it once the status is known.
 type requestLogState struct {
 	rejectionReason string
+
+	// operation is the OpenAPI operationId, set once the request reaches its
+	// operation handler.
+	operation string
+
+	// caller is set once the caller's token verifies, and admitted once an
+	// admission rule matches it. Nil when authentication is off or no token
+	// verified.
+	caller   *auth.Principal
+	admitted bool
 }
 
 func (s *requestLogState) recordRejectionReason(reason string) {
@@ -83,7 +103,97 @@ func loggingMiddleware(next http.Handler, logger *slog.Logger) http.Handler {
 
 		// Log the completed request
 		logger.Log(r.Context(), level, "Request completed", attrs...)
+
+		if isMutatingMethod(r.Method) {
+			logger.Log(r.Context(), slog.LevelInfo, "Audit", auditAttrs(r.Method, r.URL.Path, wrapped.status, state)...)
+		}
 	})
+}
+
+// auditAttrs names the caller from the verified principal's issuer, subject and
+// groups only. It never reads the Authorization header, and never logs the
+// claims wholesale, so no part of the token reaches the log. The subject and
+// groups are the caller's own strings, so both are bounded.
+func auditAttrs(method, path string, status int, state *requestLogState) []any {
+	attrs := []any{
+		"event", "api.audit",
+		"method", method,
+		"path", path,
+		"status", status,
+	}
+	if state.operation != "" {
+		attrs = append(attrs, "operation", state.operation)
+	}
+	if p := state.caller; p != nil {
+		attrs = append(attrs, "issuer", p.IssuerName, "subject", auth.ElideForLog(p.Subject), "admitted", state.admitted)
+		if claimed, ok := principalGroups(p); ok {
+			groups, truncated := boundGroups(claimed)
+			attrs = append(attrs, "groups", groups)
+			if truncated {
+				attrs = append(attrs, "groups_truncated", true)
+			}
+		}
+	}
+	if state.rejectionReason != "" {
+		attrs = append(attrs, "reason", state.rejectionReason)
+	}
+	return attrs
+}
+
+// principalGroups returns the verified "groups" claim, or false unless it is an
+// array of strings.
+func principalGroups(p *auth.Principal) ([]string, bool) {
+	items, ok := p.Claims["groups"].([]any)
+	if !ok {
+		return nil, false
+	}
+	groups := make([]string, 0, len(items))
+	for _, item := range items {
+		g, ok := item.(string)
+		if !ok {
+			return nil, false
+		}
+		groups = append(groups, g)
+	}
+	return groups, true
+}
+
+// boundGroups keeps the first maxAuditGroups groups, each elided, and reports
+// whether it dropped or shortened any.
+func boundGroups(groups []string) ([]string, bool) {
+	truncated := len(groups) > maxAuditGroups
+	if truncated {
+		groups = groups[:maxAuditGroups]
+	}
+	bounded := make([]string, len(groups))
+	for i, g := range groups {
+		bounded[i] = auth.ElideForLog(g)
+		truncated = truncated || bounded[i] != g
+	}
+	return bounded, truncated
+}
+
+// recordCaller is the authentication observer. It records the verified caller
+// in the request log state for the audit event, admitted or not; only an
+// admitted caller reaches the request context.
+func recordCaller(r *http.Request, p *auth.Principal, admitted bool) {
+	if state := requestLogStateFromContext(r.Context()); state != nil {
+		state.caller = p
+		state.admitted = admitted
+	}
+}
+
+// recordOperation records the request's OpenAPI operationId. The generated
+// handler passes the Go method name, which is the operationId with its first
+// letter upper-cased.
+func recordOperation(next api.StrictHandlerFunc, operationID string) api.StrictHandlerFunc {
+	operation := strings.ToLower(operationID[:1]) + operationID[1:]
+	return func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error) {
+		if state := requestLogStateFromContext(ctx); state != nil {
+			state.operation = operation
+		}
+		return next(ctx, w, r, request)
+	}
 }
 
 // truncate returns s cut to at most n bytes, without splitting a UTF-8 sequence.
