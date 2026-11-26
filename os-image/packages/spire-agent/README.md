@@ -11,6 +11,8 @@ Builds the Debian package that gives a node its SPIFFE identity:
 |---|---|
 | `/usr/local/bin/spire-agent` | The upstream SPIRE agent release binary (musl) |
 | `/usr/local/lib/spire-agent/tpm_attestor_agent` | spire-tpm-plugin's agent-side node attestor |
+| `/usr/local/lib/spire-agent/dsx-imds-node-attestor-agent` | Optional, externally supplied IMDS node attestor, mode 0755 |
+| `/usr/lib/nvke/spire-check-imds.sh` | Rejects `dsx_imds` selection when the executable is absent |
 | `/usr/local/bin/get_tpm_pubhash` | spire-tpm-plugin's EK-reading helper |
 | `/lib/systemd/system/spire-agent.service` | The agent unit |
 | `/lib/systemd/system/nvke-spire-configure.service` | Renders the config before it |
@@ -22,7 +24,7 @@ Builds the Debian package that gives a node its SPIFFE identity:
 SPIRE is how a node gets an identity at all, so there is no point in the image
 at which it is optional.
 
-All four unit/script files are read straight out of [`../../files/`](../../files/),
+The unit/script files are read straight out of [`../../files/`](../../files/),
 where the image's copies have always lived; the package takes ownership of them
 rather than forking a second copy. They ship together because
 `spire-agent.service` has `Requires=nvke-spire-configure.service` — splitting
@@ -42,7 +44,8 @@ Two divergent install paths used to exist: the Packer build installed raw
 upstream SPIRE and TPM plugin binaries, while apt-path nodes installed
 a `spire-agent` deb built out of an internal GitLab repository and served from
 the NVKE S3 apt repo. This package is the single artifact both converge on, and
-every byte it wraps comes from a public GitHub release.
+its required binaries come from public GitHub releases. The optional IMDS
+executable is supplied locally by the caller.
 
 ## Verification
 
@@ -69,6 +72,23 @@ twice and compares every `.deb` byte-for-byte.
 
 `make test` exercises a fresh bundle for both architectures using local
 release archives. It needs Python 3, Bash, curl, tar, awk, and GNU coreutils.
+
+## Optional DSX IMDS agent
+
+To include IMDS, supply a local executable, its authenticated expected SHA-256,
+and its architecture (matching `ARCH`). Replace the quoted digest placeholder
+before running:
+
+```bash
+make debs OUT_DIR=/absolute/output ARCH=arm64 \
+  IMDS_AGENT_FILE=/absolute/materials/dsx-imds-node-attestor-agent \
+  IMDS_AGENT_SHA256='<expected-64-character-lowercase-sha256>' \
+  IMDS_AGENT_ARCH=arm64
+```
+
+Omit all three inputs to build without IMDS. TPM remains the default, and
+join-token behavior is unchanged. Publishers distributing both package
+variants must use distinct `DEB_REVISION` values.
 
 ## Bumping the versions
 

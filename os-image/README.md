@@ -439,6 +439,11 @@ Packer inputs and output state while preserving the downloaded ISO and prepared
 packages. `make clean-fde-output` and `make clean-non-fde-output` additionally
 remove the selected variant's completed output.
 
+### Optional IMDS node attestor
+
+To include IMDS, pass the [package's local-file inputs](packages/spire-agent/README.md#optional-dsx-imds-agent)
+to the image Make target. Without them, TPM remains the default.
+
 ## Full-disk-encryption (FDE) variant
 
 An opt-in build that lays down an LVM-on-LUKS2 root volume via the Ubuntu

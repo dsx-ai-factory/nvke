@@ -192,6 +192,23 @@ sys.exit(1 if sys.argv[1] == "build" else 0)
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("NKE_PACKAGE_BUILDER", result.stderr)
 
+    def test_make_exports_optional_imds_input_to_artifact_preparation(self):
+        script = self.packer_dir / "scripts/fetch-artifacts.sh"
+        script.write_text("""#!/usr/bin/env python3
+import json, os
+from pathlib import Path
+Path(os.environ['PACKER_ARGS']).write_text(json.dumps([
+    os.environ.get(name) for name in ('IMDS_AGENT_FILE', 'IMDS_AGENT_SHA256', 'IMDS_AGENT_ARCH')
+]))
+""")
+        script.chmod(0o755)
+        values = [str(self.root / "external material"), "b" * 64, "arm64"]
+        result = self.make("prepare-artifacts", "-o", "preflight",
+                           *[f"{key}={value}" for key, value in zip(
+                               ("IMDS_AGENT_FILE", "IMDS_AGENT_SHA256", "IMDS_AGENT_ARCH"), values)])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(Path(self.env["PACKER_ARGS"]).read_text()), values)
+
     def test_vm_adapter_invokes_nix_app_with_checkout_and_output(self):
         self.script("nix", '''#!/usr/bin/env python3
 import json, os, sys
@@ -255,7 +272,9 @@ class GuestUpdaterTest(unittest.TestCase):
                 env = os.environ | {"PATH": f"{tools}:{os.environ['PATH']}",
                                     "REPO_ROOT": str(repo), "ARCH": "arm64",
                                     "NKE_TARGET_UBUNTU_SERIES": "26.04",
-                                    "ARTIFACTS_DIR": str(artifacts), "TEST_MAKE_LOG": str(log)}
+                                    "ARTIFACTS_DIR": str(artifacts), "TEST_MAKE_LOG": str(log),
+                                    "IMDS_AGENT_FILE": "/guest/materials/imds",
+                                    "IMDS_AGENT_SHA256": "a" * 64, "IMDS_AGENT_ARCH": "arm64"}
                 env.pop("SOURCE_ROOT", None)
                 if source_root is not None:
                     env["SOURCE_ROOT"] = source_root
@@ -269,6 +288,9 @@ class GuestUpdaterTest(unittest.TestCase):
                 self.assertIn(f"-C {repo}/agent deb-arm64", calls[0])
                 self.assertIn(f"-C {repo}/os-image/packages/doca-ovs debs", calls[5])
                 self.assertIn("UBUNTU_SERIES=26.04", calls[5])
+                self.assertIn("IMDS_AGENT_FILE=/guest/materials/imds", calls[4])
+                self.assertIn("IMDS_AGENT_SHA256=" + "a" * 64, calls[4])
+                self.assertIn("IMDS_AGENT_ARCH=arm64", calls[4])
                 # The guest has podman, not docker; cni-ovn builds its image with it.
                 ovn = [call for call in calls if "/os-image/packages/cni-ovn debs" in call]
                 self.assertEqual(len(ovn), 1, calls)

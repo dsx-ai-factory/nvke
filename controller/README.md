@@ -287,7 +287,7 @@ too (see below):
 {
   "providers": ["capi_core", "launchlayer", "dsx-imds-attestation"],
   "capll_source_dir": "../../cluster-api-provider-launchlayer",
-  "dsx_imds_attestation_source_dir": "../../dsx-identity"
+  "dsx_imds_attestation_source_dir": "../../nvidia-workload-identity"
 }
 ```
 

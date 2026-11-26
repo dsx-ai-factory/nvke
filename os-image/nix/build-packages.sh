@@ -85,13 +85,20 @@ while IFS= read -r -d '' file; do
   if [[ -e "$repo/$file" || -L "$repo/$file" ]]; then printf '%s\0' "$file"; fi
 done < <(git -C "$repo" ls-files -z --cached --others --exclude-standard) |
   rsync -a --from0 --files-from=- -e nke-builder-ssh "$repo/" "root@127.0.0.1:$work/src/"
+# Local materials outside the checkout are not in the source rsync. Transfer
+# explicitly and verify the expected digest and ELF architecture in the guest.
+if [[ -n "${IMDS_AGENT_FILE:-}" ]]; then
+  [[ -f "$IMDS_AGENT_FILE" && ! -L "$IMDS_AGENT_FILE" ]] || { echo "missing regular IMDS input file: $IMDS_AGENT_FILE" >&2; exit 1; }
+  rsync -a -e nke-builder-ssh -- "$IMDS_AGENT_FILE" "root@127.0.0.1:$work/imds-agent"
+  IMDS_AGENT_FILE="$work/imds-agent"
+fi
 version=${VERSION:-$(git -C "$repo" describe --tags --always --dirty --match 'v*')}
 # Send shell-quoted assignments over SSH stdin, including optional credentials.
 {
   printf 'export ARCH=%q ARTIFACTS_DIR=%q REPO_ROOT=%q VERSION=%q\n' \
     "$arch" "$work/artifacts" "$work/src" "${version}"
   for name in K8S_VERSIONS CALICO_VERSIONS OVN_STREAMS NGC_API_KEY SPIRE_VERSION TPM_PLUGIN_VERSION \
-    NKE_TARGET_UBUNTU_SERIES DOCA_VERSION; do
+    NKE_TARGET_UBUNTU_SERIES DOCA_VERSION IMDS_AGENT_FILE IMDS_AGENT_SHA256 IMDS_AGENT_ARCH; do
     if [[ -n "${!name+x}" ]]; then printf 'export %s=%q\n' "$name" "${!name}"; fi
   done
   cat "$guest_script"

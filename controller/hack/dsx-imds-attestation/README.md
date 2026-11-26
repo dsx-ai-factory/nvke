@@ -2,10 +2,12 @@
 
 This directory contains the built-in NVKE Tilt provider for local `dsx_imds`
 node attestation. It owns the local IMDS and JWKS fixture plus the Tilt wiring
-that builds the real SPIRE plugins from a neighboring `dsx-identity` checkout.
+that builds the real SPIRE plugins from a local
+[NVIDIA Workload Identity](https://github.com/dsx-ai-factory/nvidia-workload-identity)
+checkout.
 
-Clone `dsx-identity` beside the NVKE worktree, then enable the provider and set
-the source checkout path in `tilt_config.json`:
+Clone the public source, then enable the provider and set its local checkout
+path in `tilt_config.json`:
 
 ```json
 {
@@ -16,7 +18,7 @@ the source checkout path in `tilt_config.json`:
     "nico",
     "dsx-imds-attestation"
   ],
-  "dsx_imds_attestation_source_dir": "../../dsx-identity",
+  "dsx_imds_attestation_source_dir": "../../nvidia-workload-identity",
   "node_image_attestation_method": "dsxImds"
 }
 ```

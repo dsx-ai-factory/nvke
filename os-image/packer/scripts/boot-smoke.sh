@@ -202,6 +202,12 @@ id -u spire >/dev/null
 # literal string, refuses to load it, and the node never attests.
 test "$(. /etc/spire-agent/spire-agent.env; echo "${TPM_PLUGIN_CHECKSUM}")" \
     = "$(sha256sum /usr/local/lib/spire-agent/tpm_attestor_agent | cut -d' ' -f1)"
+if test -e /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent; then
+    test -x /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent
+    test "$(dpkg-query -S /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent | cut -d: -f1)" = spire-agent
+    test "$(. /etc/spire-agent/spire-agent.env; echo "${DSX_IMDS_PLUGIN_CHECKSUM}")" \
+        = "$(sha256sum /usr/local/lib/spire-agent/dsx-imds-node-attestor-agent | cut -d' ' -f1)"
+fi
 grep -Fq -- -expandEnv /lib/systemd/system/spire-agent.service
 # Persistent upload scratch must not remain in the golden image.
 test ! -e /var/tmp/nke-image

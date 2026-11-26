@@ -17,6 +17,7 @@ on:
       - "pull-request/[0-9]+"
     paths:
       - "os-image/packages/**"
+      - "os-image/files/**"
       - make/tool-versions.mk
       - .github/workflows/package-repro.yml
   schedule:
@@ -40,7 +41,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [kubeadm-distro, cni-calico, cni-ovn]
+        package: [kubeadm-distro, cni-calico, cni-ovn, spire-agent]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -76,6 +77,10 @@ jobs:
 
       - name: Show the disk before building
         run: df -h /
+
+      - name: Test optional SPIRE package inputs and contents
+        if: matrix.package == 'spire-agent'
+        run: make -C os-image/packages/spire-agent test-packages
 
       - name: Build twice and compare
         run: make -C os-image/packages/${{ matrix.package }} repro-check

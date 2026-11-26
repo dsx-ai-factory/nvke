@@ -11,10 +11,11 @@ Requires=nvke-spire-configure.service
 [Service]
 Type=simple
 # An OS profile's cloud-init writes an agent.conf carrying the literal
-# plugin_checksum = "${TPM_PLUGIN_CHECKSUM}"; -expandEnv resolves it from here,
-# so the checksum belongs to the plugin this image installed. postinst writes
-# the file. Same pair as controller/hack/ci/assets/spire-agent.service.
+# plugin_checksum = "${TPM_PLUGIN_CHECKSUM}" or "${DSX_IMDS_PLUGIN_CHECKSUM}";
+# -expandEnv resolves it from here, so the checksum belongs to the plugin
+# this image installed. postinst writes the file. Same pair as controller/hack/ci/assets/spire-agent.service.
 EnvironmentFile=-/etc/spire-agent/spire-agent.env
+ExecStartPre=/usr/lib/nvke/spire-check-imds.sh
 ExecStart=/usr/local/bin/spire-agent run -config /etc/spire-agent/agent.conf -expandEnv
 Restart=on-failure
 RestartSec=5
