@@ -52,10 +52,10 @@ download_verified() {
     --show-error \
     --location \
     --connect-timeout 10 \
-    --max-time 30 \
+    --max-time "${CAPD_BUNDLE_DOWNLOAD_TIMEOUT:-600}" \
     --retry 8 \
     --retry-all-errors \
-    --retry-max-time 240 \
+    --retry-max-time "${CAPD_BUNDLE_RETRY_MAX_TIME:-1200}" \
     --retry-connrefused \
     "${url}" \
     -o "${destination}"

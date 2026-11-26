@@ -16,6 +16,11 @@ It prints `PASS` or `FAIL` for each check and exits non-zero if any fails:
 - the ClusterPolicy is ready, each node advertises `nvidia.com/gpu`, and the GPU Operator validator completes,
 - the pod sees exactly one GPU.
 
+## Local CAPD replay
+
+See the [local replay recipe](local-replay.md) for a disposable CAPD setup using
+the existing E2E runner, including the pending mixed-model case from #2109.
+
 ## Before you begin
 
 - `nvkectl` pointed at the NVKE site (`nvkectl config set-site`), and a Provisioned workload cluster with at least one worker pool.
