@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -137,4 +138,15 @@ func TestFlattenArchive(t *testing.T) {
 func TestFlattenArchiveRejectsAnArchiveWithoutAnIndex(t *testing.T) {
 	in := archive(t, map[string]string{"oci-layout": "{}"}, []string{"oci-layout"})
 	require.Error(t, flattenArchive(in, filepath.Join(t.TempDir(), "out.tar"), "linux/arm64"))
+}
+
+func TestFlattenArchiveIsReadableWhateverTheUmask(t *testing.T) {
+	in := archive(t, map[string]string{"index.json": `{"manifests":[]}`}, []string{"index.json"})
+	out := filepath.Join(t.TempDir(), "out.tar")
+	defer syscall.Umask(syscall.Umask(0o077))
+
+	require.NoError(t, flattenArchive(in, out, "linux/arm64"))
+	info, err := os.Stat(out)
+	require.NoError(t, err)
+	assert.Equal(t, os.FileMode(0o644), info.Mode().Perm())
 }

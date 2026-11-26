@@ -117,6 +117,11 @@ func copyArchive(inPath, outPath string, index []byte) (retErr error) {
 	if err != nil {
 		return err
 	}
+	// The file may be made by root for the user whose umask is stricter, and who reads it: kind does.
+	if err := out.Chmod(0o644); err != nil {
+		out.Close()
+		return err
+	}
 	defer func() {
 		if err := out.Close(); retErr == nil {
 			retErr = err
