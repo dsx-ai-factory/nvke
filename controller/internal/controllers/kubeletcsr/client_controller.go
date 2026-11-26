@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/tools/events"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/controllers/clustercache"
 	capiutil "sigs.k8s.io/cluster-api/util"
@@ -47,6 +48,7 @@ type ClientCSRController struct {
 	k8sClient    client.Client
 	clusterCache clustercache.ClusterCache
 	controller   controller.Controller
+	recorder     events.EventRecorder
 	logger       *slog.Logger
 }
 
@@ -62,6 +64,7 @@ func NewClientCSRController(k8sClient client.Client, clusterCache clustercache.C
 }
 
 func (c *ClientCSRController) SetupWithManager(mgr ctrl.Manager) error {
+	c.recorder = mgr.GetEventRecorder(constants.FieldManagerKubeletClientCSR)
 	// This controller uses two caches. Index Machines here, in the management cluster cache.
 	// Index tenant CSRs separately, in each tenant cluster cache, via ClientCSRCacheIndexes.
 	if err := indexKubeletClientCSRMachines(context.Background(), mgr.GetCache()); err != nil {
@@ -250,8 +253,8 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 
 	joined := machine.Status.NodeRef.IsDefined()
 	if joined {
-		return reconcile.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return reconcile.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionTrue,
 			KubeletClientCertificateIssuedReason,
 			"Node has joined",
@@ -260,8 +263,8 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 
 	identity := keys.MachineBootstrapIdentity.Value(machine.Annotations)
 	if identity == "" {
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return ctrl.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionFalse,
 			KubeletClientCSRWaitingForBootstrapIdentityReason,
 			"Waiting for the Machine bootstrap identity",
@@ -278,8 +281,8 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 		return ctrl.Result{}, err
 	}
 	if len(machinesByIdentity) > 1 {
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return ctrl.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionFalse,
 			KubeletClientCSRInvalidReason,
 			"Bootstrap identity is assigned to multiple Machines",
@@ -291,8 +294,8 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 		return ctrl.Result{}, err
 	}
 	if len(machinesByNodeName) > 1 {
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return ctrl.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionFalse,
 			KubeletClientCSRInvalidReason,
 			"Expected node name is assigned to multiple Machines",
@@ -319,8 +322,8 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 		return ctrl.Result{}, err
 	}
 	if len(csrs) == 0 {
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return ctrl.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionFalse,
 			KubeletClientCSRWaitingReason,
 			"Waiting for the kubelet client CSR",
@@ -337,24 +340,24 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 			return ctrl.Result{}, err
 		}
 		if exists {
-			return ctrl.Result{}, setKubeletClientCertificateCondition(
-				ctx, c.k8sClient, machine,
+			return ctrl.Result{}, c.reportCondition(
+				ctx, machine,
 				metav1.ConditionFalse,
 				KubeletClientCSRInvalidReason,
 				fmt.Sprintf("Node %s already exists", nodeName),
 			)
 		}
-		if err := approveKubeletClientCSRs(ctx, tenantClient, machine, csrDecisions.pending, c.logger); err != nil {
-			condErr := setKubeletClientCertificateCondition(
-				ctx, c.k8sClient, machine,
+		if err := approveKubeletClientCSRs(ctx, tenantClient, machine, csrDecisions.pending, c.logger, c.recorder); err != nil {
+			condErr := c.reportCondition(
+				ctx, machine,
 				metav1.ConditionFalse,
 				KubeletClientCSRFailedReason,
 				err.Error(),
 			)
 			return ctrl.Result{}, errors.Join(err, condErr)
 		}
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return ctrl.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionFalse,
 			KubeletClientCSRWaitingForSigningReason,
 			fmt.Sprintf("Approved %d kubelet client CSRs", len(csrDecisions.pending)),
@@ -363,8 +366,8 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 
 	// An issued certificate completes bootstrap. Pending is handled first so a kubelet retry is still approved.
 	if len(csrDecisions.issued) > 0 {
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return ctrl.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionTrue,
 			KubeletClientCertificateIssuedReason,
 			"Initial kubelet client certificate issued",
@@ -372,8 +375,8 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 	}
 
 	if len(csrDecisions.approved) > 0 {
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return ctrl.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionFalse,
 			KubeletClientCSRWaitingForSigningReason,
 			fmt.Sprintf("%d kubelet client CSRs are approved but not yet signed", len(csrDecisions.approved)),
@@ -381,8 +384,8 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 	}
 
 	if len(csrDecisions.invalid) > 0 {
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return ctrl.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionFalse,
 			KubeletClientCSRInvalidReason,
 			fmt.Sprintf("%d kubelet client CSRs are invalid, latest reason: %s", len(csrDecisions.invalid), csrDecisions.invalidReason),
@@ -390,8 +393,8 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 	}
 
 	if len(csrDecisions.denied) > 0 {
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return ctrl.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionFalse,
 			KubeletClientCSRInvalidReason,
 			fmt.Sprintf("%d kubelet client CSRs were denied", len(csrDecisions.denied)),
@@ -399,8 +402,8 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 	}
 
 	if len(csrDecisions.failed) > 0 {
-		return ctrl.Result{}, setKubeletClientCertificateCondition(
-			ctx, c.k8sClient, machine,
+		return ctrl.Result{}, c.reportCondition(
+			ctx, machine,
 			metav1.ConditionFalse,
 			KubeletClientCSRInvalidReason,
 			fmt.Sprintf("%d kubelet client CSRs failed", len(csrDecisions.failed)),
@@ -408,6 +411,18 @@ func (c *ClientCSRController) Reconcile(ctx context.Context, request ctrl.Reques
 	}
 
 	return ctrl.Result{}, fmt.Errorf("kubelet client CSRs for Machine %s matched no decision", request.NamespacedName)
+}
+
+func (c *ClientCSRController) reportCondition(ctx context.Context, machine *clusterv1.Machine, status metav1.ConditionStatus, reason, message string) error {
+	return setMachineCondition(
+		ctx, c.k8sClient, machine,
+		KubeletClientCertificateIssuedCondition,
+		status,
+		reason,
+		message,
+		constants.FieldManagerKubeletClientCSR,
+		c.recorder,
+	)
 }
 
 func (c *ClientCSRController) watchKubeletClientCSRs(ctx context.Context, clusterKey client.ObjectKey) error {
