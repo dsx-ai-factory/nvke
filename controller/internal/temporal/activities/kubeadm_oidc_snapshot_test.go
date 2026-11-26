@@ -331,6 +331,10 @@ func snapshotInitDatabase(cluster db.Cluster, node db.Node, nodeSet db.NodeSet, 
 	database.On("GetNode", mock.Anything, node.ID).Return(node, nil).Once()
 	database.On("GetNodeSet", mock.Anything, nodeSet.ID).Return(nodeSet, nil).Once()
 	database.On("GetNodePool", mock.Anything, nodePool.ID).Return(nodePool, nil).Once()
+	database.On("ListNodes", mock.Anything, mock.MatchedBy(func(filters db.NodeFilters) bool {
+		return filters.ClusterID != nil && *filters.ClusterID == cluster.ID &&
+			filters.ControlPlane != nil && *filters.ControlPlane
+	})).Return([]db.Node{node}, nil).Once()
 	return database
 }
 
