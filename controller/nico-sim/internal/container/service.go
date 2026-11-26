@@ -264,8 +264,10 @@ func (s *Service) createInstance(ctx context.Context, instanceID string, req nic
 		"--restart", "always",
 		"--network", s.cfg.NodeNetwork,
 		"--env", "KUBECONFIG=/etc/kubernetes/admin.conf",
-		"--env", "KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER=fuse-overlayfs",
 		// containerd cannot write image whiteouts onto an overlayfs rootfs; kind gives /var a volume too.
+		// With /var on a volume, containerd's default snapshotter works, as it does in kind. Do not set
+		// KIND_EXPERIMENTAL_CONTAINERD_SNAPSHOTTER=fuse-overlayfs: containerd then reports an image
+		// filesystem path that does not exist, and the kubelet's /stats/summary, image GC and eviction fail.
 		"--volume", "/var",
 		"--volume", "/lib/modules:/lib/modules:ro",
 		"--entrypoint", "/bin/sh",
