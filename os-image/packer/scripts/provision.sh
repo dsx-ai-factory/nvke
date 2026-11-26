@@ -36,6 +36,22 @@ sudo install -m 0644 "${SRC}/10-nke-conntrack-timeouts.conf" /etc/sysctl.d/10-nk
 echo 'nf_conntrack' | sudo tee /etc/modules-load.d/nf_conntrack.conf >/dev/null
 sudo systemctl enable conntrack-tune.service
 
+# A node whose network is down when cloud-init searches for its datasource
+# lands on DataSourceNone and stays there -- nothing on the host notices when
+# the seed URL becomes reachable again (see
+# https://github.com/dsx-ai-factory/nvke/issues/609). The timer keeps checking
+# until the seed answers, then re-runs cloud-init the way the documented
+# operator recovery does.
+sudo install -m 0755 "${SRC}/cloud-init-ds-retry.sh" /usr/lib/nvke/cloud-init-ds-retry.sh
+sudo install -m 0644 "${SRC}/nvke-cloud-init-ds-retry.service" /etc/systemd/system/nvke-cloud-init-ds-retry.service
+sudo install -m 0644 "${SRC}/nvke-cloud-init-ds-retry.timer" /etc/systemd/system/nvke-cloud-init-ds-retry.timer
+# No retry state may ship in the image: a baked-in sentinel would disable
+# the mechanism on every node that ever boots this disk.
+sudo rm -f /var/lib/nvke/cloud-init-ds-retry.done \
+  /var/lib/nvke/cloud-init-ds-retry.attempts \
+  /var/lib/nvke/cloud-init-ds-retry.probes
+sudo systemctl enable nvke-cloud-init-ds-retry.timer
+
 # Kata's erofs snapshotter: containerd converts image layers to erofs (with
 # dm-verity metadata) and hands them to the guest as block devices. Load both
 # modules at boot rather than relying on on-demand loading. 26.04 only,

@@ -108,3 +108,6 @@ install -m 0755 "${files_dir}/wait-spiffe-socket.sh" "${ARTIFACTS_DIR}/wait-spif
 install -m 0644 "${files_dir}/conntrack-tune.service" "${ARTIFACTS_DIR}/conntrack-tune.service"
 install -m 0755 "${files_dir}/configure-conntrack.sh" "${ARTIFACTS_DIR}/configure-conntrack.sh"
 install -m 0644 "${files_dir}/10-nke-conntrack-timeouts.conf" "${ARTIFACTS_DIR}/10-nke-conntrack-timeouts.conf"
+install -m 0755 "${files_dir}/cloud-init-ds-retry.sh" "${ARTIFACTS_DIR}/cloud-init-ds-retry.sh"
+install -m 0644 "${files_dir}/nvke-cloud-init-ds-retry.service" "${ARTIFACTS_DIR}/nvke-cloud-init-ds-retry.service"
+install -m 0644 "${files_dir}/nvke-cloud-init-ds-retry.timer" "${ARTIFACTS_DIR}/nvke-cloud-init-ds-retry.timer"

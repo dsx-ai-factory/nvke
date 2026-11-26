@@ -233,6 +233,9 @@ class GuestUpdaterTest(unittest.TestCase):
                     "conntrack-tune.service",
                     "configure-conntrack.sh",
                     "10-nke-conntrack-timeouts.conf",
+                    "cloud-init-ds-retry.sh",
+                    "nvke-cloud-init-ds-retry.service",
+                    "nvke-cloud-init-ds-retry.timer",
                 ):
                     shutil.copy(PACKER_DIR.parent / "files" / name, files)
                 updater = repo / "agent/bin/linux_arm64/nvke-agent-updater"

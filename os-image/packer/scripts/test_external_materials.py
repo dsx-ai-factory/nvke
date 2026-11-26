@@ -66,7 +66,8 @@ class ComposeImageInputsTest(unittest.TestCase):
         for name in ("nvke-agent-spire.conf", "wait-spiffe-socket.sh",
                      "conntrack-tune.service", "configure-conntrack.sh",
                      "10-nke-conntrack-timeouts.conf", "99-disable-network-config.cfg",
-                     "00-dhcp-all.yaml"):
+                     "00-dhcp-all.yaml", "cloud-init-ds-retry.sh",
+                     "nvke-cloud-init-ds-retry.service", "nvke-cloud-init-ds-retry.timer"):
             shutil.copyfile(SCRIPTS.parent.parent / "files" / name, self.source_files / name)
         write_executable(
             self.tools / "dpkg-scanpackages",
@@ -133,6 +134,9 @@ class ComposeImageInputsTest(unittest.TestCase):
                 "10-nke-conntrack-timeouts.conf",
                 "99-disable-network-config.cfg",
                 "00-dhcp-all.yaml",
+                "cloud-init-ds-retry.sh",
+                "nvke-cloud-init-ds-retry.service",
+                "nvke-cloud-init-ds-retry.timer",
             },
         )
 
@@ -149,6 +153,9 @@ class ComposeImageInputsTest(unittest.TestCase):
                 ("10-nke-conntrack-timeouts.conf", 0o644),
                 ("99-disable-network-config.cfg", 0o644),
                 ("00-dhcp-all.yaml", 0o644),
+                ("cloud-init-ds-retry.sh", 0o755),
+                ("nvke-cloud-init-ds-retry.service", 0o644),
+                ("nvke-cloud-init-ds-retry.timer", 0o644),
             ):
                 with self.subTest(name=name):
                     self.assertEqual(archive.getmember(name).mode, mode)
@@ -295,7 +302,7 @@ class ComposeImageInputsTest(unittest.TestCase):
                             patch.object(module.subprocess, "run") as index:
                         with self.assertRaisesRegex(SystemExit, expected):
                             module.main()
-                        self.assertEqual(install.call_count, 8 if copies_agent else 0)
+                        self.assertEqual(install.call_count, 11 if copies_agent else 0)
                         index.assert_not_called()
                     if existing:
                         self.assertEqual(output.read_bytes(), b"prior output")
