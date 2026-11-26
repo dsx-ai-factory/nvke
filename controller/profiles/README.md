@@ -5,6 +5,13 @@
 [`example/`](example/) is a self-contained bundle. It contains a worker config
 profile, a runbook, and the Dockerfile needed to package them.
 
+A config profile runs runbooks when a node is removed: `beforeRemoveNode` hooks
+run before the node leaves the cluster, and `afterRemoveNode` hooks run after
+its Kubernetes Node object is deleted. The controller still accepts
+`beforeJoinNode`, `afterJoinNode` and `preJoinNodeReboot`, but ignores them.
+Set node labels and taints on the node pool (`nodeLabels`, `nodeTaints`), not in
+the profile.
+
 The controller does not load profiles from this directory when deployed. Copy
 the example to a separate repository or another location outside
 `nke/controller`, then replace every `REPLACE_*` value for your environment:

@@ -400,56 +400,6 @@ kubectl exec -n spire-server spire-server-0 -c spire-server -- bin/spire-server 
 kubectl exec -n spire-server spire-server-0 -c spire-server -- bin/spire-server agent list
 ```
 
-### Forge-backed NICo Flow
-
-This is a separate workflow from the normal daily Tilt loop. Use it when you
-want to exercise CAPNico against real Forge/NICo instead of the local
-container-backed nico-sim flow that Tilt sets up by default.
-
-The helper script lives at `./hack/create-forge-nico-cluster.sh`. It assumes:
-
-- CWE is reachable through a port-forward to the in-cluster service
-- a provider-level NICo credentials Secret exists in the `cluster-api-provider-nico`
-  manager namespace (`capnico-system` by default)
-
-#### Provider-level credentials Secret
-
-`cluster-api-provider-nico` reads NICo credentials from a Secret in its own
-manager namespace; one Secret is shared by every `NicoCluster` the provider
-manages. See the [cluster-api-provider-nico
-README](https://github.com/dsx-ai-factory/cluster-api-provider-nico#install)
-for the full set of keys.
-
-Pull the Forge tenant token from Vault and apply it as a Secret in the
-`capnico-system` namespace:
-
-```bash
-vault login -method=oidc -path=oidc role=ngc
-NICO_TOKEN="$(vault kv get -field=servicekey secrets/groups/nkek8s/ngc/forge-tenant-nke/forge-access-info)"
-
-kubectl create secret generic nico-credentials \
-  --namespace capnico-system \
-  --from-literal=endpoint=https://api.ngc.nvidia.com \
-  --from-literal=orgID=novxwn552ssc \
-  --from-literal=token="${NICO_TOKEN}" \
-  --from-literal=apiName=forge
-```
-
-`cluster-api-provider-nico` re-reads the Secret on every reconcile and rebuilds
-the NICo client whenever the Secret's `resourceVersion` changes, so any
-external rotation is picked up without restarting the manager.
-
-#### Creating a cluster
-
-```bash
-# Port forward the CWE API
-tsh login
-kubectl -n cloud-workflow-engine port-forward svc/cloud-workflow-engine 18080:8080
-
-# Create the Forge NICo cluster
-NVKE_CONTROLLER_HTTP_PORT=18080 ./hack/create-forge-nico-cluster.sh
-```
-
 ### Cleanup
 
 Delete the workload cluster before deleting the Kind management cluster so CAPD can clean up the Docker machines it created.
