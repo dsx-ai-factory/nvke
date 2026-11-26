@@ -37,7 +37,7 @@ const (
 	restartsFile    = "restarts"
 )
 
-// errStoppedByUser ends an automatic start that a stop got in front of.
+// errStoppedByUser ends an automatic start that a stop, or another start, got in front of.
 var errStoppedByUser = errors.New("the container was stopped")
 
 // superviseStart starts the supervisor and waits for the task to run.
@@ -79,6 +79,11 @@ func (e *engine) supervise(id string) error {
 		return err
 	}
 	defer log.Close()
+	// The start that made this supervisor has attached the container already.
+	var generation int
+	if meta, err := e.loadContainer(id); err == nil {
+		generation = meta.Generation
+	}
 	master, slave, err := openPty()
 	if err != nil {
 		return err
@@ -113,8 +118,27 @@ func (e *engine) supervise(id string) error {
 	if err := os.WriteFile(e.exitCodeFile(id), []byte(strconv.Itoa(code)+"\n"), 0o600); err != nil {
 		return err
 	}
-	e.restartPerPolicy(id, code, time.Since(began), log)
+	if e.finishTask(id, generation, code) {
+		e.restartPerPolicy(id, code, time.Since(began), log)
+	}
 	return nil
+}
+
+// finishTask records how the task ended and detaches the container from its
+// network, whatever its restart policy. A start of a later generation owns the
+// container by now, and is left alone: it reports false.
+func (e *engine) finishTask(id string, generation, code int) bool {
+	owned := false
+	_ = e.withLock(func() error {
+		meta, err := e.loadContainer(id)
+		if err != nil || meta.Generation != generation {
+			return err
+		}
+		owned = true
+		meta.ExitCode, meta.FinishedAt = code, time.Now().UTC()
+		return errors.Join(e.saveContainer(meta), e.detach(meta))
+	})
+	return owned
 }
 
 // restartPolicy reads a restart policy, NAME or NAME:MAX, and says whether it
@@ -153,11 +177,11 @@ func (e *engine) clearStopped(id string) {
 	_ = os.Remove(filepath.Join(e.containerDir(id), restartsFile))
 }
 
-// restartPerPolicy starts the container again when its restart policy says so and
-// nothing stopped it: a reboot from inside a node ends its init, and nobody but
-// this supervisor is left to notice. The task of a container that has ended is
-// gone by now; the new start gets a supervisor of its own, so this one can end.
-// Everything it reports goes to the container's log.
+// restartPerPolicy starts the container again when its restart policy says so
+// and nothing stopped it, or started it first: a reboot from inside a node ends
+// its init, and nobody but this supervisor is left to notice. The task of a
+// container that has ended is gone by now; the new start gets a supervisor of
+// its own, so this one can end. Everything it reports goes to the container's log.
 func (e *engine) restartPerPolicy(id string, code int, ranFor time.Duration, log io.Writer) {
 	meta, err := e.loadContainer(id)
 	if err != nil || e.stoppedByUser(id) {
@@ -179,13 +203,6 @@ func (e *engine) restartPerPolicy(id string, code int, ranFor time.Duration, log
 	if e.stoppedByUser(id) {
 		return
 	}
-	_ = e.withLock(func() error {
-		current, err := e.loadContainer(id)
-		if err != nil {
-			return err
-		}
-		return e.detach(current)
-	})
 	if err := e.startContainer(meta, true); err != nil && !errors.Is(err, errStoppedByUser) {
 		_, _ = fmt.Fprintf(log, "ctrd: restarting the container (policy %s): %v\n", meta.Restart, err)
 	}

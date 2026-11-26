@@ -71,6 +71,8 @@ type containerMeta struct {
 	StartedAt  time.Time `json:"StartedAt"`
 	FinishedAt time.Time `json:"FinishedAt"`
 	ExitCode   int       `json:"ExitCode"`
+	// Generation counts the starts, so that a supervisor can tell a later start has taken the container over.
+	Generation int `json:"Generation,omitempty"`
 
 	// Attachment is set while the container is attached to its network.
 	IPv4 string `json:"IPv4"`

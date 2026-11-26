@@ -429,8 +429,8 @@ func (e *engine) isRunning(id string) (bool, error) {
 }
 
 // startContainer attaches the container to its network and starts its task under a supervisor.
-// A start the restart policy asks for (automatic) gives way to a stop that
-// happened meanwhile; any other start ends the stop and the policy's count.
+// A start the restart policy asks for (automatic) gives way to a stop or to another
+// start that happened meanwhile; any other start ends the stop and the policy's count.
 func (e *engine) startContainer(meta *containerMeta, automatic bool) error {
 	if running, err := e.isRunning(meta.ID); err != nil || running {
 		return err
@@ -441,15 +441,17 @@ func (e *engine) startContainer(meta *containerMeta, automatic bool) error {
 		if err != nil {
 			return err
 		}
+		took := automatic && current.Generation != meta.Generation
 		*meta = *current
 		switch {
-		case automatic && e.stoppedByUser(meta.ID):
+		case automatic && (took || e.stoppedByUser(meta.ID)):
 			return errStoppedByUser
 		case !automatic:
 			e.clearStopped(meta.ID)
 		}
+		meta.Generation++
 		if meta.Network == hostNetwork {
-			return nil
+			return e.saveContainer(meta)
 		}
 		if err := e.writeContainerFiles(meta); err != nil {
 			return err
@@ -670,13 +672,26 @@ func (e *engine) wait(args []string) error {
 		for !waited {
 			waited = e.waitForExit(meta.ID, time.Second)
 		}
-		if meta, err = e.loadContainer(meta.ID); err != nil {
+		if meta, err = e.loadFinished(meta.ID); err != nil {
 			failures = append(failures, err)
 			continue
 		}
 		_, _ = fmt.Fprintln(e.stdout, meta.ExitCode)
 	}
 	return errors.Join(failures...)
+}
+
+// loadFinished loads a container whose task is gone. The supervisor records how
+// the task ended a moment after that, so a started container is given a few seconds to be finished.
+func (e *engine) loadFinished(id string) (*containerMeta, error) {
+	for range 30 {
+		meta, err := e.loadContainer(id)
+		if err != nil || meta.StartedAt.IsZero() || !meta.FinishedAt.IsZero() {
+			return meta, err
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return e.loadContainer(id)
 }
 
 // update implements `update --restart=POLICY`: the policy is recorded, and the supervisor reads it when the task ends.

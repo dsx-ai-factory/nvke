@@ -146,3 +146,42 @@ func TestAStopDuringTheWaitWins(t *testing.T) {
 	<-done
 	assert.Equal(t, 1, h.supervisorStarts())
 }
+
+func TestTheExitIsRecordedWithoutARestart(t *testing.T) {
+	t.Setenv("START_STATUS", "7")
+	h, id := startedWithPolicy(t, "no")
+	h.endTask()
+	require.Equal(t, 0, h.run("_supervise", id), h.stderr.String())
+
+	meta, err := h.eng.loadContainer(id)
+	require.NoError(t, err)
+	assert.Equal(t, 7, meta.ExitCode)
+	assert.False(t, meta.FinishedAt.IsZero())
+	assert.Empty(t, meta.IPv4, "an address that is no longer used is not left in the peers' hosts files")
+	assert.Nil(t, meta.CNIResult)
+	assert.Len(t, h.callsMatching("bridge DEL"), 2)
+
+	require.Equal(t, 0, h.run("wait", id), h.stderr.String())
+	assert.Equal(t, "7\n", h.stdout.String())
+}
+
+func TestAnOldSupervisorLeavesALaterStartAlone(t *testing.T) {
+	t.Setenv("START_STATUS", "0")
+	h, id := startedWithPolicy(t, "always")
+	old, err := h.eng.loadContainer(id)
+	require.NoError(t, err)
+
+	h.endTask()
+	require.Equal(t, 0, h.run("start", id), h.stderr.String())
+	require.Equal(t, 2, h.supervisorStarts())
+
+	assert.False(t, h.eng.finishTask(id, old.Generation, 0), "the container belongs to the later start")
+	current, err := h.eng.loadContainer(id)
+	require.NoError(t, err)
+	assert.Equal(t, "10.4.0.5", current.IPv4, "its network is still attached")
+	assert.NotNil(t, current.CNIResult)
+
+	h.endTask()
+	require.ErrorIs(t, h.eng.startContainer(old, true), errStoppedByUser)
+	assert.Equal(t, 2, h.supervisorStarts(), "the restart it had waited for is not made")
+}
