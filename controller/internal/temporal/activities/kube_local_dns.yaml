@@ -42,8 +42,12 @@ metadata:
   labels:
     addonmanager.kubernetes.io/mode: Reconcile
 data:
+  # Each zone binds the -localip address, as node-cache does for the stub-domain
+  # zones it generates. CoreDNS listeners compete when explicit and implicit
+  # binds are mixed (https://coredns.io/plugins/bind/).
   Corefile: |
     cluster.local:53 {
+        bind 0.0.0.0
         errors
         cache {
                 success 9984 30
@@ -58,6 +62,7 @@ data:
         health :8080
         }
     in-addr.arpa:53 {
+        bind 0.0.0.0
         errors
         cache 30
         reload
@@ -68,6 +73,7 @@ data:
         prometheus :9253
         }
     ip6.arpa:53 {
+        bind 0.0.0.0
         errors
         cache 30
         reload
@@ -78,6 +84,7 @@ data:
         prometheus :9253
         }
     .:53 {
+        bind 0.0.0.0
         errors
         cache 30
         reload

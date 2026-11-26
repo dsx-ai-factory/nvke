@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -95,7 +96,6 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 		Name:      "node-local-dns",
 	}, &configMap))
 	require.Contains(t, configMap.Data["Corefile"], "health :8080")
-	require.NotContains(t, configMap.Data["Corefile"], "bind ")
 	require.NotContains(t, configMap.Data["Corefile"], "169.254.20.10")
 
 	var daemonSet appsv1.DaemonSet
@@ -120,6 +120,15 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 		"-setupinterface=false",
 		"-setupiptables=false",
 	}, daemonSet.Spec.Template.Spec.Containers[0].Args)
+	// node-cache binds the stub-domain zones it generates to -localip, so each
+	// base zone binds the same address.
+	localIP := daemonSet.Spec.Template.Spec.Containers[0].Args[1]
+	require.Equal(t, map[string]string{
+		"cluster.local:53": localIP,
+		"in-addr.arpa:53":  localIP,
+		"ip6.arpa:53":      localIP,
+		".:53":             localIP,
+	}, corefileZoneBinds(t, configMap.Data["Corefile"]))
 	require.Empty(t, daemonSet.Spec.Template.Spec.Containers[0].LivenessProbe.HTTPGet.Host)
 
 	containerSecurityContext := daemonSet.Spec.Template.Spec.Containers[0].SecurityContext
@@ -177,6 +186,30 @@ func TestInstallKubeLocalDNSAppliesManifestWithTenantClientProvider(t *testing.T
 	require.Equal(t, 2, provider.calls)
 	require.Equal(t, cluster, provider.cluster)
 	database.AssertExpectations(t)
+}
+
+// corefileZoneBinds maps each top-level zone of corefile to the addresses of
+// its bind directive, or "" when it has none.
+func corefileZoneBinds(t *testing.T, corefile string) map[string]string {
+	t.Helper()
+	binds := map[string]string{}
+	zone, depth := "", 0
+	for _, line := range strings.Split(corefile, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 0 || strings.HasPrefix(fields[0], "#") {
+			continue
+		}
+		if depth == 0 {
+			require.Equal(t, []string{fields[0], "{"}, fields, "zone header")
+			zone = fields[0]
+			binds[zone] = ""
+		} else if depth == 1 && fields[0] == "bind" {
+			binds[zone] = strings.Join(fields[1:], " ")
+		}
+		depth += strings.Count(line, "{") - strings.Count(line, "}")
+	}
+	require.Zero(t, depth, "unbalanced braces in the Corefile")
+	return binds
 }
 
 func TestInstallKubeLocalDNSLabelsCoreDNSDaemonSet(t *testing.T) {
