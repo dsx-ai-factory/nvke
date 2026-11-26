@@ -237,3 +237,25 @@ variable "efi_firmware_vars" {
     error_message = "The firmware variables path must not be empty."
   }
 }
+
+variable "ubuntu_snapshot" {
+  type        = string
+  default     = "20261119T000000Z"
+  description = "snapshot.ubuntu.com snapshot ID (YYYYMMDDTHHMMSSZ) the installer and provisioning take every Ubuntu package from: the one place the build pins Ubuntu (#2206)."
+
+  validation {
+    condition     = can(regex("^[0-9]{8}T[0-9]{6}Z$", var.ubuntu_snapshot))
+    error_message = "The ubuntu_snapshot value must be a snapshot ID such as 20261119T000000Z."
+  }
+}
+
+variable "ubuntu_snapshot_base_url" {
+  type        = string
+  default     = "https://snapshot.ubuntu.com/ubuntu"
+  description = "Base URL of the Ubuntu snapshot service, for a build network that reaches it through a mirror. One archive serves both architectures."
+
+  validation {
+    condition     = can(regex("^https?://[^ ]+[^/]$", var.ubuntu_snapshot_base_url))
+    error_message = "The ubuntu_snapshot_base_url value must be an http(s) URL without a trailing slash."
+  }
+}

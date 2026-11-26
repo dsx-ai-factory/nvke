@@ -34,6 +34,9 @@ locals {
   ssh_public_key      = trimspace(file(var.ssh_public_key_file))
   build_log_directory = var.build_log_directory == "" ? var.output_directory : var.build_log_directory
 
+  # Every Ubuntu source the installer and the installed system use (#2206).
+  ubuntu_snapshot_uri = "${var.ubuntu_snapshot_base_url}/${var.ubuntu_snapshot}"
+
   # The requested architecture is validated against the authenticated material
   # manifest before it selects QEMU, firmware, console, and guest packages.
   # ARM uses virt, AAVMF, the PL011 serial console, and an NVIDIA 64K-page

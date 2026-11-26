@@ -132,10 +132,11 @@ echo "boot-smoke: VM booted and completed cloud-init OK"
 timeout 30 ssh -i "${SSH_KEY}" -p "${SSH_PORT}" \
     -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
     -o ConnectTimeout=5 -o BatchMode=yes \
-    ubuntu@127.0.0.1 bash -s -- "${ROOT_FS_LABEL}" "${target_disk_bytes}" <<'EOF'
+    ubuntu@127.0.0.1 bash -s -- "${ROOT_FS_LABEL}" "${target_disk_bytes}" "${UBUNTU_SNAPSHOT_URI:-}" <<'EOF'
 set -euo pipefail
 root_fs_label=$1
 target_disk_bytes=$2
+expected_snapshot=${3:-}
 test "$(findmnt -n -o LABEL /)" = "${root_fs_label}"
 systemctl is-active lvm-growth-firstboot.service
 root_bytes=$(df -B1 --output=size / | tail -n 1 | tr -d ' ')
@@ -216,6 +217,31 @@ systemctl is-enabled openvswitch-switch.service
 # Enabled is not running: prove the daemons started and answer on their socket.
 systemctl is-active openvswitch-switch.service
 sudo ovs-vsctl show >/dev/null
+
+# BEGIN apt-sources-check (test_provision.BootSmokeSourcesTest runs this block)
+# After first boot, apt still reads an Ubuntu snapshot (exactly
+# UBUNTU_SNAPSHOT_URI when the caller sets it), the local repo and nothing else
+# (#2206). apt's own parser lists them, so they count exactly as apt counts them.
+apt_uris=$(python3 -c '
+import apt_pkg
+apt_pkg.init()
+sources = apt_pkg.SourceList()
+sources.read_main_list()
+print("\n".join(sorted({index.uri for index in sources.list})))')
+if [[ -n "${expected_snapshot}" ]]; then
+    snapshot=(-F -x -e "${expected_snapshot%/}/")
+else
+    snapshot=(-E -x -e 'https?://[^[:space:]]+/[0-9]{8}T[0-9]{6}Z/')
+fi
+foreign=$(grep -Fvx -e 'file:/usr/lib/nvke/debs/' <<<"${apt_uris}" | grep -v "${snapshot[@]}" || true)
+if [[ -n "${foreign}" ]]; then
+    echo "apt sources other than the Ubuntu snapshot and the local repo:" >&2
+    echo "${foreign}" >&2
+    exit 1
+fi
+grep -q "${snapshot[@]}" <<<"${apt_uris}" ||
+    { echo "no apt source is the Ubuntu snapshot ${expected_snapshot}; they are:" >&2; echo "${apt_uris}" >&2; exit 1; }
+# END apt-sources-check
 
 # The local apt repo has to offer what a node installs at cluster create.
 # These are staged rather than installed, so nothing above would notice them

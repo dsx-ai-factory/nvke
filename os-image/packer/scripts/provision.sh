@@ -9,6 +9,8 @@ set -euo pipefail
 SRC=/var/tmp/nke-image
 ROOT_FS_LABEL="${ROOT_FS_LABEL:?ROOT_FS_LABEL is required}"
 UBUNTU_SERIES="${UBUNTU_SERIES:?UBUNTU_SERIES is required}"
+# The one Ubuntu snapshot this image takes packages from (#2206).
+UBUNTU_SNAPSHOT_URI="${UBUNTU_SNAPSHOT_URI:?UBUNTU_SNAPSHOT_URI is required}"
 
 # autoinstall chose its release-specific packages from the caller's
 # ubuntu_series; refuse an image whose installed release disagrees.
@@ -99,7 +101,7 @@ sudo dpkg -i "${spire_agent_deb}"
 # runs against the host's OVS (values-nke.yaml: ovs-node false). It is baked in
 # because installing OVS on a live node disrupts host networking. The DOCA debs
 # come from the local repo staged above; their remaining dependencies come from
-# the Ubuntu archive.
+# the build's Ubuntu snapshot.
 sudo apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y doca-openvswitch-switch
 # DOCA adds ovs-exporter.service, which its postinst enables, wanted by
@@ -315,6 +317,11 @@ done
 echo "Cleaning up package cache and trimming filesystem..."
 sudo apt-get -y --purge autoremove
 sudo apt-get clean
+
+# Image tests: every Ubuntu package came from the snapshot (#2206). They read
+# the indexes removed below.
+python3 /var/tmp/test_ubuntu_snapshot.py
+sudo rm -f /var/tmp/test_ubuntu_snapshot.py
 
 # apt's downloaded package indexes and installed man/doc/translation files
 # are dead weight on a golden image that never runs `apt-get update`/install

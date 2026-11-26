@@ -43,6 +43,7 @@ source "qemu" "nvke-non-fde" {
       serial_console            = local.serial_console
       capture_apt_acquisitions  = var.capture_apt_acquisitions
       apt_capture_configuration = file("${local.project_root}/cidata/apt-capture.conf")
+      ubuntu_snapshot_uri       = local.ubuntu_snapshot_uri
     })
     "/meta-data" = "instance-id: nke-packer-non-fde\nlocal-hostname: nke-packer-non-fde\n"
   }
@@ -154,8 +155,14 @@ build {
     ]
   }
 
+  # Image tests that provision.sh runs against the image it builds (#2206).
+  provisioner "file" {
+    source      = "${local.project_root}/image-tests/test_ubuntu_snapshot.py"
+    destination = "/var/tmp/test_ubuntu_snapshot.py"
+  }
+
   provisioner "shell" {
-    environment_vars = ["ROOT_FS_LABEL=${var.root_fs_label}", "KERNEL_PACKAGE=${local.nvidia_kernel_package}", "UBUNTU_SERIES=${var.ubuntu_series}"]
+    environment_vars = ["ROOT_FS_LABEL=${var.root_fs_label}", "KERNEL_PACKAGE=${local.nvidia_kernel_package}", "UBUNTU_SERIES=${var.ubuntu_series}", "UBUNTU_SNAPSHOT_URI=${local.ubuntu_snapshot_uri}"]
     script           = "${local.project_root}/scripts/provision.sh"
   }
 

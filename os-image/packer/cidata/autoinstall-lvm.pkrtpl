@@ -56,10 +56,34 @@ autoinstall:
   ntp:
     enabled: true
 
-%{ if capture_apt_acquisitions ~}
-  # Capture real archives before APT cache cleanup. Repository metadata is
-  # checked after autoinstall, when python3-apt is available in the target.
+  # Every Ubuntu package comes from one snapshot (#2206); see
+  # os-image/docs/ubuntu-snapshot.md.
   apt:
+    preserve_sources_list: false
+    geoip: false
+    fallback: abort  # rather than install from the ISO alone
+    primary:
+      - arches: [default]
+        uri: ${ubuntu_snapshot_uri}
+    security:
+      - arches: [default]
+        uri: ${ubuntu_snapshot_uri}
+    # Explicit, so curtin cannot keep the ISO's live archive URI (24.04.5 arm64).
+    sources_list: |
+      Types: deb
+      URIs: $PRIMARY
+      Suites: $RELEASE $RELEASE-updates $RELEASE-backports
+      Components: main restricted universe multiverse
+      Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+      Types: deb
+      URIs: $SECURITY
+      Suites: $RELEASE-security
+      Components: main restricted universe multiverse
+      Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+%{ if capture_apt_acquisitions ~}
+    # Capture real archives before APT cache cleanup. Repository metadata is
+    # checked after autoinstall, when python3-apt is available in the target.
     conf: |
       ${indent(6, apt_capture_configuration)}
 %{ endif ~}
@@ -98,14 +122,9 @@ autoinstall:
     - socat
     - ethtool
 
-  # security, not all: "all" was tried and reverted -- it pulls in every
-  # linux-firmware-* split package (AMD/Intel/Broadcom/Qualcomm/Mellanox/
-  # Realtek graphics+wireless blobs, individually large), which took a
-  # confirmed FDE build from ~5-7min to 24m27s under real KVM, risking the
-  # ssh_timeout budget for an unrelated reason. Applied by curtin during
-  # install, before the late-commands below, so any kernel upgrade here is
-  # already in place when those regenerate the initramfs.
-  updates: security
+  # all, not security: the snapshot does not serve the ISO's superseded
+  # versions. Runs before the late-commands, so they see any new kernel.
+  updates: all
 
   late-commands:
     - curtin in-target --target=/target -- sh -c 'echo "ubuntu ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/ubuntu'

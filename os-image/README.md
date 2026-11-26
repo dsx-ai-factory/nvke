@@ -99,6 +99,14 @@ an explicit `NKE_PACKAGE_BUILDER=host` is rejected before packaging. An older
 host is fine, since older glibc runs on newer Ubuntu. `boot-smoke` also runs
 `nvke-agent -version` inside the guest as a backstop.
 
+Every Ubuntu package comes from one `snapshot.ubuntu.com` snapshot, set by
+`ubuntu_snapshot` in `packer/variables.pkr.hcl`, so two builds of the same
+commit install the same versions. The bake fails on any installed version the
+snapshot does not carry, and the image keeps the snapshot as its Ubuntu
+source. `UBUNTU_SNAPSHOT=<YYYYMMDDTHHMMSSZ>` overrides the ID for one build,
+and `UBUNTU_SNAPSHOT_BASE_URL` points the build at a mirror of the service. See
+[docs/ubuntu-snapshot.md](docs/ubuntu-snapshot.md).
+
 `SERIAL_CONSOLE` selects the UART the **installed** system sends kernel output
 to. Empty (the default) keeps the architecture default — `ttyS0` on amd64,
 `ttyAMA0` on arm64 — so Forge and tenant nodes are unaffected. CSC
@@ -300,6 +308,17 @@ the series, so `provision.sh` checks it against the installed system's
 `VERSION_ID` and fails the build on a mismatch. This is also a breaking change
 for direct Packer callers, which must now pass `-var ubuntu_series=<24.04|26.04>`.
 The Make targets derive it from `UBUNTU_RELEASE`.
+
+`ubuntu_snapshot` and `ubuntu_snapshot_base_url` are optional; their defaults
+pin the build to one `snapshot.ubuntu.com` snapshot
+([docs/ubuntu-snapshot.md](docs/ubuntu-snapshot.md)). The build VM therefore
+needs HTTPS access to `snapshot.ubuntu.com`, or to a mirror of it named by
+`ubuntu_snapshot_base_url`, rather than to `archive.ubuntu.com` and
+`ports.ubuntu.com`. When the snapshot is unreachable, the installer aborts and
+Packer reports only "Timeout waiting for SSH" once `ssh_timeout` (60 minutes
+by default) passes; the reason is in the installer's serial log. Provisioning
+uploads `image-tests/test_ubuntu_snapshot.py`, so a caller that stages the
+project must include it.
 
 The Make targets accept `SSH_PRIVATE_KEY_FILE` and `SSH_PUBLIC_KEY_FILE` as an
 optional pair. When both are set, they must be absolute paths. Make verifies

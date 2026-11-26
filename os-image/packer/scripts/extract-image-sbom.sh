@@ -12,8 +12,8 @@
 # The document describes the disk that was just built, not this source tree:
 # the package set is read out of the image's own dpkg database. A node runs
 # what curtin and provision.sh left on the root filesystem, which is not
-# derivable from the Packer templates -- the autoinstall pulls whatever the
-# Ubuntu archive is serving on build day, and provision.sh then purges a
+# derivable from the Packer templates -- the autoinstall takes the versions
+# the build's pinned Ubuntu snapshot carries, and provision.sh then purges a
 # kernel flavor and fifteen firmware packages back out again.
 #
 # Subject granularity is the OS package, not the file or the Go module. The
