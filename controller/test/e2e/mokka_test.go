@@ -95,11 +95,7 @@ func validateMokkaGPU(test *tenantTest) {
 	It("installs Mokka on the labeled nodes", func(ctx SpecContext) {
 		connect(ctx)
 		for _, profile := range profiles {
-			Expect(helmOnTenant(ctx, test, "upgrade", "--install", "nvml-mock-"+profile, mokkaChart,
-				"--version", mokkaChartVersion, "--namespace", mokkaNamespace, "--create-namespace",
-				"--set", "gpu.profile="+profile,
-				"--set-string", "nodeSelector."+strings.ReplaceAll(mokkaLabelKey, ".", `\.`)+"="+profile,
-			)).To(Succeed())
+			Expect(installMokkaProfile(ctx, test, profile)).To(Succeed())
 		}
 
 		Eventually(func(ctx context.Context) error {
@@ -171,26 +167,39 @@ func validateMokkaGPU(test *tenantTest) {
 	It("runs a pod per GPU model on that model's nodes, seeing the one GPU it requests", func(ctx SpecContext) {
 		connect(ctx)
 		for _, profile := range profiles {
-			model := mokkaProfiles[profile].product
-			pod := gpuPod(corev1.NamespaceDefault, probeImage{ref: defaultTenantGPUImage}, nil)
-			pod.Spec.NodeSelector = map[string]string{gpuProductLabel: model}
-			finished, message, err := kube.RunPodWithLogs(ctx, c, clientset, pod, gpuContainer, siteCreateTimeout)
-			deleteOnExit(ctx, c, pod)
-			Expect(err).NotTo(HaveOccurred())
-			var node corev1.Node
-			Expect(c.Get(ctx, client.ObjectKey{Name: finished.Spec.NodeName}, &node)).To(Succeed())
-			Expect(node.Labels).To(HaveKeyWithValue(mokkaLabelKey, profile), "a pod selecting %s ran on %s", model, node.Name)
-			var gpus []string
-			for _, line := range strings.Split(strings.TrimSpace(message), "\n") {
-				if strings.HasPrefix(line, "GPU ") {
-					gpus = append(gpus, line)
-				}
-			}
-			Expect(gpus).To(HaveLen(1), "nvidia-smi -L in a pod limited to one GPU listed:\n%s", message)
-			Expect(smiProduct(gpus[0])).To(Equal(model), "a pod selecting %s saw %s", model, gpus[0])
-			GinkgoLogr.Info("Mokka GPU workload", "node", node.Name, "result", gpus[0])
+			validateMokkaWorkload(ctx, c, clientset, profile)
 		}
 	}, NodeTimeout(time.Duration(len(mokkaProfiles))*siteCreateTimeout+time.Minute))
+}
+
+func installMokkaProfile(ctx context.Context, test *tenantTest, profile string) error {
+	return helmOnTenant(ctx, test, "upgrade", "--install", "nvml-mock-"+profile, mokkaChart,
+		"--version", mokkaChartVersion, "--namespace", mokkaNamespace, "--create-namespace",
+		"--set", "gpu.profile="+profile,
+		"--set-string", "nodeSelector."+strings.ReplaceAll(mokkaLabelKey, ".", `\.`)+"="+profile,
+	)
+}
+
+func validateMokkaWorkload(ctx context.Context, c client.Client, clientset kubernetes.Interface, profile string) {
+	GinkgoHelper()
+	model := mokkaProfiles[profile].product
+	pod := gpuPod(corev1.NamespaceDefault, probeImage{ref: defaultTenantGPUImage}, nil)
+	pod.Spec.NodeSelector = map[string]string{gpuProductLabel: model}
+	finished, message, err := kube.RunPodWithLogs(ctx, c, clientset, pod, gpuContainer, siteCreateTimeout)
+	deleteOnExit(ctx, c, pod)
+	Expect(err).NotTo(HaveOccurred())
+	var node corev1.Node
+	Expect(c.Get(ctx, client.ObjectKey{Name: finished.Spec.NodeName}, &node)).To(Succeed())
+	Expect(node.Labels).To(HaveKeyWithValue(mokkaLabelKey, profile), "a pod selecting %s ran on %s", model, node.Name)
+	var gpus []string
+	for _, line := range strings.Split(strings.TrimSpace(message), "\n") {
+		if strings.HasPrefix(line, "GPU ") {
+			gpus = append(gpus, line)
+		}
+	}
+	Expect(gpus).To(HaveLen(1), "nvidia-smi -L in a pod limited to one GPU listed:\n%s", message)
+	Expect(smiProduct(gpus[0])).To(Equal(model), "a pod selecting %s saw %s", model, gpus[0])
+	GinkgoLogr.Info("Mokka GPU workload", "node", node.Name, "result", gpus[0])
 }
 
 // helmOnTenant runs helm against the test's tenant as its admin, with a freshly
