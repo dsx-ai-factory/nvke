@@ -42,11 +42,15 @@ case "$1 $2" in
 esac
 `
 
-// fakeCNI is every CNI plugin: it records what it was given and answers an ADD.
+// fakeCNI is every CNI plugin: it records what it was given and answers an ADD. A DEL fails while $FAKE/fail-del exists.
 const fakeCNI = `#!/bin/sh
 name=$(basename "$0")
 echo "$name $CNI_COMMAND id=$CNI_CONTAINERID ifname=$CNI_IFNAME netns=$CNI_NETNS" >> "$FAKE/calls"
 cat > "$FAKE/cni-$name-$CNI_COMMAND.json"
+if [ "$CNI_COMMAND" = DEL ] && [ -e "$FAKE/fail-del" ]; then
+  echo '{"cniVersion":"1.0.0","code":100,"msg":"cannot release"}'
+  exit 1
+fi
 if [ "$CNI_COMMAND" = ADD ]; then
   echo '{"cniVersion":"1.0.0","interfaces":[{"name":"eth0","mac":"aa:bb:cc:dd:ee:ff","sandbox":"/run/netns/x"}],"ips":[{"address":"10.4.0.5/24"},{"address":"fc00:4::5/64"}]}'
 fi

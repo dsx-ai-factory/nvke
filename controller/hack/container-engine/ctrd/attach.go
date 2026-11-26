@@ -4,6 +4,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"net"
 	"os"
@@ -29,7 +30,7 @@ func (e *engine) attach(meta *containerMeta) error {
 	}
 	c := cniContainer{ID: meta.ID, Netns: netnsPath(meta.ID), Ports: meta.Publish}
 	// Whatever a crash or a reboot left behind: a lease or a namespace of this container.
-	_ = e.cniDel(network, c, nil)
+	_ = e.cniDel(network, c, meta.CNIResult)
 	_, _ = e.output("ip", "netns", "del", netnsName(meta.ID))
 	if _, err := e.output("ip", "netns", "add", netnsName(meta.ID)); err != nil {
 		return err
@@ -64,9 +65,18 @@ func (e *engine) attach(meta *containerMeta) error {
 	}
 	meta.LastAddresses = dedupe([]string{meta.IPv4, meta.IPv6})
 	if err := e.saveContainer(meta); err != nil {
-		return err
+		return e.rollbackAttach(meta, err)
 	}
-	return e.refreshHosts(meta.Network)
+	if err := e.refreshHosts(meta.Network); err != nil {
+		return e.rollbackAttach(meta, err)
+	}
+	return nil
+}
+
+// rollbackAttach undoes an attachment that could not be recorded or announced to
+// the peers. It returns cause, with whatever the rollback could not undo.
+func (e *engine) rollbackAttach(meta *containerMeta, cause error) error {
+	return errors.Join(cause, e.detach(meta))
 }
 
 func (e *engine) cniAddWithAddresses(network *networkMeta, c cniContainer, addresses []string) ([]byte, *cniResult, error) {
@@ -107,19 +117,25 @@ func (e *engine) configureNamespace(meta *containerMeta) error {
 }
 
 // detach removes the container from its network and frees its address. The
-// state lock is held. It does what it can and reports the first problem.
+// state lock is held. It does what it can and reports the first problem. When
+// the plugins fail to release the address, the container keeps their result
+// for the next detach, and is not listed as a peer meanwhile.
 func (e *engine) detach(meta *containerMeta) error {
 	if meta.Network == hostNetwork || meta.CNIResult == nil {
 		return nil
 	}
-	var firstErr error
+	var delErr error
 	if network, err := e.loadNetwork(meta.Network); err == nil {
-		firstErr = e.cniDel(network, cniContainer{ID: meta.ID, Netns: netnsPath(meta.ID), Ports: meta.Publish}, meta.CNIResult)
+		delErr = e.cniDel(network, cniContainer{ID: meta.ID, Netns: netnsPath(meta.ID), Ports: meta.Publish}, meta.CNIResult)
 	}
+	firstErr := delErr
 	if _, err := e.output("ip", "netns", "del", netnsName(meta.ID)); err != nil && firstErr == nil {
 		firstErr = err
 	}
-	meta.CNIResult, meta.IPv4, meta.IPv6, meta.MAC = nil, "", "", ""
+	if delErr == nil {
+		meta.CNIResult = nil
+	}
+	meta.IPv4, meta.IPv6, meta.MAC = "", "", ""
 	if err := e.saveContainer(meta); err != nil && firstErr == nil {
 		firstErr = err
 	}
