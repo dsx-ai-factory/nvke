@@ -71,6 +71,14 @@ through a systemd credential; sshd reads it from runtime memory, not the Nix
 store. All SSH and rsync connections require that pinned key, including the
 first boot and boots with a fresh disk. Keep the state directory private.
 
+### Enter the build tools
+
+On a Linux host, `nix develop ./os-image#package-build` opens a shell with the
+build tools the VM installs, for the host's own architecture, and sets `CC` to
+`nke-ubuntu-cc` (described below), so cgo builds such as the agent's do not
+link against the host's glibc. Both lists come from `nix/build-tools.nix`. The
+VM's base system and podman are not part of the shell.
+
 ## How the builder produces Ubuntu-compatible binaries
 
 The guest sets `CC` to `nke-ubuntu-cc`, a wrapper around the pinned nixpkgs

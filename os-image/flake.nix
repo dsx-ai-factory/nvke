@@ -117,6 +117,23 @@
         };
     in
     {
+      # The package build's tools, for working on it on a Linux host. The
+      # package-builder VM installs the same list.
+      devShells = nixpkgs.lib.genAttrs (builtins.attrValues guests) (
+        system:
+        let
+          pkgs = import nixpkgs { inherit system; };
+        in
+        {
+          package-build = pkgs.mkShellNoCC {
+            name = "nvke-package-build";
+            packages = import ./nix/build-tools.nix { inherit pkgs; };
+            # Otherwise cgo finds the host's gcc and links the agent against the
+            # host's glibc, which the image may not have.
+            CC = "nke-ubuntu-cc";
+          };
+        }
+      );
       packages = nixpkgs.lib.genAttrs hostSystems (
         hostSystem:
         (nixpkgs.lib.mapAttrs' (
