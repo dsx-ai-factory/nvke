@@ -1,0 +1,36 @@
+[
+  {
+    "uid": {
+      "type": "NVKE::Role",
+      "id": "cluster-viewer"
+    },
+    "attrs": {},
+    "parents": []
+  },
+  {
+    "uid": {
+      "type": "NVKE::Role",
+      "id": "cluster-editor"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NVKE::Role",
+        "id": "cluster-viewer"
+      }
+    ]
+  },
+  {
+    "uid": {
+      "type": "NVKE::Role",
+      "id": "cluster-admin"
+    },
+    "attrs": {},
+    "parents": [
+      {
+        "type": "NVKE::Role",
+        "id": "cluster-editor"
+      }
+    ]
+  }
+]

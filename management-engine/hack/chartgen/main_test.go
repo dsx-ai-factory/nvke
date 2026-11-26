@@ -236,7 +236,7 @@ func TestFilterManagerArgs(t *testing.T) {
 	}
 }
 
-// changeAPISources verifies that the API adapters retain workload and RBAC inputs.
+// changeAPISources changes API workloads, RBAC and policy assets for propagation checks.
 func changeAPISources(t *testing.T, omitEnv bool) {
 	t.Helper()
 	for _, surface := range []string{"tenant", "operator"} {
@@ -286,6 +286,15 @@ func changeAPISources(t *testing.T, omitEnv bool) {
 		if err := os.WriteFile(rolePath, data, 0o644); err != nil {
 			t.Fatal(err)
 		}
+		policyPath := filepath.Join("config/auth", surface, "policies.cedar")
+		data, err = os.ReadFile(policyPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data = append(data, []byte("\n// Source propagation check.\n")...)
+		if err := os.WriteFile(policyPath, data, 0o644); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 
@@ -310,6 +319,7 @@ func changeAPIDefaults(t *testing.T) {
 	}
 }
 
+// checkGeneratedAPIs verifies canonical API settings and auth assets survive chart generation.
 func checkGeneratedAPIs(t *testing.T, run func(string, ...string) []byte, omitEnv bool) {
 	t.Helper()
 	values := []byte(`{
@@ -364,6 +374,20 @@ func checkGeneratedAPIs(t *testing.T, run func(string, ...string) []byte, omitEn
 	for _, surface := range []string{"tenant", "operator"} {
 		if !strings.Contains(string(output), surface+"sourcechecks") {
 			t.Errorf("%s API source RBAC did not propagate", surface)
+		}
+		for _, name := range []string{"authentication.yaml", "authorization.yaml", "roles.json", "policies.cedar"} {
+			path := filepath.Join(surface, name)
+			want, err := os.ReadFile(filepath.Join("config/auth", path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := os.ReadFile(filepath.Join("chart/files/auth", path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("auth asset %s did not propagate", path)
+			}
 		}
 	}
 }
