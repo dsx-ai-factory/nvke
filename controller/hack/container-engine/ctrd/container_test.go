@@ -466,3 +466,31 @@ func TestHostNetworkContainerAndCp(t *testing.T) {
 	require.Equal(t, 1, h.run("cp", "bgp-containers:/etc/frr/frr.conf", "/tmp/x"))
 	assert.Contains(t, h.stderr.String(), "cp from a container")
 }
+
+func TestAnonymousVolumeIsFilledFromInsideTheImage(t *testing.T) {
+	for name, link := range map[string]func(root, host string) string{
+		"an absolute link": func(_, host string) string { return host },
+		"a relative link": func(root, host string) string {
+			// The snapshot is mounted in a directory of the root.
+			rel, err := filepath.Rel(filepath.Join(root, "mnt-x"), host)
+			require.NoError(t, err)
+			return rel
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHarness(t)
+			h.kindNetwork()
+			h.setFile("images", "docker.io/library/img:latest application/vnd.oci.image.manifest.v1+json sha256:aaa 1.0_MiB linux/arm64 -\n")
+			host := t.TempDir()
+			require.NoError(t, os.WriteFile(filepath.Join(host, "token"), []byte("x"), 0o644))
+			// The image has a symlink where the volume is.
+			h.setFile("mounts-hook", "rm -rf \"$1/var\"\nln -s "+link(h.root, host)+" \"$1/var\"\n")
+
+			require.Equal(t, 0, h.run("create", "--name", "c", "--network", "kind", "--volume", "/var", "--entrypoint", "/bin/sh", "img", "-c", "sleep"), h.stderr.String())
+			id := strings.TrimSpace(h.stdout.String())
+			entries, err := os.ReadDir(filepath.Join(h.root, "containers", id, "volumes", "0"))
+			require.NoError(t, err)
+			assert.Empty(t, entries, "nothing of the host is copied into the volume")
+		})
+	}
+}

@@ -408,10 +408,20 @@ func (e *engine) copyUp(meta *containerMeta) error {
 		return nil
 	}
 	return e.withSnapshot(meta.ID, func(mnt string) error {
+		root, err := os.OpenRoot(mnt)
+		if err != nil {
+			return err
+		}
+		defer root.Close()
 		for _, vol := range anonymous {
-			source := filepath.Join(mnt, vol.Destination)
-			if info, err := os.Stat(source); err == nil && info.IsDir() {
-				if _, err := e.output("cp", "-a", source+"/.", vol.Source); err != nil {
+			// The path is looked up inside the image: a symlink that leads out of it
+			// is not followed, so the copy cannot be made to read the host.
+			inImage := strings.TrimPrefix(filepath.Clean("/"+vol.Destination), "/")
+			if inImage == "" {
+				inImage = "."
+			}
+			if info, err := root.Stat(inImage); err == nil && info.IsDir() {
+				if _, err := e.output("cp", "-a", filepath.Join(mnt, inImage)+"/.", vol.Source); err != nil {
 					return err
 				}
 			}

@@ -37,7 +37,9 @@ case "$1 $2" in
   "images import") exit 0 ;;
   "containers info") echo '{"ID":"x","Labels":{"io.containerd.image.config.stop-signal":"SIGRTMIN+3"}}' ;;
   "containers create"|"containers delete") exit 0 ;;
-  "snapshots mounts") mkdir -p "$3/etc/frr" "$3/var/lib/dpkg"; echo status > "$3/var/lib/dpkg/status"; echo true ;;
+  "snapshots mounts") mkdir -p "$3/etc/frr" "$3/var/lib/dpkg"; echo status > "$3/var/lib/dpkg/status"
+    if [ -e "$FAKE/mounts-hook" ]; then sh "$FAKE/mounts-hook" "$3"; fi
+    echo true ;;
   *) echo "fake ctr: unexpected $*" >&2; exit 9 ;;
 esac
 `
