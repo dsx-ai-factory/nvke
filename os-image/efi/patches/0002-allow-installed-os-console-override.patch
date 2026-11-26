@@ -1,11 +1,10 @@
 diff --git a/pxe/common_files/disk_imaging.sh b/pxe/common_files/disk_imaging.sh
+index 1f3466f..ab72acf 100755
 --- a/pxe/common_files/disk_imaging.sh
 +++ b/pxe/common_files/disk_imaging.sh
-@@ -36,0 +37 @@
+@@ -36,0 +37 @@ serial_port_num=
 +os_console=
-@@ -899,0 +901,12 @@
-+}
-+
+@@ -901,0 +903,37 @@ function add_testing_user() {
 +# Apply console settings after image-provided GRUB defaults.
 +function write_console_dropin() {
 +	local root="$1"
@@ -13,23 +12,51 @@ diff --git a/pxe/common_files/disk_imaging.sh b/pxe/common_files/disk_imaging.sh
 +	mkdir -p "$root/etc/default/grub.d" || return 1
 +	cat > "$root/etc/default/grub.d/zz-nke-imager-console.cfg" <<EOF
 +# Installed by qcow-imager; regenerate grub.cfg after changing this file.
-+GRUB_CMDLINE_LINUX="\$(printf '%s\n' "\${GRUB_CMDLINE_LINUX:-}" | sed -E 's/(^|[[:space:]])console=[^[:space:]]+/\\1console=$os_console,115200/g; /(^|[[:space:]])console=/!s/$/ console=$os_console,115200/')"
-+GRUB_CMDLINE_LINUX_DEFAULT="\$(printf '%s\n' "\${GRUB_CMDLINE_LINUX_DEFAULT:-}" | sed -E 's/(^|[[:space:]])console=[^[:space:]]+/\\1console=$os_console,115200/g')"
++nke_imager_console() {
++	printf '%s\n' "\$1" | awk -v console="$os_console,115200" -v append="\$2" '
++	{
++		rest = \$0
++		found = 0
++		# Keep quoted values within their argument, including embedded spaces.
++		while (match(rest, /^([[:space:]]+|([^[:space:]"]|"[^"]*")+)/)) {
++			arg = substr(rest, 1, RLENGTH)
++			rest = substr(rest, RLENGTH + 1)
++			value = arg
++			sub(/^"/, "", value)
++			sub(/"$/, "", value)
++			sub(/^console="/, "console=", value)
++			if (value ~ /^console=tty(S|AMA)[0-9]+(,[^"]*)?$/) {
++				arg = "console=" console
++				found = 1
++			}
++			printf "%s", arg
++		}
++		printf "%s", rest
++		if (append && !found) printf " console=%s", console
++		printf "\n"
++	}'
++}
++GRUB_CMDLINE_LINUX="\$(nke_imager_console "\${GRUB_CMDLINE_LINUX:-}" 1)"
++GRUB_CMDLINE_LINUX_DEFAULT="\$(nke_imager_console "\${GRUB_CMDLINE_LINUX_DEFAULT:-}" 0)"
++unset -f nke_imager_console
 +EOF
-@@ -975,0 +989 @@
++}
++
+@@ -975,0 +1014 @@ function modify_grub_template() {
 +	write_console_dropin /mnt
-@@ -991,0 +1006 @@
+@@ -991,0 +1031 @@ function main() {
 +		case "$i" in os_console=*) os_console=${i#os_console=} ;; esac
-@@ -1060,0 +1076,5 @@
+@@ -1060,0 +1101,5 @@ function main() {
 +	if [[ -n "$os_console" && ! "$os_console" =~ ^tty(S|AMA)[0-9]+$ ]]; then
 +		echo "os_console must be a serial device such as ttyS1 or ttyAMA0" >&2
 +		return 1
 +	fi
 +
 diff --git a/pxe/common_files/disk_imaging_test.sh b/pxe/common_files/disk_imaging_test.sh
+index 84ec492..d066777 100644
 --- a/pxe/common_files/disk_imaging_test.sh
 +++ b/pxe/common_files/disk_imaging_test.sh
-@@ -223 +223,37 @@
+@@ -223 +223,53 @@ assert_log_contains \
 -echo "disk imaging identifier tests passed"
 +echo "console override after image defaults"
 +console_root="$temp_dir/console-root"
@@ -56,7 +83,7 @@ diff --git a/pxe/common_files/disk_imaging_test.sh b/pxe/common_files/disk_imagi
 +		printf "%s\n" "$GRUB_CMDLINE_LINUX" "$GRUB_CMDLINE_LINUX_DEFAULT" "$GRUB_TERMINAL" "$GRUB_SERIAL_COMMAND"
 +	' sh "$console_root")
 +	expected=$(printf '%s\n' \
-+		"root=/dev/mapper/vg-root iommu=pt console=$os_console,115200 console=$os_console,115200" \
++		"root=/dev/mapper/vg-root iommu=pt console=tty0 console=$os_console,115200" \
 +		"quiet console=$os_console,115200 rd.luks.uuid=example-root" console 'serial --unit=0')
 +	assert_eq "console precedence and retained settings" "$expected" "$settings"
 +done
@@ -66,5 +93,21 @@ diff --git a/pxe/common_files/disk_imaging_test.sh b/pxe/common_files/disk_imagi
 +echo 'GRUB_CMDLINE_LINUX="root=UUID=example-root quiet"' > "$console_root/etc/default/grub.d/99-console.cfg"
 +settings=$(sh -c '. "$1/etc/default/grub.d/99-console.cfg"; . "$1/etc/default/grub.d/zz-nke-imager-console.cfg"; printf "%s" "$GRUB_CMDLINE_LINUX"' sh "$console_root")
 +assert_eq "console appended when absent" 'root=UUID=example-root quiet console=ttyAMA0,115200' "$settings"
++
++# A VGA-only configuration still needs the selected serial console appended.
++echo 'GRUB_CMDLINE_LINUX="console=tty0 quiet"' > "$console_root/etc/default/grub.d/99-console.cfg"
++settings=$(sh -c '. "$1/etc/default/grub.d/99-console.cfg"; . "$1/etc/default/grub.d/zz-nke-imager-console.cfg"; printf "%s" "$GRUB_CMDLINE_LINUX"' sh "$console_root")
++assert_eq "VGA console retained" 'console=tty0 quiet console=ttyAMA0,115200' "$settings"
++
++# Text inside another parameter must remain unchanged, including its quotes.
++cat > "$console_root/etc/default/grub.d/99-console.cfg" <<'CFG'
++GRUB_CMDLINE_LINUX='systemd.setenv="MESSAGE=use console=ttyS0" console=tty0 console="ttyS0,115200"'
++GRUB_CMDLINE_LINUX_DEFAULT='quiet systemd.setenv="MESSAGE=use console=ttyS0" console=ttyS0,9600'
++CFG
++settings=$(sh -c '. "$1/etc/default/grub.d/99-console.cfg"; . "$1/etc/default/grub.d/zz-nke-imager-console.cfg"; printf "%s\n" "$GRUB_CMDLINE_LINUX" "$GRUB_CMDLINE_LINUX_DEFAULT"' sh "$console_root")
++expected=$(printf '%s\n' \
++	'systemd.setenv="MESSAGE=use console=ttyS0" console=tty0 console=ttyAMA0,115200' \
++	'quiet systemd.setenv="MESSAGE=use console=ttyS0" console=ttyAMA0,115200')
++assert_eq "quoted parameter retained" "$expected" "$settings"
 +
 +echo "disk imaging tests passed"

@@ -39,9 +39,9 @@ Add `os_console=ttyS1` (or another `ttyS<N>` / `ttyAMA<N>` device) to the
 iPXE chain arguments to select the installed kernel's serial console at 115200
 baud. The imager writes a final GRUB drop-in before regenerating `grub.cfg`,
 so image defaults such as `99-console.cfg` cannot reset that selection.
-Other kernel arguments are preserved, and the running imager's console is
-unchanged. Without `os_console`, existing console configuration behavior is
-unchanged. The override requires the existing `update_grub_template=yes` and
+Other kernel arguments, including the VGA console and quoted parameter values,
+are preserved. The running imager's console is unchanged. Without `os_console`,
+existing console configuration behavior is unchanged. The override requires the existing `update_grub_template=yes` and
 `update_grub_cfg=yes` settings, both enabled by default.
 
 ## What this does not build
