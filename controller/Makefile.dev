@@ -438,6 +438,8 @@ clusterctl-arch = $(if $(filter aarch64 arm64,$(shell uname -m)),arm64,amd64)
 KIND_NERDCTL_CONFIG := $(CURDIR)/.local/kind-nerdctl.yaml
 kind-cluster-config = $(if $(filter docker,$(CONTAINER_CLI)),$(KIND_CLUSTER_CONFIG),$(KIND_NERDCTL_CONFIG))
 
+# Phony, so that a change of KIND_CLUSTER_CONFIG to an older file is picked up too.
+.PHONY: $(KIND_NERDCTL_CONFIG)
 $(KIND_NERDCTL_CONFIG): $(KIND_CLUSTER_CONFIG)
 	@mkdir -p $(dir $@)
 	@sed '/\/var\/run\/docker\.sock/d' $< > $@
