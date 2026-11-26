@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v2
+name: nvke-storage
+description: A default StorageClass for a cluster that has none — Rancher's local-path-provisioner, vendored
+type: application
+version: 0.1.0
+appVersion: "v0.0.31"
+keywords:
+  - nvke
+  - storage
+home: https://github.com/dsx-ai-factory/nvke
+sources:
+  - https://github.com/dsx-ai-factory/nvke
+  - https://github.com/rancher/local-path-provisioner
+
+dependencies:
+  # Vendored, not fetched. Rancher publishes no Helm repository, and the chart
+  # lives inside the provisioner's git repository, which a Helm dependency
+  # cannot name. Third-party republishes exist; this chart does not depend on
+  # one. See vendor/README.md and hack/sync-chart.sh.
+  - name: local-path-provisioner
+    version: "0.0.31"
+    repository: "file://./vendor/local-path-provisioner"
+    condition: local-path-provisioner.enabled

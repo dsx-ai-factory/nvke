@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# What a kind cluster changes. Layer over values.yaml:
+#
+#   helm upgrade --install nvke-spire deploy/charts/spire \
+#     --namespace spire-server --create-namespace \
+#     --values deploy/charts/spire/values.yaml \
+#     --values deploy/charts/spire/values-kind.yaml
+#
+# The tpmDirect node attestor stays ON. A kind node has no TPM, but nothing on
+# a kind cluster attests by TPM: the seed's own workloads attest with k8sPSAT,
+# and the TPM allowlist is only read for nodes the NVKE controller provisions.
+# Leaving it on keeps the configuration identical to the CAPD end-to-end lane,
+# which is the one known to come up on kind.
+
+spire:
+  spiffe-oidc-discovery-provider:
+    # One node, so a second replica only sits Pending.
+    replicaCount: 1

@@ -1,0 +1,50 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+{{- if .Values.oidcUpstreamCA.create }}
+{{- $ca := .Values.oidcUpstreamCA }}
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $ca.bootstrapIssuerName }}
+  namespace: {{ .Values.namespaces.server }}
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $ca.name }}
+  namespace: {{ .Values.namespaces.server }}
+  annotations:
+    # Keep the CA across an uninstall. Deleting it invalidates the trust anchor
+    # every tenant cluster has already embedded.
+    helm.sh/resource-policy: keep
+spec:
+  isCA: true
+  commonName: {{ $ca.commonName | quote }}
+  subject:
+    organizations: ["NVIDIA"]
+    organizationalUnits: ["NVKE"]
+  duration: {{ $ca.duration }}
+  renewBefore: {{ $ca.renewBefore }}
+  secretName: {{ $ca.name }}
+  privateKey:
+    algorithm: {{ $ca.privateKey.algorithm }}
+    size: {{ $ca.privateKey.size }}
+  issuerRef:
+    name: {{ $ca.bootstrapIssuerName }}
+    kind: Issuer
+    group: cert-manager.io
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $ca.issuerName }}
+  namespace: {{ .Values.namespaces.server }}
+spec:
+  ca:
+    secretName: {{ $ca.name }}
+{{- end }}

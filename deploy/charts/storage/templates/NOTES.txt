@@ -1,0 +1,24 @@
+{{- $lpp := index .Values "local-path-provisioner" }}
+{{- if $lpp.enabled }}
+local-path-provisioner is installed in {{ .Release.Namespace }}.
+{{- if $lpp.storageClass.create }}
+
+  StorageClass   {{ $lpp.storageClass.name }}{{ if $lpp.storageClass.defaultClass }}  (the cluster default){{ end }}
+  Binding        {{ $lpp.storageClass.volumeBindingMode }}
+  Reclaim        {{ $lpp.storageClass.reclaimPolicy }}
+{{- end }}
+
+Check it:
+
+  kubectl get storageclass
+  kubectl -n {{ .Release.Namespace }} rollout status deployment/local-path-provisioner
+
+Exactly one StorageClass should carry
+storageclass.kubernetes.io/is-default-class: "true".
+
+LOCAL STORAGE IS A LAB DEFAULT. A volume is a directory on one node. It does
+not move, does not replicate, and does not survive the node. Install the CSI
+driver for your hardware instead on a cluster that has real storage.
+{{- else }}
+No storage is installed: local-path-provisioner.enabled is false.
+{{- end }}

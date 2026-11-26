@@ -1,0 +1,23 @@
+{{- /*
+SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+SPDX-License-Identifier: Apache-2.0
+*/ -}}
+
+{{- /*
+Two Temporals in one release land in one namespace and take each other's
+Service names. Temporal's chart has no namespaceOverride, so there is no way
+to separate them from inside a single release.
+*/ -}}
+{{- if and .Values.nvke.enabled (dig "temporal" "enabled" false (index .Values "nico-prereqs")) }}
+{{- if dig "temporal" "enabled" true .Values.nvke }}
+{{- fail "nvke.temporal.enabled and nico-prereqs.temporal.enabled are both true. Temporal's chart has no namespaceOverride, so two of them in one release land in the same namespace and take each other's Service names. Give NICo a Temporal of its own by installing nico-prereqs as a separate release, in its own namespace." }}
+{{- end }}
+{{- end }}
+
+{{- /*
+NICo needs the prerequisites. They are a separate chart so the sequenced
+install keeps working, but in this release NICo cannot come up without them.
+*/ -}}
+{{- if and (index .Values "nvke-nico").enabled (not (index .Values "nico-prereqs").enabled) }}
+{{- fail "nvke-nico.enabled is true but nico-prereqs.enabled is false. NICo reads a database, a credentials Secret and a certificate issuer that nico-prereqs creates; without them its migration Job cannot start. Enable nico-prereqs, or point NICo at an existing database with nico-prereqs.postgresql.enabled=false." }}
+{{- end }}

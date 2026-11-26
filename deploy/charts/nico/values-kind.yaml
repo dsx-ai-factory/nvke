@@ -1,0 +1,11 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A kind cluster changes nothing about NICo itself — everything kind-specific
+# is in ../nico-prereqs/values-kind.yaml, which is where the database, the
+# certificate issuer and the Vault secrets live.
+#
+# NICo's images are not public. Supply a repository and tag this cluster can
+# pull, and load them into the kind node first if they are not reachable:
+#   kind load docker-image <image> --name <cluster>
+{}

@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "local-path-provisioner.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+{{ include "local-path-provisioner.labels" . | indent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "local-path-provisioner.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+{{ include "local-path-provisioner.labels" . | indent 8 }}
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      serviceAccountName: {{ template "local-path-provisioner.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+        {{- if .Values.privateRegistry.registryUrl }}
+          image: "{{ .Values.privateRegistry.registryUrl }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        {{- else }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+        {{- end }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - local-path-provisioner
+            - --debug
+            - start
+            - --config
+            - /etc/config/config.json
+            - --service-account-name
+            - {{ template "local-path-provisioner.serviceAccountName" . }}
+            - --provisioner-name
+            - {{ template "local-path-provisioner.provisionerName" . }}
+            - --helper-image
+          {{- if .Values.privateRegistry.registryUrl }}
+            - "{{ .Values.privateRegistry.registryUrl }}/{{ .Values.helperImage.repository }}:{{ .Values.helperImage.tag }}"
+          {{- else }}
+            - "{{ .Values.helperImage.repository }}:{{ .Values.helperImage.tag }}"
+          {{- end }}
+            - --configmap-name
+            - {{ .Values.configmap.name }}
+          {{- if .Values.workerThreads }}
+            - --worker-threads
+            - {{ .Values.workerThreads | quote }}
+          {{- end }}
+          {{- if .Values.provisioningRetryCount }}
+            - --provisioning-retry-count
+            - {{ .Values.provisioningRetryCount | quote }}
+          {{- end }}
+          {{- if .Values.deletionRetryCount }}
+            - --deletion-retry-count
+            - {{ .Values.deletionRetryCount | quote }}
+          {{- end }}
+          volumeMounts:
+            - name: config-volume
+              mountPath: /etc/config/
+          env:
+            - name: POD_NAMESPACE
+              value: {{ .Release.Namespace }}
+            - name: CONFIG_MOUNT_PATH
+              value: /etc/config/
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      volumes:
+        - name: config-volume
+          configMap:
+            name: {{ .Values.configmap.name }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}

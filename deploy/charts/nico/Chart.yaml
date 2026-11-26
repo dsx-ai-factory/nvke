@@ -1,0 +1,36 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+apiVersion: v2
+name: nico
+description: NICo, installed into a namespace ../nico-prereqs has already prepared
+type: application
+version: 0.1.0
+appVersion: "v2025.12.30-rc1"
+keywords:
+  - nvke
+  - nico
+  - bare-metal
+home: https://github.com/dsx-ai-factory/nvke
+sources:
+  - https://github.com/dsx-ai-factory/nvke
+
+# INSTALL ../nico-prereqs FIRST, INTO THIS NAMESPACE, AND WAIT FOR IT.
+#
+# The NICo chart runs its config ConfigMap and its schema migration Job as
+# pre-install,pre-upgrade hooks. Helm applies hooks before every regular
+# manifest in their own release, so the namespace, the database and the
+# credentials Secret cannot be here -- they would be created after the hooks
+# that read them. templates/validate.yaml refuses the install when they are
+# missing.
+
+dependencies:
+  # The NICo umbrella chart, by local repository ALIAS rather than by URL.
+  # NICo is published separately from NVKE, so this chart names no registry --
+  # add the repository under the name `nico` once:
+  #
+  #   helm repo add nico <your NICo chart repository>
+  - name: nico
+    version: "0.1.1"
+    repository: "@nico"
+    condition: nico.enabled

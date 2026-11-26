@@ -1,0 +1,68 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# A default StorageClass for a cluster that has none.
+#
+# PostgreSQL takes a PVC, in the nvke chart and again in the nico chart, and
+# without a default StorageClass both sit Pending forever. A bare cluster ships
+# none. kind, and any cluster whose hardware already has a CSI driver, does —
+# which is why this chart is off by default in the umbrella.
+#
+# LOCAL STORAGE IS A LAB DEFAULT, NOT A SITE ONE. local-path binds a PVC to a
+# directory on one node. The data does not move, does not replicate, and does
+# not survive the node. A cluster with real storage should install that CSI
+# driver instead and leave this off. The deploy path makes the same choice for
+# the same reason: it installs local-path for the local site only, and treats
+# the StorageClass as a property of the hardware rather than of NVKE.
+
+# ---------------------------------------------------------------------------
+# Guard
+# ---------------------------------------------------------------------------
+# Two default StorageClasses is not a working configuration: Kubernetes has no
+# rule for choosing between them, and `check-site.sh` fails a cluster that has
+# more than one. templates/validate.yaml looks for an existing default and
+# refuses to add a second.
+#
+# The lookup reads the live cluster, so it finds nothing during `helm template`
+# or `--dry-run`. The guard protects a real install; it cannot protect a render.
+#
+# Set this to false to install anyway, when the existing default is one you
+# intend to replace.
+refuseSecondDefaultClass: true
+
+# ---------------------------------------------------------------------------
+# Rancher's local-path-provisioner
+# ---------------------------------------------------------------------------
+# Its own values, under its own key. The chart takes its namespace from the
+# release namespace with no override, so inside an umbrella the provisioner
+# runs in the umbrella's namespace. That is harmless: the StorageClass is
+# cluster-scoped, and the provisioner does not care where it runs.
+local-path-provisioner:
+  enabled: true
+
+  storageClass:
+    create: true
+    # The name the deploy path's local site uses, and the name
+    # `nvke-deploy-local.sh` annotates as default. Keeping it identical means a
+    # cluster cannot end up with two differently named local classes.
+    name: local-path
+    # The point of this chart. Without it the class is created and nothing
+    # selects it, so every PVC still sits Pending.
+    defaultClass: true
+    # Delete, matching the provisioner's own default: a lab class that leaks
+    # directories on a node is worse than one that cleans up. A cluster that
+    # wants the data to outlive the PVC sets Retain.
+    reclaimPolicy: Delete
+    # WaitForFirstConsumer, so the volume is placed on the node the pod is
+    # scheduled to. Immediate binding on a multi-node cluster pins the PVC to a
+    # node before the scheduler has chosen one, and the pod then cannot be
+    # scheduled anywhere else.
+    volumeBindingMode: WaitForFirstConsumer
+
+  # Where the volumes live on the node. The provisioner's own default, restated
+  # because it is the one value a site is most likely to need to change: this
+  # path must be on a filesystem with room for every PVC the cluster creates.
+  nodePathMap:
+    - node: DEFAULT_PATH_FOR_NON_LISTED_NODES
+      paths:
+        - /opt/local-path-provisioner

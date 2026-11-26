@@ -1,0 +1,307 @@
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# Defaults for a real cluster. For a kind cluster install with
+# `--values values-kind.yaml` as well: a kind node has no TPM, so the attestor
+# this file selects cannot work there.
+#
+# Everything under `spire:` is handed to the upstream SPIFFE chart. Everything
+# under `global:` reaches that chart AND its four subcharts, which is how the
+# upstream chart expects release-wide settings to arrive.
+
+# ---------------------------------------------------------------------------
+# Release-wide settings
+# ---------------------------------------------------------------------------
+global:
+  spire:
+    # recommendations is required for the two-namespace layout: without it a
+    # subchart carrying no namespaceOverride falls through to the RELEASE
+    # namespace rather than spire-system.
+    recommendations:
+      enabled: true
+      # strictMode rejects the placeholder trust domain below. A cluster that
+      # sets a real trust domain should turn this back on.
+      strictMode: false
+
+    # PLACEHOLDER. Override together with spire.spire-server.adminIDs below —
+    # they must agree, because an adminID whose trust domain is not the
+    # server's matches nothing and the NVKE controller then silently has no
+    # admin access to SPIRE.
+    trustDomain: example.org
+
+    # The issuer the OIDC discovery provider publishes and tenant API servers
+    # string-compare against the JWT `iss` claim.
+    jwtIssuer: "https://nke.site-controller.internal"
+
+  # The upstream chart's install/upgrade hooks flip the controller manager's
+  # validating webhook to Ignore for the duration of an install and back
+  # afterwards. This chart sets failurePolicy: Ignore outright instead (see
+  # spire.spire-server.controllerManager below), which reaches the same place
+  # with no hook Jobs, RBAC or extra image.
+  installAndUpgradeHooks:
+    enabled: false
+  deleteHooks:
+    enabled: false
+
+# ---------------------------------------------------------------------------
+# Namespaces
+# ---------------------------------------------------------------------------
+# helm --create-namespace creates the release namespace only, and the SPIRE
+# subcharts deliberately land in two others. Turn this off where something
+# else owns them — a cluster installer, or GitOps.
+namespaces:
+  create: true
+  # Where spire-server, the controller manager and the OIDC discovery provider
+  # land. PodSecurity restricted: none of them needs more.
+  server: spire-server
+  # Where spire-agent and the SPIFFE CSI driver land. PodSecurity privileged:
+  # both need hostNetwork, hostPID and privileged containers, which restricted
+  # rejects outright.
+  system: spire-system
+
+# ---------------------------------------------------------------------------
+# The OIDC upstream CA chain
+# ---------------------------------------------------------------------------
+# cert-manager generates a CA private key inside the cluster from a one-time
+# SelfSigned Issuer. The resulting Secret is then consumed by a namespace-scoped
+# CA Issuer that signs the OIDC discovery provider's leaf serving certificate.
+#
+# Namespace-scoped on purpose: a ClusterIssuer of type `ca` would read from
+# cert-manager's --cluster-resource-namespace instead.
+#
+# Needs cert-manager in the cluster. It is NOT installed here — a seed gets it
+# from `clusterctl init`.
+oidcUpstreamCA:
+  create: true
+  # The Certificate, and the Secret it writes. spire.spiffe-oidc-discovery-provider
+  # signs its leaf with the Issuer of this name, and the NVKE controller reads
+  # the CA from the Secret of this name.
+  name: oidc-provider-upstream-ca
+  issuerName: nvke-oidc-upstream-ca
+  bootstrapIssuerName: oidc-ca-bootstrap
+  commonName: "NVKE OIDC Upstream CA"
+  # 10 years. renewBefore is set so the auto-rotation trigger lands ~30 days
+  # before notAfter — that is, never during normal operation.
+  #
+  # Do not mutate this Certificate's spec after install. Any change to the
+  # subject, key, SANs or duration forces a re-issue with a new private key,
+  # which invalidates the trust anchor every tenant has already embedded.
+  duration: 87600h
+  renewBefore: 720h
+  privateKey:
+    algorithm: ECDSA
+    size: 384
+
+# ---------------------------------------------------------------------------
+# NodePorts
+# ---------------------------------------------------------------------------
+# A node agent dials the SPIRE server before the cluster has any ingress, and a
+# tenant kube-apiserver fetches the OIDC discovery document the same way. Both
+# reach a node address, so both need a NodePort.
+#
+# The server port must match the NVKE controller's spiffe.spire.serverPort.
+nodePorts:
+  server:
+    create: true
+    name: spire-server-np
+    nodePort: 30440
+  oidcProvider:
+    create: true
+    name: spire-oidc-provider-np
+    nodePort: 30443
+
+# ---------------------------------------------------------------------------
+# The TPM EK thumbprint allowlist
+# ---------------------------------------------------------------------------
+# Created EMPTY and left that way. A cluster enrols nodes by TPM EK thumbprint
+# and mints no join tokens, and a node's thumbprint cannot be known before the
+# node exists — so there is nothing to put here at install time.
+#
+# The NVKE controller fills it, nobody edits it:
+#
+#   CAPNICo sets NicoMachine.status.tpmEkPubHash
+#     -> the controller writes a ClusterStaticEntry for that hash
+#     -> the controller derives this ConfigMap from those entries
+#     -> SPIRE server's tpmDirect attestor reads it
+#
+# A `helm upgrade` resets the data to empty. That is harmless: the
+# ClusterStaticEntries are the source of truth and the controller watches this
+# ConfigMap to repair exactly that drift.
+tpmPubhashes:
+  create: true
+  name: tpm-pubhashes
+
+# ---------------------------------------------------------------------------
+# The upstream SPIFFE chart
+# ---------------------------------------------------------------------------
+spire:
+  enabled: true
+
+  # Each SPIRE subchart resolves its namespace as: its own namespaceOverride,
+  # else the global.spire.namespaces.* layout (consulted only when
+  # global.spire.recommendations.enabled is true), else the release namespace.
+  # The overrides below put the server side in spire-server from a release
+  # whose namespace is something else entirely.
+  #
+  # spire-agent and spiffe-csi-driver deliberately carry NO namespaceOverride:
+  # they fall through to spire-system under the recommended layout. Pinning
+  # them beside the server fails, because both need hostNetwork, hostPID and
+  # privileged containers and the server namespace is PodSecurity restricted.
+  spiffe-csi-driver: {}
+
+  spire-agent:
+    serviceAccount:
+      # Pinned. The chart derives it as "<Release.Name>-agent" otherwise —
+      # fullnameOverride does NOT affect it — and the server's PSAT allowlist
+      # has to name it exactly. Pinning here keeps that allowlist correct
+      # whatever the release is called.
+      name: spire-agent
+    server:
+      # Where the agent DIALS the server, which is a separate key from where
+      # the agent's own resources land. Without it the agent derives
+      # "<release>-server.<release namespace>" and dials a namespace with no
+      # server Service in it. Attestation then fails with "no children to pick
+      # from" and the DaemonSet never becomes Available.
+      namespaceOverride: spire-server
+    workloadAttestors:
+      k8s:
+        # Already the chart default at 0.30.1. Restated so an upstream change
+        # of heart shows up here as a conflict rather than silently removing
+        # Kubernetes workload attestation.
+        enabled: true
+        # Every NVKE control-plane node runs Kata, and a Kata workload runs
+        # inside a VM where the agent cannot walk the caller's cgroup back to a
+        # container ID. Container-scoped selectors come back empty and the
+        # workload gets no SVID at all. Pod-scoped selectors still resolve, and
+        # every identity below registers on pod UID.
+        #
+        # The cost is granularity: two containers in one pod become
+        # indistinguishable to SPIRE. Nothing here registers that finely.
+        disableContainerSelectors: true
+
+  spire-server:
+    namespaceOverride: spire-server
+
+    bundlePublisher:
+      k8sConfigMap:
+        # The bundle ConfigMap the agent mounts has to land where the agent
+        # runs, or the agent sits at Init:0/2 forever.
+        namespace: spire-system
+
+    # PLACEHOLDER TRUST DOMAIN — override together with global.spire.trustDomain
+    # above, in the same values file. The path is a constant:
+    # /nvke-service/nke-controller, matching the nvke-service ClusterSPIFFEID
+    # below and the prefixes the node agent admits.
+    adminIDs:
+      - spiffe://example.org/nvke-service/nke-controller
+
+    controllerManager:
+      # The chart applies its ClusterSPIFFEID objects as part of the same
+      # release that creates the controller manager serving the webhook that
+      # validates them. On a fresh install the API server therefore calls a
+      # webhook that is not listening yet, and with the chart's default
+      # failurePolicy of Fail that is a hard error and the whole install rolls
+      # back:
+      #
+      #   failed calling webhook "vclusterspiffeid.kb.io": ... connection refused
+      #
+      # It is a race, so it passes on a warm machine and fails on a cold CI
+      # runner — the worst way for it to behave.
+      validatingWebhookConfiguration:
+        failurePolicy: Ignore
+      className: spire-mgmt-spire
+      identities:
+        clusterSPIFFEIDs:
+          default:
+            # NVKE workloads use the dedicated nvke-service identity below.
+            # Keep the chart's fallback identity from racing it.
+            namespaceSelector:
+              matchExpressions:
+                - key: kubernetes.io/metadata.name
+                  operator: NotIn
+                  values:
+                    - nke-controller
+
+          # The identity NVKE's own services present.
+          #
+          # type: raw is required, not cosmetic. Every other type makes the
+          # chart append its own expression to namespaceSelector and merge a
+          # podSelector in; raw is the one branch that passes these through
+          # verbatim.
+          #
+          # The emitted CR is named <release namespace>-<release>-nvke-service
+          # rather than nvke-service — the chart derives it. Nothing reads it by
+          # name; what matters is the SPIFFE ID, which has to keep matching
+          # adminIDs above and the prefixes the node agent admits.
+          nvke-service:
+            type: raw
+            spiffeIDTemplate: "spiffe://{{.TrustDomain}}/nvke-service/{{.PodSpec.ServiceAccountName}}"
+            namespaceSelector:
+              matchExpressions:
+                - key: kubernetes.io/metadata.name
+                  operator: In
+                  values:
+                    - nke-controller
+                    - capi-system
+                    - capi-kubeadm-control-plane-system
+                    - capi-kubeadm-bootstrap-system
+
+    nodeAttestor:
+      k8sPSAT:
+        # The agent runs in spire-system, so the server must accept it from
+        # there: the default allowlist is empty and attestation fails with
+        # "is not an allowed service account".
+        serviceAccountAllowList: ["spire-system:spire-agent"]
+      tpmDirect:
+        # TPM EK thumbprint attestation for the nodes NVKE provisions. A kind
+        # node has no TPM — values-kind.yaml turns this off.
+        enabled: true
+
+    # The allowlist the tpmDirect attestor reads, mounted optional so an absent
+    # ConfigMap is not a startup failure. tpmPubhashes above creates it.
+    extraVolumes:
+      - name: tpm-pubhashes
+        configMap:
+          name: tpm-pubhashes
+          optional: true
+    extraVolumeMounts:
+      - name: tpm-pubhashes
+        mountPath: /run/spire/data/tpm-direct/hashes
+        readOnly: true
+
+  spiffe-oidc-discovery-provider:
+    enabled: true
+    namespaceOverride: spire-server
+    replicaCount: 2
+    tls:
+      spire:
+        enabled: false
+      certManager:
+        enabled: true
+        issuer:
+          # oidcUpstreamCA above owns the Issuer.
+          create: false
+        certificate:
+          duration: 2160h
+          privateKey:
+            algorithm: ECDSA
+            size: 256
+          dnsNames:
+            - nke.site-controller.internal
+            - localhost
+          issuerRef:
+            group: cert-manager.io
+            kind: Issuer
+            name: nvke-oidc-upstream-ca
+    config:
+      # The provider rejects any request whose Host header is not on this list,
+      # and a tenant kube-apiserver fetches the discovery document by IP rather
+      # than by the logical issuer host. Add the control-plane VIP and any
+      # other literal address tenants will use.
+      #
+      # A values file REPLACES a list rather than appending to it, so an
+      # override has to restate these three.
+      additionalDomains:
+        - "nke.site-controller.internal"
+        - "localhost"
+        - "127.0.0.1"
