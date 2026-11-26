@@ -205,6 +205,14 @@ type NodeLifecycleElapsed struct {
 	ElapsedSecs float64 `bun:"elapsed_secs"`
 }
 
+type NodeConditionElapsed struct {
+	ClusterName string  `bun:"cluster_name"`
+	NodeName    string  `bun:"node_name"`
+	NodeType    string  `bun:"node_type"`
+	Condition   string  `bun:"condition"`
+	ElapsedSecs float64 `bun:"elapsed_secs"`
+}
+
 type NodeInfo struct {
 	ClusterName    string    `bun:"cluster_name"`
 	NodePoolName   string    `bun:"node_pool_name"`
@@ -352,6 +360,10 @@ type NodeQueries interface {
 	ListTeleportRolloutStats(ctx context.Context) ([]TeleportRolloutRow, error)
 
 	ListNodeLifecycleElapsed(ctx context.Context) ([]NodeLifecycleElapsed, error)
+
+	// ListNodeConditionElapsed returns one row per node and unhealthy condition: nodeAgentReady
+	// or kubernetesReady not True on a provisioned, non-deleting node, or rebooting True.
+	ListNodeConditionElapsed(ctx context.Context) ([]NodeConditionElapsed, error)
 }
 
 func (q *queriesImpl) ListNodes(ctx context.Context, filters NodeFilters) ([]Node, error) {
@@ -652,6 +664,36 @@ func (q *queriesImpl) ListNodesEligibleForRecycling(ctx context.Context, nodePoo
 
 	err := query.Scan(ctx)
 	return nodes, err
+}
+
+func (q *queriesImpl) ListNodeConditionElapsed(ctx context.Context) ([]NodeConditionElapsed, error) {
+	var results []NodeConditionElapsed
+	// The cluster comes from nodes.cluster_id so control-plane nodes without a node pool are
+	// included. nodeAgentReady and kubernetesReady are not True from creation until join, so
+	// they only count once the node is provisioned and not deleting.
+	err := q.db.NewRaw(`
+		SELECT
+			c.name AS cluster_name,
+			n.name AS node_name,
+			CASE WHEN n.control_plane THEN 'cp' ELSE 'worker' END AS node_type,
+			t.name AS condition,
+			EXTRACT(EPOCH FROM (NOW() - (n.conditions->t.name->>'lastTransitionTime')::timestamptz)) AS elapsed_secs
+		FROM nodes n
+		JOIN clusters c ON c.id = n.cluster_id
+		CROSS JOIN (VALUES ('nodeAgentReady'), ('kubernetesReady'), ('rebooting')) AS t(name)
+		WHERE n.conditions->t.name->>'lastTransitionTime' IS NOT NULL
+			AND CASE t.name
+				WHEN 'rebooting' THEN n.conditions->'rebooting'->>'status' = 'True'
+				ELSE n.conditions->t.name->>'status' IS DISTINCT FROM 'True'
+					AND n.conditions->'provisioned'->>'status' = 'True'
+					AND n.conditions->'deleting'->>'status' IS DISTINCT FROM 'True'
+			END
+	`).Scan(ctx, &results)
+	if err != nil {
+		return nil, err
+	}
+
+	return results, nil
 }
 
 func (q *queriesImpl) ListNodeLifecycleElapsed(ctx context.Context) ([]NodeLifecycleElapsed, error) {
