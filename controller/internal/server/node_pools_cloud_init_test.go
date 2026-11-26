@@ -218,11 +218,13 @@ func TestDbNodePoolFromAPI_EveryNestedNicoFieldReachesTheStoredPool(t *testing.T
 func TestDbNodePoolFromAPI_EveryNestedCapiFieldReachesTheStoredPool(t *testing.T) {
 	tmpl := map[string]interface{}{"kind": "DockerMachineTemplate"}
 	files := []api.CloudInitFile{{Path: "/tmp/a", Content: "x"}}
+	metadataService := api.NodeAgentTokenSourceMetadataService
 
 	req := &api.CreateNodePoolRequest{
-		ClusterID:      uuid.New(),
-		Name:           "worker",
-		NodeNamePrefix: "w",
+		ClusterID:       uuid.New(),
+		Name:            "worker",
+		NodeNamePrefix:  "w",
+		NodeAgentConfig: &api.NodeAgentSettings{TokenFrom: &metadataService},
 		Infra: &api.InfraNodePoolProvider{
 			MachineTemplate:    tmpl,
 			BootstrapFiles:     files,
@@ -237,11 +239,13 @@ func TestDbNodePoolFromAPI_EveryNestedCapiFieldReachesTheStoredPool(t *testing.T
 	assert.Empty(t, pool.Capi.SpireAttestationMethod)
 	assert.Equal(t, []string{"echo hi"}, pool.Capi.PreKubeadmCommands)
 	assert.Equal(t, []db.CloudInitFile{{Path: "/tmp/a", Content: "x"}}, pool.Capi.BootstrapFiles)
+	assert.Equal(t, db.NodeAgentTokenSourceMetadataService, pool.NodeAgentTokenSource())
 
 	got := apiNodePoolFromDB(&pool, db.NodePoolCounts{})
 	require.NotNil(t, got.Infra)
 	assert.Equal(t, "DockerMachineTemplate", got.Infra.MachineTemplate["kind"])
 	assert.Equal(t, files, got.Infra.BootstrapFiles)
+	assert.Equal(t, &metadataService, got.NodeAgentConfig.TokenFrom)
 	assert.Nil(t, got.Nico)
 }
 

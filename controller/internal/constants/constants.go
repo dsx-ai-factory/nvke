@@ -111,6 +111,9 @@ const (
 
 	CAPISpireAgentConfigPath = "/etc/spire-agent/agent.conf"
 	CAPISpireTrustBundlePath = "/etc/spire-agent/initial-trust-bundle.pem"
+
+	// DSXMetadataServiceURL is the DSX metadata service address inside a VM.
+	DSXMetadataServiceURL = "http://169.254.169.254"
 )
 
 type RebootStatus string

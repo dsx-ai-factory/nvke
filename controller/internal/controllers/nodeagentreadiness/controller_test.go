@@ -169,6 +169,27 @@ func TestUnit_AgentProbeSkippedForNodeWithNoIP(t *testing.T) {
 	tx.AssertExpectations(t)
 }
 
+// A node reachable at a dial address is probed before it reports an IP, which
+// is the state a node is in between getting an endpoint and registering.
+func TestUnit_AgentProbeUsesAgentDialAddressBeforeNodeReportsIP(t *testing.T) {
+	nodeID := uuid.New()
+	node := db.Node{
+		ID:         nodeID,
+		Capi:       &db.CAPINodeProvider{AgentDialAddress: "10.1.0.5"},
+		Conditions: db.NodeConditions{NodeAgentReady: db.NewCondition(true, "Node agent is reachable")},
+	}
+	database := &testutil.MockDB{}
+	database.On("GetNode", mock.Anything, nodeID).Return(node, nil).Once()
+	client := &countingAgentClient{}
+	c := NewAgentReadinessController(config.Config{}, slog.New(slog.DiscardHandler), dbwrapper.New(database, nil), client)
+
+	result, err := c.Reconcile(t.Context(), dbreconcile.NodeKey(nodeID))
+	require.NoError(t, err)
+	require.Equal(t, 2*time.Minute, result.RequeueAfter)
+	require.Equal(t, 1, client.getAgentVersionCalls)
+	database.AssertExpectations(t)
+}
+
 func TestUnit_AgentProbeNoIPConditionUnchangedSkipsWrite(t *testing.T) {
 	nodeID := uuid.New()
 	node := db.Node{ID: nodeID, Conditions: db.NodeConditions{

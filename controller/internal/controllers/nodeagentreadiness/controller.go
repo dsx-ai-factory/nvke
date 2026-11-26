@@ -110,11 +110,11 @@ func (c *AgentReadinessController) Reconcile(ctx context.Context, key dbreconcil
 }
 
 // probeAgent checks node-agent reachability and reports the outcome as a
-// nodeAgentProbe. A node with no IP address has nothing to dial: it is
+// nodeAgentProbe. A node with no address to dial has nothing to probe: it is
 // reported unready without probing, so a pending node never dials localhost
 // and the probe metrics count real dials only.
 func (c *AgentReadinessController) probeAgent(ctx context.Context, node db.Node) (nodeAgentProbe, error) {
-	if node.IP == "" {
+	if node.AgentDialHost() == "" {
 		return nodeAgentProbe{err: agent.ErrNoAddress}, nil
 	}
 

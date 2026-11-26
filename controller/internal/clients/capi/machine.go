@@ -71,14 +71,16 @@ func (c *Client) CreateMachine(ctx context.Context, deps shared.MachineCreateDep
 	if err := applyNicoMachineInstanceLabels(node, cluster, nodePool.ID, infraMachine); err != nil {
 		return err
 	}
-
 	if err := deps.K8sClient.Patch(ctx, infraMachine, client.Apply, client.FieldOwner(deps.FieldManagerName), client.ForceOwnership); err != nil {
 		return fmt.Errorf("failed to apply infra machine %s: %w", infraMachine.GetName(), err)
 	}
 
-	spireJoinToken, spireAgentAlternateIDPath, err := deps.CreateSpireJoinToken(ctx, node)
-	if err != nil {
-		return err
+	var spireJoinToken, spireAgentAlternateIDPath string
+	if !node.UsesMetadataServiceToken() {
+		spireJoinToken, spireAgentAlternateIDPath, err = deps.CreateSpireJoinToken(ctx, node)
+		if err != nil {
+			return err
+		}
 	}
 
 	userData, err := c.renderBootstrapUserData(ctx, deps, node, nodeSet, spireJoinToken)

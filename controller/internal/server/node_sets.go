@@ -97,6 +97,7 @@ func apiNodeSetFromDB(dbNodeSet *db.NodeSet) (api.NodeSet, error) {
 		KubeReservedMemory:   kubeReservedMemory,
 		KubernetesVersion:    dbNodeSet.KubernetesVersion,
 		TeleportEnabled:      &dbNodeSet.TeleportEnabled,
+		NodeAgentConfig:      apiNodeAgentSettingsFromDB(dbNodeSet.NodeAgent),
 		Nico:                 apiNicoNodeSetProviderFromDB(dbNodeSet.Nico),
 		Infra:                apiInfraNodeSetProviderFromDB(dbNodeSet.Capi),
 		LaunchLayer:          apiLaunchLayerNodeSetProviderFromDB(dbNodeSet.LaunchLayer),

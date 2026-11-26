@@ -1188,6 +1188,11 @@ components:
         version:
           type: string
           description: Exact agent release version. An empty value disables agent convergence.
+        tokenFrom:
+          x-fern-ignore: true
+          allOf:
+            - $ref: "#/components/schemas/NodeAgentTokenSource"
+          description: Where new control-plane nodes' agents get their token.
     ControlPlaneComponentConfig:
       description: Arguments for one control-plane component.
       type: object
@@ -1735,6 +1740,27 @@ components:
     #--------------------------------
     # Node Pool
     #--------------------------------
+    NodeAgentTokenSource:
+      x-fern-ignore: true
+      type: string
+      enum: [tokenExchange, metadataService]
+      description: |
+        Where a node's agent gets the token it authenticates to the controller with.
+        tokenExchange runs a SPIRE agent on the node and exchanges its JWT-SVID.
+        metadataService runs no SPIRE agent: the agent reads an already-exchanged token
+        from the DSX metadata service, which the node's infrastructure must provide, and
+        requires TLS/JWT with external mTLS. Defaults to tokenExchange. Set at creation
+        and cannot be changed.
+    NodeAgentSettings:
+      x-fern-ignore: true
+      type: object
+      additionalProperties: false
+      description: |
+        Node-agent settings for a node pool's nodes, independent of the infrastructure
+        provider that creates them. Set at creation and cannot be changed.
+      properties:
+        tokenFrom:
+          $ref: "#/components/schemas/NodeAgentTokenSource"
     CloudInitFile:
       x-fern-ignore: true
       description: A file written by cloud-init on CAPI-backed nodes.
@@ -1946,6 +1972,12 @@ components:
           type: boolean
           description: Whether Teleport SSH enrollment is enabled for nodes in this pool. When omitted, the server-side default for the site is applied based on pool role.
           x-order: 21
+        nodeAgentConfig:
+          x-fern-ignore: true
+          allOf:
+            - $ref: "#/components/schemas/NodeAgentSettings"
+          description: Node-agent settings for the pool's nodes.
+          x-order: 22
         nico:
           $ref: "#/components/schemas/NicoNodePoolProvider"
         launchLayer:
@@ -2184,6 +2216,12 @@ components:
           default: false
           description: Whether Teleport SSH enrollment is enabled for nodes in this pool.
           x-order: 27
+        nodeAgentConfig:
+          x-fern-ignore: true
+          allOf:
+            - $ref: "#/components/schemas/NodeAgentSettings"
+          description: Node-agent settings for the pool's nodes.
+          x-order: 28
         nico:
           allOf:
             - $ref: "#/components/schemas/NicoNodePoolProvider"
@@ -2335,6 +2373,12 @@ components:
           type: boolean
           default: false
           description: Whether Teleport SSH enrollment is enabled for nodes in this node set.
+          readOnly: true
+        nodeAgentConfig:
+          x-fern-ignore: true
+          allOf:
+            - $ref: "#/components/schemas/NodeAgentSettings"
+          description: Node-agent settings in the snapshot.
           readOnly: true
         nico:
           allOf:

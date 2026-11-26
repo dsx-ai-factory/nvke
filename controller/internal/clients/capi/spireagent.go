@@ -12,8 +12,8 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 )
 
-// ValidateNodeAgentProfile accepts every profile: CAPI nodes support each
-// SPIRE attestation method and transport.
+// ValidateNodeAgentProfile accepts every profile: an operator-supplied machine
+// template can render a machine for any of them.
 func (*Client) ValidateNodeAgentProfile(db.Node, db.NodePool) error {
 	return nil
 }

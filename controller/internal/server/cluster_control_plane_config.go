@@ -358,8 +358,11 @@ func controlPlaneConfigSpecFromCreateAPI(
 		SchedulerExtraArgs:          componentExtraArgsFromAPI(c.Scheduler),
 	}
 
-	if c.NodeAgentConfig != nil && c.NodeAgentConfig.Version != nil {
-		spec.NodeAgentConfig.Version = *c.NodeAgentConfig.Version
+	if c.NodeAgentConfig != nil {
+		if c.NodeAgentConfig.Version != nil {
+			spec.NodeAgentConfig.Version = *c.NodeAgentConfig.Version
+		}
+		spec.NodeAgentConfig.TokenSource = dbNodeAgentTokenSourceFromAPI(c.NodeAgentConfig.TokenFrom)
 	}
 	switch providerType {
 	case db.ProviderTypeNico:

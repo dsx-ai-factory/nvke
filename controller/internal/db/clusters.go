@@ -242,6 +242,7 @@ func ControlPlaneConfigFromNodePool(np *NodePool) *ControlPlaneConfig {
 			TeleportEnabled:             np.TeleportEnabled,
 			ProvisioningMonitorDisabled: np.ProvisioningMonitorDisabled,
 			KubernetesVersion:           np.KubernetesVersion,
+			NodeAgentConfig:             NodeAgentConfig{TokenSource: np.NodeAgentTokenSource()},
 		},
 	}
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/dsx-ai-factory/nvke/controller/internal/agent"
 	"github.com/dsx-ai-factory/nvke/controller/internal/config"
+	"github.com/dsx-ai-factory/nvke/controller/internal/constants"
 	"github.com/dsx-ai-factory/nvke/controller/internal/credentialaudit"
 	"github.com/dsx-ai-factory/nvke/controller/internal/db"
 	"github.com/dsx-ai-factory/nvke/controller/internal/metrics"
@@ -80,7 +81,12 @@ func (a *Activities) nodeAgentBootstrapFiles(node db.Node) ([]db.CloudInitFile, 
 		args = append(args, "--nvke-controller-client-ca-bundle="+contracts.ControllerCABundlePath)
 	}
 	if node.NodeAgentTLSJWTEnabled {
-		args = append(args, "--grpc-auth-mode=tls-jwt", "--dsx-identity-exchange-url="+a.cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
+		args = append(args, "--grpc-auth-mode=tls-jwt")
+		if node.UsesMetadataServiceToken() {
+			args = append(args, "--dsx-identity-metadata-url="+constants.DSXMetadataServiceURL)
+		} else {
+			args = append(args, "--dsx-identity-exchange-url="+a.cfg.NodeAgent.TLSJWT.DSXIdentityExchangeURL)
+		}
 	}
 	files = append(files, db.CloudInitFile{
 		Path:        contracts.EnvFilePath,

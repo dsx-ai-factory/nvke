@@ -60,6 +60,9 @@ func TestValidateNodeAgentProfile(t *testing.T) {
 	spiffeDSXIMDS := db.Node{SpiffeEnabled: true, SpireAttestationMethod: db.SpireAttestationMethodDSXIMDS}
 	var vmPool db.NodePool
 	vmPool.SetLaunchLayer(db.LaunchLayerNodePoolProvider{InstanceType: "vm200", VMProfile: "ubuntu"})
+	metadataServicePool := db.NodePool{
+		NodeAgent: &db.NodeAgentSettings{TokenSource: db.NodeAgentTokenSourceMetadataService},
+	}
 	tests := map[string]struct {
 		profile  db.Node
 		provider db.ProviderType
@@ -95,6 +98,39 @@ func TestValidateNodeAgentProfile(t *testing.T) {
 		"nico on a SPIFFE tpm deployment is accepted": {
 			profile:  spiffeTPM,
 			provider: db.ProviderTypeNico,
+		},
+		"metadataService pool without external mTLS is rejected": {
+			profile:  db.Node{SpiffeEnabled: true, NodeAgentTLSJWTEnabled: true},
+			provider: db.ProviderTypeCAPI,
+			nodePool: metadataServicePool,
+			wantErr: "this deployment's node-agent settings do not support the pool's token source: " +
+				"metadataService token source requires TLS/JWT with external mTLS: the node runs no SPIRE agent",
+		},
+		"metadataService pool without TLS/JWT is rejected": {
+			profile:  db.Node{SpiffeEnabled: true, NodeAgentExternalMTLSEnabled: true},
+			provider: db.ProviderTypeCAPI,
+			nodePool: metadataServicePool,
+			wantErr: "this deployment's node-agent settings do not support the pool's token source: " +
+				"metadataService token source requires TLS/JWT with external mTLS: the node runs no SPIRE agent",
+		},
+		"metadataService pool with TLS/JWT and external mTLS is accepted": {
+			profile:  db.Node{SpiffeEnabled: true, NodeAgentExternalMTLSEnabled: true, NodeAgentTLSJWTEnabled: true},
+			provider: db.ProviderTypeCAPI,
+			nodePool: metadataServicePool,
+		},
+		// The token source is provider-independent, so a NICo pool is checked
+		// the same way an infra pool is.
+		"metadataService nico pool without TLS/JWT is rejected": {
+			profile:  db.Node{SpiffeEnabled: true},
+			provider: db.ProviderTypeNico,
+			nodePool: metadataServicePool,
+			wantErr: "this deployment's node-agent settings do not support the pool's token source: " +
+				"metadataService token source requires TLS/JWT with external mTLS: the node runs no SPIRE agent",
+		},
+		"tokenExchange pool without external mTLS is accepted": {
+			profile:  db.Node{SpiffeEnabled: true},
+			provider: db.ProviderTypeCAPI,
+			nodePool: db.NodePool{NodeAgent: &db.NodeAgentSettings{TokenSource: db.NodeAgentTokenSourceTokenExchange}},
 		},
 	}
 	for name, tt := range tests {

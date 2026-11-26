@@ -16,6 +16,15 @@ import (
 	"github.com/dsx-ai-factory/nvke/controller/internal/temporal/activities"
 )
 
+const (
+	// spireServerUpdateNodeSelectionChangeID gates which nodes the workflow
+	// schedules an update on: it skips nodes that take their identity from the
+	// metadata service, and reaches a node at its dial address rather than its
+	// IP. Histories recorded before it scheduled ReconfigureNodeSpireAgent on
+	// every SPIFFE-enabled node that had an IP, and failed the rest.
+	spireServerUpdateNodeSelectionChangeID = "spire-server-update-node-selection"
+)
+
 // UpdateSpireServerInput is the input the PATCH /clusters/{clusterID}/spire-server
 // handler enqueues.
 type UpdateSpireServerInput struct {
@@ -67,6 +76,17 @@ func updateSpireServer(ctx workflow.Context, input UpdateSpireServerInput) error
 		},
 	})
 
+	// GetVersion checks workflow history, not the nodes it just listed. A
+	// workflow that recorded a schedule for a metadata-service node, or a
+	// failure for a node reachable only at a dial address, must replay that
+	// decision rather than make it again from this node selection.
+	selectsByNodeAgentTokenSourceAndDialHost := workflow.GetVersion(
+		ctx,
+		spireServerUpdateNodeSelectionChangeID,
+		workflow.DefaultVersion,
+		1,
+	) >= 1
+
 	type pending struct {
 		node   db.Node
 		future workflow.Future
@@ -78,9 +98,17 @@ func updateSpireServer(ctx workflow.Context, input UpdateSpireServerInput) error
 			logger.Info("skipping SPIRE server update on node without SPIFFE", "node", node.Name)
 			continue
 		}
-		if node.IP == "" {
+		if selectsByNodeAgentTokenSourceAndDialHost && node.UsesMetadataServiceToken() {
+			logger.Info("skipping SPIRE server update on node without a SPIRE agent", "node", node.Name)
+			continue
+		}
+		dialHost := node.IP
+		if selectsByNodeAgentTokenSourceAndDialHost {
+			dialHost = node.AgentDialHost()
+		}
+		if dialHost == "" {
 			// It cannot be reached yet, so it still points at the old server.
-			logger.Error("SPIRE server update failed on node without an IP", "node", node.Name)
+			logger.Error("SPIRE server update failed on node without an address", "node", node.Name)
 			failed = append(failed, node.Name)
 			continue
 		}
