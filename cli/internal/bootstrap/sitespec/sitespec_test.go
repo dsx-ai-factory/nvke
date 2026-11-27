@@ -242,6 +242,13 @@ func TestValidateInvalidInputs(t *testing.T) {
 			p.CABundle = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
 			i.Cluster.OIDCProviders = []OIDCProvider{p}
 		}, "cluster.oidcProviders[0].caBundle"},
+		{"clusterName exceeds 55 characters", func(i *SiteSpec) {
+			i.ClusterName = strings.Repeat("a", 56)
+		}, pathClusterName},
+
+		{"node name exceeds 63 characters", func(i *SiteSpec) {
+			i.Cluster.Nodes[0].Name = strings.Repeat("a", 64)
+		}, "cluster.nodes[0].name"},
 	}
 
 	for _, tc := range tests {

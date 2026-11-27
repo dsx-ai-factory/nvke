@@ -80,6 +80,9 @@ const (
 	// maxOIDCProviders matches controllerconfig.MaxOIDCProviders.
 	maxOIDCProviders = 5
 
+	maxDNSLabelLength    = 63
+	maxClusterNameLength = 55
+
 	// oidcAuthConfigMinVersion is the first Kubernetes release that can read the
 	// AuthenticationConfiguration the controller renders. Below it the controller
 	// pins an empty provider list and the site API server never sees the ones
@@ -632,6 +635,8 @@ func (v *validator) checkClusterName(name string) {
 	switch {
 	case name == "":
 		v.addf("clusterName is required")
+	case len(name) > 55:
+		v.addf("clusterName %q must not exceed 55 characters", name)
 	case !dnsLabelRE.MatchString(name):
 		v.addf("clusterName %q must be a lowercase RFC 1123 label (letters, digits, hyphens)", name)
 	}
@@ -685,6 +690,8 @@ func (v *validator) checkNode(path string, n Node, names, ips map[string]int) {
 	switch {
 	case n.Name == "":
 		v.addf("%s.name is required", path)
+	case len(n.Name) > 63:
+		v.addf("%s.name %q must not exceed 63 characters", path, n.Name)
 	case !dnsLabelRE.MatchString(n.Name):
 		v.addf("%s.name %q must be a lowercase RFC 1123 label", path, n.Name)
 	default:
