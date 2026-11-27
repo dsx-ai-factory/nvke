@@ -26,6 +26,8 @@ The example passwords, the simulated NICo and the Tilt-managed management plane 
 - Nothing else listening on ports 179, 2222, 5432, 7233, 8080, 8081, 10350, 18080, 30440 or 30443. Port 2222 is mock-NICo's console SSH server; if an `sshd` already uses it, as is common under WSL2, start Tilt with `NICO_VMS_CONSOLE_SSH_PORT=0` to auto-assign a port.
 - Outbound internet access to GitHub, the Go module proxy and public container registries.
 
+> **Note:** To run this setup on a host with containerd and nerdctl and no Docker daemon, follow [Running the local flow on containerd with nerdctl](../../controller/README.md#running-the-local-flow-on-containerd-with-nerdctl); with containerd alone and no nerdctl either, follow [Running the local flow on containerd alone](../../controller/README.md#running-the-local-flow-on-containerd-alone). Both use `make -C controller capi-core-up` in place of `capd-up`.
+
 ## Prepare the machine
 
 1. Clone the repository and change into it.

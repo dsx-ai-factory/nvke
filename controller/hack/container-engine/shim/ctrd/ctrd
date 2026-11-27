@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# SPDX-FileCopyrightText: Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+# ctrd, run as root, for the local dev flow (CONTAINER_CLI=ctrd).
+#
+# ctrd is this repository's container engine CLI (hack/container-engine/ctrd,
+# built by `make ctrd` into controller/bin/ctrd). containerd is the rootful
+# system service and only root can talk to it, and so can create network
+# namespaces and CNI interfaces, while Tilt, kind, make and nico-sim run as the
+# invoking user. Putting this directory first on PATH (hack/container-engine/lib.sh
+# does it) makes every bare `ctrd` they exec reach containerd through `sudo -n`.
+#
+# The same file is also `nerdctl` here. Kind has providers for docker, podman and
+# nerdctl only, and runs a binary it looks up by the name nerdctl on PATH;
+# `nerdctl` in this directory is a link to this script, so kind runs ctrd. It is
+# only the name kind looks up: no nerdctl is installed or executed.
+#
+# CTRD_REAL names the binary to run, for a ctrd that is not at controller/bin/ctrd.
+
+set -euo pipefail
+
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+real="${CTRD_REAL:-${here}/../../../../bin/ctrd}"
+if [[ ! -x "${real}" ]]; then
+  echo "ctrd: ${real} is not built; run 'make -C controller ctrd' (make host-up and make kind-up do), or set CTRD_REAL" >&2
+  exit 127
+fi
+
+if (( EUID == 0 )); then
+  exec "${real}" "$@"
+fi
+
+# What ctrd reads from the environment; sudo drops all of it.
+keep=()
+for name in CTRD_ROOT CTRD_NAMESPACE CTRD_DNS CONTAINERD_ADDRESS BUILDKIT_HOST CNI_PATH; do
+  if [[ -n "${!name:-}" ]]; then
+    keep+=("${name}")
+  fi
+done
+
+sudo_args=(-n)
+if (( ${#keep[@]} > 0 )); then
+  sudo_args+=("--preserve-env=$(IFS=,; echo "${keep[*]}")")
+fi
+exec sudo "${sudo_args[@]}" "${real}" "$@"

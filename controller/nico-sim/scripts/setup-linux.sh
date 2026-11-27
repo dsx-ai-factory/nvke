@@ -96,7 +96,13 @@ if ! sudo -v; then
     fail "sudo access is required for package installation and network setup"
 fi
 
-if check docker; then
+# CONTAINER_CLI=nerdctl runs the container backend on containerd with no Docker
+# (controller/hack/container-engine). This script installs neither nerdctl nor
+# containerd: it checks them.
+if [[ "${CONTAINER_CLI:-docker}" != docker ]]; then
+    bash "${SCRIPT_DIR}/../../hack/container-engine/check.sh" ||
+        fail "the host is not ready to run the container backend on ${CONTAINER_CLI}"
+elif check docker; then
     ver=$(docker --version 2>&1 | head -1)
     printf "  ${GREEN}ok${NC}  %-20s %s\n" "docker" "$ver"
     if ! docker info &>/dev/null; then
@@ -117,14 +123,14 @@ fi
 # docker.io does not ship the buildx CLI plugin. install-capnico.sh builds the
 # local CAPNICo chart with DOCKER_BUILDKIT=1, and the CLI rejects that build
 # when the plugin is missing.
-if ! docker buildx version >/dev/null 2>&1; then
+if [[ "${CONTAINER_CLI:-docker}" == docker ]] && ! docker buildx version >/dev/null 2>&1; then
     info "Installing docker-buildx..."
     sudo apt-get update -qq
     sudo apt-get install -y -qq -o Dpkg::Options::="--force-confold" docker-buildx
 fi
 
 # Ensure the current shell can talk to docker without re-login.
-if ! docker info &>/dev/null 2>&1; then
+if [[ "${CONTAINER_CLI:-docker}" == docker ]] && ! docker info &>/dev/null 2>&1; then
     sudo chmod 666 /var/run/docker.sock
     info "Opened docker socket permissions for current session"
 fi

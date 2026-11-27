@@ -22,7 +22,7 @@ cd nvke
 | Tool | Needed for | Notes |
 |---|---|---|
 | [Go](https://go.dev/dl/) 1.27.4+ | all | `go.work` pins it. An older Go fetches the right toolchain unless `GOTOOLCHAIN=local` |
-| [Docker](https://docs.docker.com/get-docker/) 24+ | API Only, Mock NICo | Not supported for Real Site bootstrapping |
+| [Docker](https://docs.docker.com/get-docker/) 24+ | API Only, Mock NICo | Not supported for Real Site bootstrapping. Mock NICo also runs on nerdctl and containerd with `CONTAINER_CLI=nerdctl`; see [`controller/README.md`](../controller/README.md#running-the-local-flow-on-containerd-with-nerdctl) |
 | [nerdctl](https://github.com/containerd/nerdctl) with containerd | Real Site | The bootstrap drives kind and pulls images through it; no Docker daemon |
 | GNU Make 4.0+ | all | macOS ships 3.81; `brew install make` gives `gmake` |
 | [temporal](https://docs.temporal.io/cli) | API Only | `brew install temporal`, or `curl -sSf https://temporal.download/cli.sh \| sh` |

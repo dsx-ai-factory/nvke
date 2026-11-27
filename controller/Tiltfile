@@ -41,6 +41,7 @@ load("ext://uibutton", "cmd_button", "text_input")
 #   ctx.spire_trust_domain (string) Trust domain configured for the local SPIRE server.
 #   ctx.site_controller_vip (string) Address reachable from local tenant nodes.
 #   ctx.provider_dir  (string)  Absolute path to the provider's root directory.
+#   ctx.container_cli (string)  The container engine CLI: docker, nerdctl, or ctrd (CONTAINER_CLI).
 #
 # Output — returned struct with:
 #   controller_resource_deps (list[string])     Tilt resource names the controller should depend on.
@@ -96,6 +97,39 @@ def _provider_entry_name(entry):
 
 _provider_names = [_provider_entry_name(_entry) for _entry in _provider_entries]
 DSX_IDENTITY_EXCHANGE_ENABLED = "dsx-identity-exchange" in _provider_names
+
+# The container engine CLI for the whole flow: docker, nerdctl on containerd
+# with no Docker daemon, or ctrd on containerd alone. hack/container-engine/lib.sh
+# says what the other two change; the Makefile, the hack scripts and nico-sim
+# read the same CONTAINER_CLI.
+CONTAINER_CLI = os.getenv("CONTAINER_CLI", "") or "docker"
+if CONTAINER_CLI not in ["docker", "nerdctl", "ctrd"]:
+    fail("CONTAINER_CLI=%s is not supported; use docker (the default), nerdctl or ctrd." % CONTAINER_CLI)
+CONTAINER_ENGINE_DIR = os.path.join(config.main_dir, "hack", "container-engine")
+if CONTAINER_CLI != "docker":
+    # Every command Tilt starts inherits this PATH: put the sudo-wrapped engine
+    # first, so kind, make and the scripts reach the rootful containerd. For ctrd
+    # the directory also holds the `nerdctl` that kind runs, which is ctrd.
+    _shim_dir = os.path.join(CONTAINER_ENGINE_DIR, "shim")
+    if CONTAINER_CLI == "ctrd":
+        _shim_dir = os.path.join(_shim_dir, "ctrd")
+    if not os.getenv("PATH", "").startswith(_shim_dir + ":"):
+        os.putenv("PATH", _shim_dir + ":" + os.getenv("PATH", ""))
+    os.putenv("KIND_EXPERIMENTAL_PROVIDER", "nerdctl" if CONTAINER_CLI == "ctrd" else CONTAINER_CLI)
+
+    # These build images with Tilt's Docker client or with docker itself.
+    for _provider_needing_docker in [
+        "capd",
+        "capd-reboot-controller",
+        "capi-syscmp",
+        "dsx-identity-exchange",
+        "dsx-imds-attestation",
+        "launchlayer",
+        "management-engine",
+    ]:
+        if _provider_needing_docker in _provider_names:
+            fail("Provider '%s' needs Docker and cannot run with CONTAINER_CLI=%s. Unset CONTAINER_CLI, or remove the provider." %
+                 (_provider_needing_docker, CONTAINER_CLI))
 
 if "nico" in _provider_names and "capi_core" not in _provider_names:
     fail("Provider 'nico' requires 'capi_core' in the provider list.")
@@ -214,9 +248,12 @@ def normalize_arch(arch):
     return arch
 
 def local_arch():
-    docker_arch = str(local("docker version --format '{{.Server.Arch}}' 2>/dev/null || true", quiet=True, echo_off=True)).strip()
-    if docker_arch != "":
-        return normalize_arch(docker_arch)
+    # nerdctl's `version` has no Server.Arch, and its containerd is on this host.
+    # The same goes for ctrd.
+    if CONTAINER_CLI == "docker":
+        docker_arch = str(local("docker version --format '{{.Server.Arch}}' 2>/dev/null || true", quiet=True, echo_off=True)).strip()
+        if docker_arch != "":
+            return normalize_arch(docker_arch)
 
     return normalize_arch(str(local("uname -m", quiet=True, echo_off=True)).strip())
 
@@ -328,7 +365,7 @@ def detect_cert_manager():
 # so {{if .Gateway}} is true and the old filter kept "invalid IP". The kind
 # network lists its IPv6 subnet, which has no gateway, first.
 _kind_host_ip = str(local(
-    "docker network inspect kind -f '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' 2>/dev/null | grep -Eo '^[0-9]+(\\.[0-9]+){3}$' | head -1 || true",
+    CONTAINER_CLI + " network inspect kind -f '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' 2>/dev/null | grep -Eo '^[0-9]+(\\.[0-9]+){3}$' | head -1 || true",
     quiet=True,
 )).strip() or "host.docker.internal"
 
@@ -436,6 +473,7 @@ for _entry in _provider_entries:
         spire_trust_domain = SPIRE_TRUST_DOMAIN,
         site_controller_vip = _kind_site_controller_vip,
         provider_dir = _provider_dir,
+        container_cli = CONTAINER_CLI,
     ))
     _all_controller_resource_deps += _provider_controller_field(_provider_name, _result, "resource_deps")
     _all_controller_env_overrides.update(_provider_controller_field(_provider_name, _result, "env_overrides"))
@@ -490,6 +528,10 @@ _preflight_script = """
         exit 1
       }
 """
+if CONTAINER_CLI != "docker":
+    _preflight_script += """
+      bash "%s/check.sh"
+""" % CONTAINER_ENGINE_DIR
 for _fragment in _all_preflight_fragments:
     _preflight_script += _fragment
 _preflight_script += """
@@ -519,11 +561,13 @@ _preflight_script += """
       fi
 """
 if not CONTROLLER_IMAGE:
-    _preflight_script += """
+    if CONTAINER_CLI == "docker":
+        _preflight_script += """
       command -v docker >/dev/null || {
         echo "docker is required in PATH" >&2
         exit 1
-      }
+      }"""
+    _preflight_script += """
       command -v go >/dev/null || {
         echo "go is required in PATH (used for GOARCH detection)" >&2
         exit 1
@@ -1182,6 +1226,26 @@ _controller_compile_script = """
       CGO_ENABLED=0 GOOS=linux GOARCH="%s" make build
 """ % _controller_tilt_goarch
 
+# Tilt builds and loads images with its Docker client, which needs a Docker
+# daemon. Under nerdctl and ctrd the build commands below do both themselves: they build
+# with the engine and load the image into Kind (skips_local_docker tells Tilt the
+# image is never in a Docker store, and so is not Tilt's to push), and the
+# restart-on-sync live update of custom_build_with_restart is dropped, because
+# it is itself a Docker build. Every change to bin/controller then rebuilds and
+# reloads the image.
+def _build_for_engine(script):
+    if CONTAINER_CLI == "docker":
+        return script
+    return script.replace("docker build", CONTAINER_CLI + " build") + """
+      . "%s/lib.sh"
+      ce_init
+      ce_kind_load "$EXPECTED_REF" "%s"
+""" % (CONTAINER_ENGINE_DIR, KIND_CLUSTER_NAME_VALUE)
+
+_custom_build_args = {}
+if CONTAINER_CLI != "docker":
+    _custom_build_args = {"skips_local_docker": True}
+
 # Default to the sanitized fixture that ships in this repository. It is
 # Apache-2.0, builds from a Docker Hub base, and is what CI already uses
 # (hack/ci/backend-e2e.sh). Defaulting to the nke-site-deploy sibling instead meant
@@ -1224,15 +1288,16 @@ if _controller_profiles_image_enabled:
             ref="docker.local/cwe-profiles:tilt",
             command=[
                 "bash", "-c",
-                """
+                _build_for_engine("""
                 set -euo pipefail
                 if [ "$(uname -s)" = "Darwin" ] && [ -z "${DOCKER_HOST:-}" ]; then
                   export DOCKER_HOST="${COLIMA_DOCKER_HOST:-unix://${HOME}/.colima/default/docker.sock}"
                 fi
                 retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" -f "%s" "%s"
-                """ % (_controller_tilt_goarch, _controller_profiles_dockerfile, _controller_profiles_context),
+                """ % (_controller_tilt_goarch, _controller_profiles_dockerfile, _controller_profiles_context)),
             ],
             deps=[_controller_profiles_dir, _controller_profiles_runbooks_dir, _controller_profiles_dockerfile],
+            **_custom_build_args
         )
 
 # docker build runs through a one-shot retry: the mirror can 404 a layer it just resolved.
@@ -1257,6 +1322,7 @@ _controller_build_script = """
       chmod +x "${tmp_dir}/bin/controller"
       retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
 """ % (_controller_tilt_goarch, _controller_tilt_goarch)
+_controller_build_script = _build_for_engine(_controller_build_script)
 
 if not _controller_profiles_image_enabled:
     _controller_build_script = """
@@ -1286,6 +1352,7 @@ if not _controller_profiles_image_enabled:
       tar -C "%s" -cf - . | tar -C "${tmp_dir}/profiles" -xf -
       retry() { "$@" || { echo "docker build failed, retrying once in 15s" >&2; sleep 15; "$@"; }; }; retry docker build --platform linux/%s --tag "$EXPECTED_REF" "${tmp_dir}"
 """ % (_controller_tilt_goarch, _controller_profiles_dir, _controller_tilt_goarch)
+    _controller_build_script = _build_for_engine(_controller_build_script)
 
 if not CONTROLLER_IMAGE and not _controller_local_debug_active:
     local_resource(
@@ -1376,10 +1443,6 @@ if not CONTROLLER_IMAGE and not _controller_local_debug_active:
     # When profiles.image is enabled, /profiles is an emptyDir filled by the
     # materialize initContainer (read-only on the app container). Do not
     # live_update sync into that mount.
-    _controller_live_update = [
-      fall_back_on(["hack/Dockerfile.controller.tilt", "go.mod", "go.sum", "Makefile", "Makefile.dev"]),
-      sync("bin/controller", "/usr/local/bin/controller"),
-    ]
     _controller_build_deps = [
       "bin",
       "hack/Dockerfile.controller.tilt",
@@ -1389,20 +1452,38 @@ if not CONTROLLER_IMAGE and not _controller_local_debug_active:
       "go.sum",
     ]
     if not _controller_profiles_image_enabled:
-        _controller_live_update.insert(-1, sync(_controller_profiles_dir, "/profiles"))
         _controller_build_deps.append(_controller_profiles_dir)
 
-    custom_build_with_restart(
-        ref="docker.local/cwe:tilt",
-        command=["bash", "-c", _controller_build_script],
-        deps=_controller_build_deps,
-        entrypoint="/usr/local/bin/controller",
-        live_update=_controller_live_update,
-        trigger=["bin/controller"],
-        ignore=[
-          "**/__debug_bin*",
-        ],
-    )
+    if CONTAINER_CLI == "docker":
+        # Tilt fails the load for a live_update step that no build consumes, so
+        # the steps are only created on the path that passes them on.
+        _controller_live_update = [
+          fall_back_on(["hack/Dockerfile.controller.tilt", "go.mod", "go.sum", "Makefile", "Makefile.dev"]),
+          sync("bin/controller", "/usr/local/bin/controller"),
+        ]
+        if not _controller_profiles_image_enabled:
+            _controller_live_update.insert(-1, sync(_controller_profiles_dir, "/profiles"))
+        custom_build_with_restart(
+            ref="docker.local/cwe:tilt",
+            command=["bash", "-c", _controller_build_script],
+            deps=_controller_build_deps,
+            entrypoint="/usr/local/bin/controller",
+            live_update=_controller_live_update,
+            trigger=["bin/controller"],
+            ignore=[
+              "**/__debug_bin*",
+            ],
+        )
+    else:
+        custom_build(
+            ref="docker.local/cwe:tilt",
+            command=["bash", "-c", _controller_build_script],
+            deps=_controller_build_deps,
+            ignore=[
+              "**/__debug_bin*",
+            ],
+            **_custom_build_args
+        )
 
 cmd_button(
     "2-create-sample-capd-cluster",

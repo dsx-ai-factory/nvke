@@ -367,7 +367,7 @@ repack_archive() {
 # from source for ${ARCH} and unpacks its docker-archive into ${WORK}/unpacked,
 # ready for repack_archive. For packages whose image has no registry to pull
 # from. Timestamps are pinned to a fixed epoch so two builds of the same inputs
-# produce the same layers. Needs docker with buildx, nerdctl or podman (OCI_BIN picks
+# produce the same layers. Needs docker with buildx, nerdctl, ctrd or podman (OCI_BIN picks
 # the binary). A foreign ARCH builds under emulation.
 build_image() {
   local ctx="$1" dockerfile="$2" ref="$3"; shift 3
@@ -393,8 +393,9 @@ build_image() {
         "$oci" save --format docker-archive -o "${WORK}/images.tar" "$ref" || die "saving ${ref} failed"
         "$oci" rmi "$ref" >/dev/null 2>&1 || true
         ;;
-      nerdctl)
+      nerdctl | ctrd)
         # nerdctl has no buildx; its build drives buildkit, which has the same exporter.
+        # ctrd, the engine of the containerd-only dev flow, takes the same flags.
         # nerdctl 1.7 writes the archive, then exits "no image was built" because it
         # loaded nothing into containerd; the checks below verify the archive.
         SOURCE_DATE_EPOCH="$epoch" "$oci" build \

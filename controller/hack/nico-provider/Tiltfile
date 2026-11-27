@@ -159,6 +159,7 @@ def _register_nico_sim(ctx, labels, nico, endpoint_host):
         provider_dir=sim_dir,
         nico_org_id=nico.org_id,
         nico_token=nico.token,
+        container_cli=ctx.container_cli,
     ))
 
 def register(ctx):
@@ -266,8 +267,12 @@ def register(ctx):
     )
 
     preflight_script = """
-      command -v helm >/dev/null || { echo "helm is required for the nico provider" >&2; exit 1; }
-      command -v docker >/dev/null || { echo "docker is required for the nico provider" >&2; exit 1; }
+      command -v helm >/dev/null || { echo "helm is required for the nico provider" >&2; exit 1; }"""
+    # Under nerdctl the main Tiltfile's preflight checks the engine itself.
+    if ctx.container_cli == "docker":
+        preflight_script += """
+      command -v docker >/dev/null || { echo "docker is required for the nico provider" >&2; exit 1; }"""
+    preflight_script += """
     """
     if source_dir:
         preflight_script += """      if [ ! -f "%s/chart/Chart.yaml" ]; then
