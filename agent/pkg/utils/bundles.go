@@ -511,46 +511,58 @@ func DownloadAndExtractArchive(b *Bundle, source *BundleSource) (string, error) 
 	return downloadAndExtractFromHTTP(b)
 }
 
-// downloadAndExtractFromHTTP downloads the bundle from HTTP/S3 and extracts it
+// downloadAndExtractFromHTTP downloads the bundle from HTTP/S3 and extracts it.
+// On any failure it removes the temporary directory it created, so a failed or
+// retried install does not leave partial archives behind on the node.
 func downloadAndExtractFromHTTP(b *Bundle) (string, error) {
 	outputDir, err := os.MkdirTemp("", fmt.Sprintf("%s_%s-", b.Name, b.Version))
 	if err != nil {
 		return "", fmt.Errorf("failed to create tmp dir: %w", err)
 	}
+	if err = fetchAndExtractHTTP(b, outputDir); err != nil {
+		_ = os.RemoveAll(outputDir)
+		return "", err
+	}
+	return outputDir, nil
+}
 
+// fetchAndExtractHTTP downloads the bundle archive into outputDir and extracts it there.
+func fetchAndExtractHTTP(b *Bundle, outputDir string) error {
 	slog.Info("attempt download of bundle from HTTP", "URL", b.URL)
 	resp, err := httpDoWithRetry(context.Background(), http.MethodGet, b.URL)
 	if err != nil {
-		return outputDir, fmt.Errorf("failed to download tgz: %w", err)
+		return fmt.Errorf("failed to download tgz: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return outputDir, fmt.Errorf("bad response: %s", resp.Status)
+		return fmt.Errorf("bad response: %s", resp.Status)
 	}
 
 	// Write the downloaded archive to a temporary file
 	tmpFile := filepath.Join(outputDir, "bundle.tgz")
 	out, err := os.Create(tmpFile)
 	if err != nil {
-		return outputDir, fmt.Errorf("failed to create temp file: %w", err)
+		return fmt.Errorf("failed to create temp file: %w", err)
 	}
 	defer os.Remove(tmpFile) // Clean up the archive file
-	if _, err := io.Copy(out, resp.Body); err != nil {
-		out.Close()
-		return outputDir, fmt.Errorf("failed to write temp archive: %w", err)
+	if _, err = io.Copy(out, resp.Body); err != nil {
+		_ = out.Close()
+		return fmt.Errorf("failed to write temp archive: %w", err)
 	}
-	out.Close()
+	// Close can report a deferred write error; a truncated archive must not be extracted.
+	if err = out.Close(); err != nil {
+		return fmt.Errorf("failed to close temp archive: %w", err)
+	}
 	// Extract the archive contents, stripping the top-level directory
 	cmd := exec.Command("tar", "-xzf", tmpFile, "--strip-components=1", "-C", outputDir)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
-	if err := cmd.Run(); err != nil {
-		return outputDir, fmt.Errorf("tar extraction failed: %w", err)
+	if err = cmd.Run(); err != nil {
+		return fmt.Errorf("tar extraction failed: %w", err)
 	}
-
-	return outputDir, nil
+	return nil
 }
 
 // downloadAndExtractFromOCI downloads the bundle from OCI registry and extracts it.

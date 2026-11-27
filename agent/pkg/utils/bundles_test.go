@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	semver "github.com/Masterminds/semver/v3"
@@ -655,4 +656,23 @@ func TestVersionString(t *testing.T) {
 			assert.Equal(t, tt.want, VersionString(tt.version))
 		})
 	}
+}
+
+func TestDownloadAndExtractFromHTTPCleansUpOnFailure(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	b := &Bundle{Name: "demo", Version: semver.MustParse("1.0.0"), URL: srv.URL + "/demo.tgz"}
+	path, err := downloadAndExtractFromHTTP(b)
+
+	assert.Error(t, err)
+	assert.Empty(t, path)
+	entries, readErr := os.ReadDir(tmp)
+	assert.NoError(t, readErr)
+	assert.Empty(t, entries, "failed download must not leave a temp directory behind")
 }
