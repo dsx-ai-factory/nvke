@@ -116,30 +116,33 @@ func (e *engine) supervise(id string, generation int) error {
 	case <-copied:
 	case <-time.After(2 * time.Second):
 	}
-	if err := os.WriteFile(e.exitCodeFile(id), []byte(strconv.Itoa(code)+"\n"), 0o600); err != nil {
-		return err
-	}
-	if e.finishTask(id, generation, code) {
+	owned, err := e.finishTask(id, generation, code)
+	if owned {
 		e.restartPerPolicy(id, generation, code, time.Since(began), log)
 	}
-	return nil
+	return err
 }
 
 // finishTask records how the task ended and detaches the container from its
 // network, whatever its restart policy. A start of a later generation owns the
-// container by now, and is left alone: it reports false.
-func (e *engine) finishTask(id string, generation, code int) bool {
+// container by now, and is left alone: it reports false. The error is that of
+// recording the exit code.
+func (e *engine) finishTask(id string, generation, code int) (bool, error) {
 	owned := false
+	var writeErr error
 	_ = e.withLock(func() error {
 		meta, err := e.loadContainer(id)
 		if err != nil || meta.Generation != generation {
 			return err
 		}
+		if writeErr = os.WriteFile(e.exitCodeFile(id), []byte(strconv.Itoa(code)+"\n"), 0o600); writeErr != nil {
+			return nil
+		}
 		owned = true
 		meta.ExitCode, meta.FinishedAt = code, time.Now().UTC()
 		return errors.Join(e.saveContainer(meta), e.detach(meta))
 	})
-	return owned
+	return owned, writeErr
 }
 
 // restartPolicy reads a restart policy, NAME or NAME:MAX, and says whether it
@@ -184,23 +187,31 @@ func (e *engine) clearStopped(id string) {
 // container that has ended is gone by now; the new start gets a supervisor of
 // its own, so this one can end. Everything it reports goes to the container's log.
 func (e *engine) restartPerPolicy(id string, generation, code int, ranFor time.Duration, log io.Writer) {
-	meta, err := e.loadContainer(id)
-	if err != nil || e.stoppedByUser(id) {
+	var meta *containerMeta
+	var count int
+	// A start of a later generation owns the restart count by now.
+	_ = e.withLock(func() error {
+		current, err := e.loadContainer(id)
+		if err != nil || current.Generation != generation || e.stoppedByUser(id) {
+			return err
+		}
+		restart, limit := restartPolicy(current.Restart, code)
+		if !restart {
+			return nil
+		}
+		count = e.restartCount(id)
+		if ranFor >= healthyRun {
+			count = 0
+		}
+		if limit > 0 && count >= limit {
+			return nil
+		}
+		meta = current
+		return os.WriteFile(filepath.Join(e.containerDir(id), restartsFile), []byte(strconv.Itoa(count+1)+"\n"), 0o600)
+	})
+	if meta == nil {
 		return
 	}
-	meta.Generation = generation
-	restart, limit := restartPolicy(meta.Restart, code)
-	if !restart {
-		return
-	}
-	count := e.restartCount(id)
-	if ranFor >= healthyRun {
-		count = 0
-	}
-	if limit > 0 && count >= limit {
-		return
-	}
-	_ = os.WriteFile(filepath.Join(e.containerDir(id), restartsFile), []byte(strconv.Itoa(count+1)+"\n"), 0o600)
 	time.Sleep(min(e.cfg.RestartDelay<<min(count, 10), restartMaxDelay))
 	if e.stoppedByUser(id) {
 		return

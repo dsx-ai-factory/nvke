@@ -186,7 +186,9 @@ func TestAnOldSupervisorLeavesALaterStartAlone(t *testing.T) {
 	require.Equal(t, 0, h.run("start", id), h.stderr.String())
 	require.Equal(t, 2, h.supervisorStarts())
 
-	assert.False(t, h.eng.finishTask(id, oldGeneration, 0), "the container belongs to the later start")
+	owned, err := h.eng.finishTask(id, oldGeneration, 0)
+	require.NoError(t, err)
+	assert.False(t, owned, "the container belongs to the later start")
 	current, err := h.eng.loadContainer(id)
 	require.NoError(t, err)
 	assert.Equal(t, "10.4.0.5", current.IPv4, "its network is still attached")
