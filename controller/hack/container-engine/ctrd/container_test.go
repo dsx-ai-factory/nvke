@@ -111,7 +111,7 @@ func TestRunKindNode(t *testing.T) {
 			"bridge ADD id=" + id + " ifname=eth0 " + netns,
 			"portmap ADD id=" + id + " ifname=eth0 " + netns,
 			"firewall ADD id=" + id + " ifname=eth0 " + netns,
-			"supervisor _supervise " + id,
+			"supervisor _supervise " + id + " 1",
 		}, after)
 	})
 

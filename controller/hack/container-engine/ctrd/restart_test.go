@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -55,6 +56,14 @@ func startedWithPolicy(t *testing.T, policy string) (*harness, string) {
 // supervisorStarts counts the supervisors the engine started: the first start, and each restart.
 func (h *harness) supervisorStarts() int { return len(h.callsMatching("supervisor ")) }
 
+// generationOf is the generation of the container's latest start.
+func generationOf(t *testing.T, h *harness, id string) int {
+	t.Helper()
+	meta, err := h.eng.loadContainer(id)
+	require.NoError(t, err)
+	return meta.Generation
+}
+
 // endTask is what happens to a task that exits while its supervisor reads the console: ctr's list no longer has it.
 func (h *harness) endTask() { h.setFile("tasks", "") }
 
@@ -102,7 +111,7 @@ func TestRestartLimit(t *testing.T) {
 	assert.Equal(t, 3, h.supervisorStarts(), "the third failure is not restarted")
 
 	var log bytes.Buffer
-	h.eng.restartPerPolicy(id, 3, 11*time.Second, &log)
+	h.eng.restartPerPolicy(id, generationOf(t, h, id), 3, 11*time.Second, &log)
 	assert.Equal(t, 4, h.supervisorStarts(), "a task that ran for a while starts the count again")
 	assert.Empty(t, log.String())
 
@@ -136,10 +145,11 @@ func TestAStopDuringTheWaitWins(t *testing.T) {
 	h, id := startedWithPolicy(t, "always")
 	h.endTask()
 	h.eng.cfg.RestartDelay = 300 * time.Millisecond
+	generation := generationOf(t, h, id)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		h.eng.restartPerPolicy(id, 0, 0, &bytes.Buffer{})
+		h.eng.restartPerPolicy(id, generation, 0, 0, &bytes.Buffer{})
 	}()
 	time.Sleep(50 * time.Millisecond)
 	h.eng.markStopped(id)
@@ -170,12 +180,13 @@ func TestAnOldSupervisorLeavesALaterStartAlone(t *testing.T) {
 	h, id := startedWithPolicy(t, "always")
 	old, err := h.eng.loadContainer(id)
 	require.NoError(t, err)
+	oldGeneration := old.Generation
 
 	h.endTask()
 	require.Equal(t, 0, h.run("start", id), h.stderr.String())
 	require.Equal(t, 2, h.supervisorStarts())
 
-	assert.False(t, h.eng.finishTask(id, old.Generation, 0), "the container belongs to the later start")
+	assert.False(t, h.eng.finishTask(id, oldGeneration, 0), "the container belongs to the later start")
 	current, err := h.eng.loadContainer(id)
 	require.NoError(t, err)
 	assert.Equal(t, "10.4.0.5", current.IPv4, "its network is still attached")
@@ -184,4 +195,12 @@ func TestAnOldSupervisorLeavesALaterStartAlone(t *testing.T) {
 	h.endTask()
 	require.ErrorIs(t, h.eng.startContainer(old, true), errStoppedByUser)
 	assert.Equal(t, 2, h.supervisorStarts(), "the restart it had waited for is not made")
+
+	h.eng.restartPerPolicy(id, oldGeneration, 0, 0, &bytes.Buffer{})
+	assert.Equal(t, 2, h.supervisorStarts(), "nor one it asks for afterwards")
+
+	require.Equal(t, 0, h.run("_supervise", id, strconv.Itoa(oldGeneration)), h.stderr.String())
+	current, err = h.eng.loadContainer(id)
+	require.NoError(t, err)
+	assert.Equal(t, "10.4.0.5", current.IPv4, "a supervisor told its generation does not take a later one")
 }

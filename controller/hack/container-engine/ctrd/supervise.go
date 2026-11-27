@@ -43,7 +43,7 @@ var errStoppedByUser = errors.New("the container was stopped")
 // superviseStart starts the supervisor and waits for the task to run.
 func (e *engine) superviseStart(meta *containerMeta) error {
 	_ = os.Remove(e.exitCodeFile(meta.ID))
-	cmd := exec.Command(e.exe, "_supervise", meta.ID) //nolint:gosec,noctx // the supervisor outlives this command, so it must not be tied to its context
+	cmd := exec.Command(e.exe, "_supervise", meta.ID, strconv.Itoa(meta.Generation)) //nolint:gosec,noctx // the supervisor outlives this command, so it must not be tied to its context
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := cmd.Start(); err != nil {
 		return err
@@ -71,8 +71,8 @@ func (e *engine) logTail(id string) string {
 	return strings.Join(lines[max(0, len(lines)-10):], "\n")
 }
 
-// supervise is the supervisor: `ctrd _supervise ID`.
-func (e *engine) supervise(id string) error {
+// supervise is the supervisor: `ctrd _supervise ID [GENERATION]`, for the start of that generation.
+func (e *engine) supervise(id string, generation int) error {
 	defer leaveCallerCgroup(filepath.Join(e.cfg.SupervisorCgroups, shortID(id)))()
 	log, err := os.OpenFile(filepath.Join(e.containerDir(id), "log"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -80,9 +80,10 @@ func (e *engine) supervise(id string) error {
 	}
 	defer log.Close()
 	// The start that made this supervisor has attached the container already.
-	var generation int
-	if meta, err := e.loadContainer(id); err == nil {
-		generation = meta.Generation
+	if generation == 0 {
+		if meta, err := e.loadContainer(id); err == nil {
+			generation = meta.Generation
+		}
 	}
 	master, slave, err := openPty()
 	if err != nil {
@@ -119,7 +120,7 @@ func (e *engine) supervise(id string) error {
 		return err
 	}
 	if e.finishTask(id, generation, code) {
-		e.restartPerPolicy(id, code, time.Since(began), log)
+		e.restartPerPolicy(id, generation, code, time.Since(began), log)
 	}
 	return nil
 }
@@ -182,11 +183,12 @@ func (e *engine) clearStopped(id string) {
 // its init, and nobody but this supervisor is left to notice. The task of a
 // container that has ended is gone by now; the new start gets a supervisor of
 // its own, so this one can end. Everything it reports goes to the container's log.
-func (e *engine) restartPerPolicy(id string, code int, ranFor time.Duration, log io.Writer) {
+func (e *engine) restartPerPolicy(id string, generation, code int, ranFor time.Duration, log io.Writer) {
 	meta, err := e.loadContainer(id)
 	if err != nil || e.stoppedByUser(id) {
 		return
 	}
+	meta.Generation = generation
 	restart, limit := restartPolicy(meta.Restart, code)
 	if !restart {
 		return

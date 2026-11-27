@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 )
@@ -181,10 +182,17 @@ func (e *engine) networkRemove(args []string) error {
 	return errors.Join(failures...)
 }
 
-// superviseCommand is `_supervise ID`, which systemd runs for each started container.
+// superviseCommand is `_supervise ID [GENERATION]`, which systemd runs for each started container.
 func (e *engine) superviseCommand(args []string) error {
-	if len(args) != 1 {
-		return errors.New("_supervise: one container ID is required")
+	if len(args) == 0 || len(args) > 2 {
+		return errors.New("_supervise: a container ID, and optionally its generation, is required")
 	}
-	return e.supervise(args[0])
+	generation := 0
+	if len(args) == 2 {
+		var err error
+		if generation, err = strconv.Atoi(args[1]); err != nil {
+			return fmt.Errorf("_supervise: invalid generation %q", args[1])
+		}
+	}
+	return e.supervise(args[0], generation)
 }
