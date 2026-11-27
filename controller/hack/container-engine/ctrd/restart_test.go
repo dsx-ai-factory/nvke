@@ -206,3 +206,32 @@ func TestAnOldSupervisorLeavesALaterStartAlone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "10.4.0.5", current.IPv4, "a supervisor told its generation does not take a later one")
 }
+
+func TestTheNetworkIsLeftEvenWhenTheExitCodeCannotBeWritten(t *testing.T) {
+	t.Setenv("START_STATUS", "7")
+	h, id := startedWithPolicy(t, "always")
+	require.NoError(t, os.Mkdir(h.eng.exitCodeFile(id), 0o700))
+	h.endTask()
+
+	owned, err := h.eng.finishTask(id, generationOf(t, h, id), 7)
+	require.Error(t, err)
+	assert.False(t, owned, "a container whose exit was not recorded is not restarted")
+	meta, err := h.eng.loadContainer(id)
+	require.NoError(t, err)
+	assert.Equal(t, 7, meta.ExitCode)
+	assert.False(t, meta.FinishedAt.IsZero())
+	assert.Empty(t, meta.IPv4)
+	assert.Nil(t, meta.CNIResult)
+}
+
+func TestNoRestartWhenTheCountCannotBeSaved(t *testing.T) {
+	t.Setenv("START_STATUS", "3")
+	h, id := startedWithPolicy(t, "on-failure:1")
+	require.NoError(t, os.Mkdir(h.eng.containerDir(id)+"/restarts", 0o700))
+	h.endTask()
+
+	var log bytes.Buffer
+	h.eng.restartPerPolicy(id, generationOf(t, h, id), 3, 0, &log)
+	assert.Equal(t, 1, h.supervisorStarts(), "a restart that is not counted would give on-failure:1 another")
+	assert.Contains(t, log.String(), "saving the restart count")
+}

@@ -125,8 +125,9 @@ func (e *engine) supervise(id string, generation int) error {
 
 // finishTask records how the task ended and detaches the container from its
 // network, whatever its restart policy. A start of a later generation owns the
-// container by now, and is left alone: it reports false. The error is that of
-// recording the exit code.
+// container by now, and is left alone: it reports false, as it does when the
+// exit code could not be recorded, though the container is detached all the same.
+// The error is that of recording the exit code.
 func (e *engine) finishTask(id string, generation, code int) (bool, error) {
 	owned := false
 	var writeErr error
@@ -135,10 +136,8 @@ func (e *engine) finishTask(id string, generation, code int) (bool, error) {
 		if err != nil || meta.Generation != generation {
 			return err
 		}
-		if writeErr = os.WriteFile(e.exitCodeFile(id), []byte(strconv.Itoa(code)+"\n"), 0o600); writeErr != nil {
-			return nil
-		}
-		owned = true
+		writeErr = os.WriteFile(e.exitCodeFile(id), []byte(strconv.Itoa(code)+"\n"), 0o600)
+		owned = writeErr == nil
 		meta.ExitCode, meta.FinishedAt = code, time.Now().UTC()
 		return errors.Join(e.saveContainer(meta), e.detach(meta))
 	})
@@ -190,7 +189,7 @@ func (e *engine) restartPerPolicy(id string, generation, code int, ranFor time.D
 	var meta *containerMeta
 	var count int
 	// A start of a later generation owns the restart count by now.
-	_ = e.withLock(func() error {
+	err := e.withLock(func() error {
 		current, err := e.loadContainer(id)
 		if err != nil || current.Generation != generation || e.stoppedByUser(id) {
 			return err
@@ -206,10 +205,16 @@ func (e *engine) restartPerPolicy(id string, generation, code int, ranFor time.D
 		if limit > 0 && count >= limit {
 			return nil
 		}
+		if err := os.WriteFile(filepath.Join(e.containerDir(id), restartsFile), []byte(strconv.Itoa(count+1)+"\n"), 0o600); err != nil {
+			return fmt.Errorf("saving the restart count: %w", err)
+		}
 		meta = current
-		return os.WriteFile(filepath.Join(e.containerDir(id), restartsFile), []byte(strconv.Itoa(count+1)+"\n"), 0o600)
+		return nil
 	})
 	if meta == nil {
+		if err != nil {
+			_, _ = fmt.Fprintf(log, "ctrd: not restarting the container: %v\n", err)
+		}
 		return
 	}
 	time.Sleep(min(e.cfg.RestartDelay<<min(count, 10), restartMaxDelay))
